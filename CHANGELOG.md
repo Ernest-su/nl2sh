@@ -29,6 +29,7 @@
 - Collapsed completed tool results with F2 expansion while retaining live output, full diagnostic logs, and complete model feedback.
 - Terminal-native Markdown rendering for Agent replies, including styled inline content, code blocks, Unicode-width tables, wrapping cells, and narrow-screen list fallback.
 - One-command Android build/deploy/run script with configurable target directory, Rust target, and adb serial.
+- Native Windows PowerShell Android build/deploy/run script using the NDK Windows LLVM toolchain without Bash or WSL.
 - Linux and Windows PowerShell deploy/run scripts that push a prebuilt adjacent `nl2sh` binary without compiling it.
 - Arrow-key provider selection for common OpenAI-compatible API base URLs, custom endpoints, and visible API-key entry in initial setup and `/config`.
 
@@ -36,6 +37,7 @@
 
 - Restyled the input row as a Codex-like muted-gray editor strip while keeping the shortcut separator, status row, and bottom separator on the terminal background.
 - Agent final-answer guidance now favors user-language summaries, Markdown tables for structured comparisons, and concise readable text over raw tool output.
+- Documented Android's misleading `No such file or directory` error for ABI/ELF-interpreter mismatches, including ARMv7 rebuild and verification commands.
 
 ### Fixed
 

@@ -48,6 +48,13 @@ export ANDROID_NDK_HOME=/path/to/android-ndk
 ./android-run.sh
 ```
 
+Windows PowerShell 可使用原生 NDK Windows 工具链执行同一流程，不需要 Bash 或 WSL：
+
+```powershell
+$env:ANDROID_NDK_HOME = "C:\Android\Sdk\ndk\28.2.13676358"
+.\android-run.ps1
+```
+
 默认推送到 `/data/local/tmp/nl2sh`。可用 `ANDROID_DIR=/data/local/tmp/tools` 修改设备目录，多设备时用 `ADB_SERIAL=<serial>` 指定设备，ARMv7 设备可同时设置 `RUST_TARGET=armv7-linux-androideabi`。脚本要求主机 `PATH` 中可找到 `adb`，设备端仅使用 Android 自带的 `mkdir`、`chmod` 和 shell。连接后会先执行 `adb root`、等待 adbd 重启并验证 `id -u`；root adbd 成功时，后续推送和启动均以 root 进行。设备不支持 `adb root` 时才尝试 `su -c`，两者都不可用且已有 `0600 config.toml` 不可读时会提前报错，不会放宽 API Key 配置文件权限。
 
 已有预编译的 Android `nl2sh` 时，可把它与对应脚本放在同一目录，直接从推送步骤开始，无需 Rust 或 NDK。Linux 使用 `android-run-linux.sh`，Windows PowerShell 使用 `android-run-windows.ps1`；两者同样支持 `ANDROID_DIR` 和 `ADB_SERIAL`：
@@ -61,6 +68,44 @@ chmod +x android-run-linux.sh nl2sh
 $env:ADB_SERIAL = "device-serial"
 .\android-run-windows.ps1
 ```
+
+### Android 提示 `No such file or directory`
+
+如果 `/data/local/tmp/nl2sh` 明明存在且已有执行权限，但运行时仍提示：
+
+```text
+/system/bin/sh: ./nl2sh: No such file or directory
+```
+
+这通常不是文件路径不存在，而是二进制 ABI 与设备不匹配，导致 Android 找不到 ELF 指定的动态加载器。例如，只支持 `armeabi-v7a` 的 32 位设备不能运行默认生成的 `aarch64-linux-android` 64 位程序；该程序请求 `/system/bin/linker64`，而 32 位设备只有 `/system/bin/linker`。
+
+先检查设备 ABI 和远端二进制：
+
+```powershell
+adb shell getprop ro.product.cpu.abi
+adb shell getprop ro.product.cpu.abilist
+adb shell file /data/local/tmp/nl2sh
+```
+
+- `arm64-v8a`：使用默认的 `aarch64-linux-android`。
+- `armeabi-v7a` 且 ABI 列表中没有 `arm64-v8a`：必须构建 `armv7-linux-androideabi`。
+
+Windows PowerShell 构建并部署 ARMv7 版本：
+
+```powershell
+rustup target add armv7-linux-androideabi
+$env:RUST_TARGET = "armv7-linux-androideabi"
+.\android-run.ps1
+```
+
+Linux/macOS 使用相同目标：
+
+```bash
+rustup target add armv7-linux-androideabi
+RUST_TARGET=armv7-linux-androideabi ./android-run.sh
+```
+
+重新推送后，`adb shell file /data/local/tmp/nl2sh` 在 ARMv7 设备上应显示 `ELF 32-bit`、`ARM` 和 `/system/bin/linker`，不应显示 `64-bit arm64` 或 `/system/bin/linker64`。如果 ABI 已匹配，再检查文件权限、ELF interpreter 是否存在，以及二进制是否确实由 Android NDK 而非桌面工具链构建。
 
 ## 配置
 

@@ -1,6 +1,6 @@
 # Project Status
 
-Last Updated: 2026-08-05
+Last Updated: 2026-08-06
 
 ## Current Phase
 
@@ -36,7 +36,9 @@ Phase 10：本地功能与验证基本完成，等待 Android 交叉编译和真
 - TUI、初始化向导与安全确认支持中文/英文，默认中文；启动历史区预置常用 Android 任务和操作说明，且不进入模型上下文。
 - 仅用户输入文字所在行使用低亮度淡灰背景；快捷键上分割线、状态行和下分割线保持终端默认背景。
 - `android-run.sh` 会先执行 `adb root`、等待 adbd 并验证 UID 0，再交叉编译、推送和启动；不支持 root adbd 时才回退 `su -c`，私有配置不可读则提前失败。
+- `android-run.ps1` 使用 NDK `windows-x86_64` LLVM 工具链在 Windows PowerShell 原生完成同等的交叉编译、推送、root/su 回退和启动流程，无需 Bash 或 WSL。
 - `android-run-linux.sh` 与 `android-run-windows.ps1` 可将脚本同目录中的预编译 `nl2sh` 直接推送并启动，跳过 Rust/NDK 编译，同时保留 root adbd 优先、`su` 回退和私有配置保护。
+- 部署文档说明了文件存在却由 ABI/ELF interpreter 不匹配引发 `No such file or directory` 的情况，并给出 AArch64/ARMv7 识别、重建和验证步骤。
 - adb TTY 将鼠标 SGR 序列拆成按键字符时，输入边界会过滤 `[<数字;数字;数字M/m`，且空闲 Esc 不再误清已有输入；确认弹窗 Esc 行为不变。
 - `/dev/null` 重定向与 fd 复制不再把只读诊断误判为修改或连带要求 root；真实文件写入和命令副作用仍受确认保护，strict 仍按定义确认全部命令。
 - 工具执行期间保留实时输出，完成后结果默认折叠并可用 F2 展开/收起；模型仍接收完整结果，最终答复被要求使用用户语言及可读表格或文本总结。
@@ -52,6 +54,7 @@ Phase 10：本地功能与验证基本完成，等待 Android 交叉编译和真
 ## Pending / Known Issues
 
 - PTY 已在 API 34 ARMv7 真机执行只读命令；不同 su/fullscreen 程序仍可能需要兼容调整。
+- `android-run.sh` 与 `android-run.ps1` 默认构建 AArch64；仅支持 `armeabi-v7a` 的设备必须显式设置 `RUST_TARGET=armv7-linux-androideabi`，否则 Android 会因缺少 `/system/bin/linker64` 报 `No such file or directory`。
 - Agent TUI 在 LLM 和捕获式命令执行期间保持同一 ratatui frame；全屏交互命令会临时挂起 TUI，退出后恢复并完整重绘。
 
 ## Technical Decisions
@@ -66,6 +69,7 @@ Phase 10：本地功能与验证基本完成，等待 Android 交叉编译和真
 
 - `cargo check`：通过。
 - `cargo test`：通过，测试覆盖配置/CLI、安全、历史日志、root、双 LLM 协议、重试/timeout、Agent 历史/失败/取消、真实 SIGINT、PTY、初始化顺序、TUI 重配置、双行布局和语义配色。
+- `android-run.ps1`：PowerShell AST 语法解析与 `git diff --check` 通过；因当前未授权实际部署，未执行 adb/NDK 真机流程。
 - `cargo fmt --all -- --check`：通过。
 - `cargo clippy --all-targets -- -D warnings`：通过。
 - `cargo build --release`：通过。
