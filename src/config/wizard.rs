@@ -1,10 +1,71 @@
 use super::{ApiType, Config, ConfirmPolicy, ExecuteUserMode, UiLanguage};
 use anyhow::{bail, Context, Result};
+use crossterm::{
+    cursor,
+    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
+    execute,
+    terminal::{self, ClearType},
+};
 use std::{
     fs::{self, OpenOptions},
     io::{self, Write},
     path::Path,
 };
+
+const PROVIDERS: &[ProviderPreset] = &[
+    ProviderPreset::new("OpenAI", "https://api.openai.com/v1"),
+    ProviderPreset::new("DeepSeek", "https://api.deepseek.com"),
+    ProviderPreset::new("Moonshot / Kimi", "https://api.moonshot.cn/v1"),
+    ProviderPreset::new("SiliconFlow", "https://api.siliconflow.cn/v1"),
+    ProviderPreset::new("Ollama (local)", "http://127.0.0.1:11434/v1"),
+    ProviderPreset::custom("Custom", "自定义"),
+];
+
+struct ProviderPreset {
+    name_en: &'static str,
+    name_zh_cn: &'static str,
+    endpoint: Option<&'static str>,
+}
+
+impl ProviderPreset {
+    const fn new(name: &'static str, endpoint: &'static str) -> Self {
+        Self {
+            name_en: name,
+            name_zh_cn: name,
+            endpoint: Some(endpoint),
+        }
+    }
+
+    const fn custom(name_en: &'static str, name_zh_cn: &'static str) -> Self {
+        Self {
+            name_en,
+            name_zh_cn,
+            endpoint: None,
+        }
+    }
+
+    fn name(&self, language: UiLanguage) -> &'static str {
+        match language {
+            UiLanguage::ZhCn => self.name_zh_cn,
+            UiLanguage::En => self.name_en,
+        }
+    }
+}
+
+struct RawModeGuard;
+
+impl RawModeGuard {
+    fn enter() -> Result<Self> {
+        terminal::enable_raw_mode().context("failed to enable raw mode for provider selection")?;
+        Ok(Self)
+    }
+}
+
+impl Drop for RawModeGuard {
+    fn drop(&mut self) {
+        let _ = terminal::disable_raw_mode();
+    }
+}
 
 /// Interactively creates a new configuration without overwriting an existing file.
 pub fn run_wizard(path: &Path) -> Result<()> {
@@ -17,15 +78,15 @@ pub fn run_wizard(path: &Path) -> Result<()> {
     println!("正在创建配置 / Creating configuration: {}", path.display());
     let language = prompt("界面语言 / UI language (zh_cn/en)", "zh_cn")?;
     let ui_language = parse_language(&language)?;
-    let endpoint = prompt(
-        label(ui_language, "API 服务地址", "API Base URL"),
-        "https://api.openai.com/v1",
+    let endpoint = select_endpoint(ui_language, "https://api.openai.com/v1")?;
+    let api_key = prompt(
+        label(
+            ui_language,
+            "API Key（可见输入，本地服务可留空）",
+            "API Key (visible input; empty for local service)",
+        ),
+        "",
     )?;
-    let api_key = prompt_api_key(label(
-        ui_language,
-        "API Key（隐藏输入，本地服务可留空）：",
-        "API Key (input hidden; empty for local service): ",
-    ))?;
     let model = prompt(label(ui_language, "模型", "Model"), "gpt-4o-mini")?;
     let api = prompt(
         label(
@@ -112,15 +173,15 @@ pub fn run_reconfigure(path: &Path) -> Result<()> {
         ),
         path.display()
     );
-    cfg.endpoint = prompt(
-        label(cfg.ui_language, "API 服务地址", "API Base URL"),
-        &cfg.endpoint,
+    cfg.endpoint = select_endpoint(cfg.ui_language, &cfg.endpoint)?;
+    let api_key = prompt(
+        label(
+            cfg.ui_language,
+            "API Key（可见输入，留空保持当前值）",
+            "API Key (visible input; empty keeps current)",
+        ),
+        "",
     )?;
-    let api_key = prompt_api_key(label(
-        cfg.ui_language,
-        "API Key（隐藏输入，留空保持当前值）：",
-        "API Key (input hidden; empty keeps current): ",
-    ))?;
     if !api_key.is_empty() {
         cfg.api_key = api_key;
     }
@@ -162,8 +223,79 @@ fn label(language: UiLanguage, zh_cn: &'static str, en: &'static str) -> &'stati
     }
 }
 
-fn prompt_api_key(label: &str) -> Result<String> {
-    rpassword::prompt_password(label).context("failed to read API key")
+fn select_endpoint(language: UiLanguage, current: &str) -> Result<String> {
+    let custom_index = PROVIDERS.len() - 1;
+    let mut selected = PROVIDERS
+        .iter()
+        .position(|provider| {
+            provider.endpoint.is_some_and(|endpoint| {
+                endpoint.trim_end_matches('/') == current.trim_end_matches('/')
+            })
+        })
+        .unwrap_or(custom_index);
+    let mut stdout = io::stdout();
+    let _raw_mode = RawModeGuard::enter()?;
+    let rendered_lines = PROVIDERS.len() + 1;
+    let mut first_frame = true;
+
+    loop {
+        if !first_frame {
+            execute!(stdout, cursor::MoveUp(rendered_lines as u16))?;
+        }
+        first_frame = false;
+        execute!(stdout, terminal::Clear(ClearType::FromCursorDown))?;
+        write!(
+            stdout,
+            "{}\r\n",
+            label(
+                language,
+                "选择 API 服务商（↑/↓ 或 j/k，Enter 确认）",
+                "Select API provider (Up/Down or j/k, Enter to confirm)"
+            )
+        )?;
+        for (index, provider) in PROVIDERS.iter().enumerate() {
+            let marker = if index == selected { ">" } else { " " };
+            let endpoint = provider.endpoint.unwrap_or(current);
+            write!(
+                stdout,
+                "{marker} {}  {}\r\n",
+                provider.name(language),
+                endpoint
+            )?;
+        }
+        stdout.flush()?;
+
+        let Event::Key(key) = event::read().context("failed to read provider selection")? else {
+            continue;
+        };
+        if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
+            continue;
+        }
+        match key.code {
+            KeyCode::Up | KeyCode::Char('k') => {
+                selected = selected.checked_sub(1).unwrap_or(PROVIDERS.len() - 1);
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                selected = (selected + 1) % PROVIDERS.len();
+            }
+            KeyCode::Home => selected = 0,
+            KeyCode::End => selected = PROVIDERS.len() - 1,
+            KeyCode::Enter => break,
+            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                bail!("provider selection cancelled")
+            }
+            _ => {}
+        }
+    }
+    drop(_raw_mode);
+
+    match PROVIDERS[selected].endpoint {
+        Some(endpoint) => Ok(endpoint.into()),
+        None => prompt(
+            label(language, "自定义 API Base URL", "Custom API Base URL"),
+            current,
+        ),
+    }
 }
 
 fn serialize(cfg: &Config) -> Result<String> {

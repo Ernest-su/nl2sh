@@ -98,7 +98,7 @@ async fn agent_reply_remains_in_live_tui_until_ctrl_q() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn missing_config_prompts_base_url_before_key_and_continues() -> anyhow::Result<()> {
+async fn missing_config_selects_provider_before_visible_key_and_continues() -> anyhow::Result<()> {
     let directory = tempdir()?;
     let config = directory.path().join("missing.toml");
     let mut process = spawn_tui(&config)?;
@@ -107,16 +107,30 @@ async fn missing_config_prompts_base_url_before_key_and_continues() -> anyhow::R
         wait_for_text_capture(&mut process.master, "界面语言", Duration::from_secs(3)).await?;
     assert!(!initial.contains("API Key"));
     process.master.write_all(b"\r")?;
-    wait_for_text(&mut process.master, "API 服务地址", Duration::from_secs(3)).await?;
-    process.master.write_all(b"http://127.0.0.1:11434/v1\r")?;
+    wait_for_text(
+        &mut process.master,
+        "选择 API 服务商",
+        Duration::from_secs(3),
+    )
+    .await?;
+    // Select the built-in Ollama endpoint.
+    process.master.write_all(b"\x1b[B\x1b[B\x1b[B\x1b[B\r")?;
     wait_for_text(&mut process.master, "API Key", Duration::from_secs(3)).await?;
-    // Empty key, then accept model, API type, confirmation, and execution-user defaults.
-    process.master.write_all(b"\r\r\r\r\r")?;
+    // API Key uses normal echoed input, then accept the remaining defaults.
+    process.master.write_all(b"visible-test-key\r")?;
+    let echoed = wait_for_text_capture(
+        &mut process.master,
+        "visible-test-key",
+        Duration::from_secs(3),
+    )
+    .await?;
+    assert!(echoed.contains("visible-test-key"));
+    process.master.write_all(b"\r\r\r\r")?;
     wait_for_text(&mut process.master, "Ctrl+Q", Duration::from_secs(3)).await?;
 
     let loaded = nl2sh::config::load_from(&config)?;
     assert_eq!(loaded.endpoint, "http://127.0.0.1:11434/v1");
-    assert!(loaded.api_key.is_empty());
+    assert_eq!(loaded.api_key, "visible-test-key");
     assert!(process.child.try_wait()?.is_none());
     process.master.write_all(&[0x11])?;
     assert!(timeout(Duration::from_secs(3), process.child.wait())
@@ -131,14 +145,26 @@ async fn slash_config_reconfigures_and_returns_to_tui() -> anyhow::Result<()> {
     let config = directory.path().join("config.toml");
     std::fs::write(
         &config,
-        "api_key=''\nmodel='before-config'\nendpoint='http://127.0.0.1:11434/v1'\napi_type='responses'\n",
+        "api_key='existing-key'\nmodel='before-config'\nendpoint='http://127.0.0.1:9999/v1'\napi_type='responses'\n",
     )?;
     let mut process = spawn_tui(&config)?;
     wait_for_text(&mut process.master, "Ctrl+Q", Duration::from_secs(3)).await?;
     process.master.write_all(b"/config\r")?;
     wait_for_text(&mut process.master, "界面语言", Duration::from_secs(3)).await?;
     process.master.write_all(b"\r")?;
-    wait_for_text(&mut process.master, "API 服务地址", Duration::from_secs(3)).await?;
+    wait_for_text(
+        &mut process.master,
+        "选择 API 服务商",
+        Duration::from_secs(3),
+    )
+    .await?;
+    process.master.write_all(b"\r")?;
+    wait_for_text(
+        &mut process.master,
+        "自定义 API Base URL",
+        Duration::from_secs(3),
+    )
+    .await?;
     process.master.write_all(b"\r")?;
     wait_for_text(&mut process.master, "API Key", Duration::from_secs(3)).await?;
     process.master.write_all(b"\r")?;
@@ -153,10 +179,10 @@ async fn slash_config_reconfigures_and_returns_to_tui() -> anyhow::Result<()> {
     )
     .await?;
 
-    assert_eq!(
-        nl2sh::config::load_from(&config)?.model,
-        "reconfigured-model"
-    );
+    let loaded = nl2sh::config::load_from(&config)?;
+    assert_eq!(loaded.model, "reconfigured-model");
+    assert_eq!(loaded.endpoint, "http://127.0.0.1:9999/v1");
+    assert_eq!(loaded.api_key, "existing-key");
     assert!(process.child.try_wait()?.is_none());
     process.master.write_all(&[0x11])?;
     assert!(timeout(Duration::from_secs(3), process.child.wait())

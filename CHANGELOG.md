@@ -29,6 +29,8 @@
 - Collapsed completed tool results with F2 expansion while retaining live output, full diagnostic logs, and complete model feedback.
 - Terminal-native Markdown rendering for Agent replies, including styled inline content, code blocks, Unicode-width tables, wrapping cells, and narrow-screen list fallback.
 - One-command Android build/deploy/run script with configurable target directory, Rust target, and adb serial.
+- Linux and Windows PowerShell deploy/run scripts that push a prebuilt adjacent `nl2sh` binary without compiling it.
+- Arrow-key provider selection for common OpenAI-compatible API base URLs, custom endpoints, and visible API-key entry in initial setup and `/config`.
 
 ### Changed
 

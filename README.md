@@ -50,9 +50,21 @@ export ANDROID_NDK_HOME=/path/to/android-ndk
 
 默认推送到 `/data/local/tmp/nl2sh`。可用 `ANDROID_DIR=/data/local/tmp/tools` 修改设备目录，多设备时用 `ADB_SERIAL=<serial>` 指定设备，ARMv7 设备可同时设置 `RUST_TARGET=armv7-linux-androideabi`。脚本要求主机 `PATH` 中可找到 `adb`，设备端仅使用 Android 自带的 `mkdir`、`chmod` 和 shell。连接后会先执行 `adb root`、等待 adbd 重启并验证 `id -u`；root adbd 成功时，后续推送和启动均以 root 进行。设备不支持 `adb root` 时才尝试 `su -c`，两者都不可用且已有 `0600 config.toml` 不可读时会提前报错，不会放宽 API Key 配置文件权限。
 
+已有预编译的 Android `nl2sh` 时，可把它与对应脚本放在同一目录，直接从推送步骤开始，无需 Rust 或 NDK。Linux 使用 `android-run-linux.sh`，Windows PowerShell 使用 `android-run-windows.ps1`；两者同样支持 `ANDROID_DIR` 和 `ADB_SERIAL`：
+
+```bash
+chmod +x android-run-linux.sh nl2sh
+./android-run-linux.sh
+```
+
+```powershell
+$env:ADB_SERIAL = "device-serial"
+.\android-run-windows.ps1
+```
+
 ## 配置
 
-默认配置位于解析符号链接后的可执行文件目录，名称为 `config.toml`。在 TTY 中启动且配置不存在时会先询问 API Base URL、再隐藏输入 API Key，保存后直接继续启动；`nl2sh --init` 也可显式创建配置且不会覆盖已有文件。配置以 `0600` 权限创建。也可传入 `--config /path/config.toml`。
+默认配置位于解析符号链接后的可执行文件目录，名称为 `config.toml`。在 TTY 中启动且配置不存在时，可用 ↑/↓（或 j/k）从 OpenAI、DeepSeek、Moonshot/Kimi、SiliconFlow、Ollama 和自定义 Base URL 中选择，再以普通可见输入填写 API Key，保存后直接继续启动；`nl2sh --init` 也可显式创建配置且不会覆盖已有文件。配置仍以 `0600` 权限创建，请注意终端屏幕和录屏中可能保留输入的 Key。也可传入 `--config /path/config.toml`。
 
 ```bash
 cp config.toml.example config.toml
@@ -70,7 +82,7 @@ cp config.toml.example config.toml
 
 `history_log_file` 默认为 `nl2sh.log`，相对路径按 `config.toml` 所在目录解析。日志采用逐行 JSON，记录用户输入、命令、输出、结果和错误并在每条记录后刷新；新文件权限为 `0600`。日志可能包含命令输出中的设备信息，排查完成后应按实际保密要求保管或清理，但不会写入 API Key。
 
-`ui_language` 控制终端界面语言，可选 `zh_cn` 或 `en`，默认 `zh_cn`。首次初始化及 `/config` 重配置会先询问界面语言，之后的向导、状态栏、确认弹窗和快捷键说明使用所选语言。每次启动时，对话历史区会展示常用任务示例以及 `/config`、Enter、滚轮/PageUp/PageDown、Ctrl+C、Ctrl+Q 的操作说明；这些提示不会发送给模型。
+`ui_language` 控制终端界面语言，可选 `zh_cn` 或 `en`，默认 `zh_cn`。首次初始化及 `/config` 重配置会先询问界面语言，之后的向导、状态栏、确认弹窗和快捷键说明使用所选语言。`/config` 会优先选中当前 URL 对应的内置服务商，未知 URL 则进入自定义项；API Key 留空会保留当前配置。每次启动时，对话历史区会展示常用任务示例以及 `/config`、Enter、滚轮/PageUp/PageDown、Ctrl+C、Ctrl+Q 的操作说明；这些提示不会发送给模型。
 
 ## 使用
 

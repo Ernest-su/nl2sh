@@ -13,7 +13,7 @@
 ## Phase 1 CLI 与配置系统 — 完成
 
 - [x] clap 参数、默认路径、符号链接处理、TOML 默认值和校验。
-- [x] 初始化向导、API key 隐藏输入、不覆盖文件、环境覆盖。
+- [x] 初始化向导、常用 API 服务商方向键选择、API Key 可见输入、不覆盖文件和环境覆盖。
 - [x] endpoint/model/api-type CLI 覆盖，并在覆盖后统一校验。
 
 文件：`src/cli.rs`、`src/config`。依赖：Phase 0。验收：配置测试。风险：Android 无 controlling tty 时的向导体验。

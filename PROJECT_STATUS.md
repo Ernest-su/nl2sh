@@ -27,7 +27,7 @@ Phase 10：本地功能与验证基本完成，等待 Android 交叉编译和真
 - endpoint/model/api-type CLI 覆盖，覆盖后统一配置校验。
 - 隔离子进程 SIGINT 回归测试，验证 Agent 退出及 PTY 进程组回收。
 - 单 frame Agent TUI、内嵌确认弹窗、实时状态/输出，以及真实伪终端生命周期回归测试。
-- 缺失配置时按 Base URL → API Key 顺序初始化并继续启动；TUI `/config` 可原子更新 provider 配置并热重载客户端。
+- 缺失配置时先从 OpenAI、DeepSeek、Moonshot/Kimi、SiliconFlow、Ollama 或自定义 Base URL 中方向键选择，再以可见输入填写 API Key 并继续启动；TUI `/config` 复用该流程，可原子更新 provider 配置并热重载客户端。
 - TUI 底部输入框独占一行，运行状态、轮数和剩余上下文在下一行显示。
 - 对话历史按用户、Tool、Agent、命令、成功和错误等语义类型使用不同颜色。
 - 对话历史逐条持久化到默认配置目录下的 `0600` JSON Lines 日志，供异常排查。
@@ -36,6 +36,7 @@ Phase 10：本地功能与验证基本完成，等待 Android 交叉编译和真
 - TUI、初始化向导与安全确认支持中文/英文，默认中文；启动历史区预置常用 Android 任务和操作说明，且不进入模型上下文。
 - 仅用户输入文字所在行使用低亮度淡灰背景；快捷键上分割线、状态行和下分割线保持终端默认背景。
 - `android-run.sh` 会先执行 `adb root`、等待 adbd 并验证 UID 0，再交叉编译、推送和启动；不支持 root adbd 时才回退 `su -c`，私有配置不可读则提前失败。
+- `android-run-linux.sh` 与 `android-run-windows.ps1` 可将脚本同目录中的预编译 `nl2sh` 直接推送并启动，跳过 Rust/NDK 编译，同时保留 root adbd 优先、`su` 回退和私有配置保护。
 - adb TTY 将鼠标 SGR 序列拆成按键字符时，输入边界会过滤 `[<数字;数字;数字M/m`，且空闲 Esc 不再误清已有输入；确认弹窗 Esc 行为不变。
 - `/dev/null` 重定向与 fd 复制不再把只读诊断误判为修改或连带要求 root；真实文件写入和命令副作用仍受确认保护，strict 仍按定义确认全部命令。
 - 工具执行期间保留实时输出，完成后结果默认折叠并可用 F2 展开/收起；模型仍接收完整结果，最终答复被要求使用用户语言及可读表格或文本总结。
