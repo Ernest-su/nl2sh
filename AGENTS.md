@@ -1,0 +1,34 @@
+# AGENTS.md
+
+## 项目简介
+
+nl2sh 是 Android 优先的 stable Rust 2021 单二进制 AI Shell Agent，使用 tokio、ratatui/crossterm、reqwest rustls、serde 和 clap。默认模式为 Tool Calling Agent。核心安全边界永远是 `LLM → Security → Confirmation → Execution`；模型、root 模式和用户编辑都不能绕过它。
+
+## 开始工作前
+
+任何 AI 在修改前必须完整阅读 `AGENTS.md`、`ARCHITECTURE.md`、`PROJECT_PLAN.md`、`PROJECT_STATUS.md`，相关时再阅读 `CHANGELOG.md` 和 `README.md`。
+
+修改前明确目标、涉及模块、公共接口变化、Android 影响、安全模型影响、PTY/终端恢复影响，以及需增加或更新的测试。修改后运行或明确说明应运行 `cargo fmt --all -- --check`、`cargo check`、`cargo test`；更新 `PROJECT_STATUS.md`，必要时更新计划、架构、changelog、配置示例和 README。
+
+## Rust 规范
+
+- 只用 stable Rust；业务代码不得使用 `unwrap`、`expect`、`panic!`、`todo!`、`unimplemented!`。
+- 使用 `anyhow::Context` 提供用户可见上下文；公共接口写文档注释。
+- 保持模块边界，避免不必要 clone，不阻塞 tokio runtime。
+- 长同步 I/O 使用专门线程；fd、进程和终端状态使用 RAII。
+
+## Android 兼容
+
+不得无条件引入 glibc-only 实现，不依赖 systemd、dbus、Termux、native-tls、`/bin/bash` 或 GNU coreutils。优先 Android toybox 与 `/system/bin/sh`，保持 aarch64-linux-android、API 26+ 和 Bionic libc 可编译。开发主机 fallback 必须条件编译，不得改变 Android 路径。
+
+## 安全规则
+
+禁止直接执行 LLM 输出、删除确认流程、把所有命令归为只读、让 root 跳过风险、默认启用 unsafe，或在测试中削弱生产逻辑。用户编辑后重新运行整个分类/确认链。修改类必须确认，危险类必须强确认，除非未来实现显式、醒目的危险 CLI 开关。
+
+## PTY 规则
+
+每次 PTY 改动审计 fd 泄漏、zombie、process group、signal、timeout、terminal restore、resize、Android NDK 和全屏程序。PTY 字节不得直接写到 ratatui 终端；先过滤清屏、光标移动和 alternate-screen 控制序列。异常路径也必须 wait 子进程并恢复终端。
+
+## 提交规范
+
+建议使用 `feat:`、`fix:`、`refactor:`、`docs:`、`test:`、`chore:`。提交保持单一职责，不混入无关格式化。

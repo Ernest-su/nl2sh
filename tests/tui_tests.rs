@@ -1,0 +1,254 @@
+#![cfg(target_os = "linux")]
+
+use nix::{
+    fcntl::{fcntl, FcntlArg, OFlag},
+    pty::{openpty, Winsize},
+};
+use serde_json::json;
+use std::{
+    fs::File,
+    io::{ErrorKind, Read, Write},
+    os::{
+        fd::{FromRawFd, IntoRawFd},
+        unix::process::CommandExt,
+    },
+    process::Stdio,
+    time::Duration,
+};
+use tempfile::tempdir;
+use tokio::{
+    process::Command,
+    time::{sleep, timeout, Instant},
+};
+use wiremock::{
+    matchers::{method, path},
+    Mock, MockServer, ResponseTemplate,
+};
+
+struct PtyChild {
+    master: File,
+    child: tokio::process::Child,
+}
+
+#[tokio::test]
+async fn agent_reply_remains_in_live_tui_until_ctrl_q() -> anyhow::Result<()> {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "output": [{
+                "type": "message",
+                "content": [{"type": "output_text", "text": "tui-e2e-done"}]
+            }]
+        })))
+        .mount(&server)
+        .await;
+
+    let directory = tempdir()?;
+    let config = directory.path().join("config.toml");
+    std::fs::write(
+        &config,
+        format!(
+            "api_key=''\nmodel='test'\nendpoint='{}/v1'\napi_type='responses'\n",
+            server.uri()
+        ),
+    )?;
+
+    let pair = openpty(
+        Some(&Winsize {
+            ws_row: 30,
+            ws_col: 100,
+            ws_xpixel: 0,
+            ws_ypixel: 0,
+        }),
+        None,
+    )?;
+    let raw_master = pair.master.into_raw_fd();
+    let flags = OFlag::from_bits_truncate(fcntl(raw_master, FcntlArg::F_GETFL)?);
+    fcntl(raw_master, FcntlArg::F_SETFL(flags | OFlag::O_NONBLOCK))?;
+    let mut master = unsafe { File::from_raw_fd(raw_master) };
+    let slave = File::from(pair.slave);
+    let stdin = slave.try_clone()?;
+    let stdout = slave.try_clone()?;
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_nl2sh"))
+        .arg("--config")
+        .arg(&config)
+        .env("TERM", "xterm-256color")
+        .stdin(Stdio::from(stdin))
+        .stdout(Stdio::from(stdout))
+        .stderr(Stdio::from(slave))
+        .spawn()?;
+
+    wait_for_text(&mut master, "Ctrl+Q", Duration::from_secs(3)).await?;
+    master.write_all(b"show status\r")?;
+    wait_for_text(&mut master, "tui-e2e-done", Duration::from_secs(5)).await?;
+    assert!(
+        child.try_wait()?.is_none(),
+        "TUI exited after one Agent response"
+    );
+
+    master.write_all(&[0x11])?;
+    let status = timeout(Duration::from_secs(3), child.wait()).await??;
+    assert!(status.success());
+    let log = std::fs::read_to_string(directory.path().join("nl2sh.log"))?;
+    assert!(log.contains("show status"));
+    assert!(log.contains("tui-e2e-done"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn missing_config_prompts_base_url_before_key_and_continues() -> anyhow::Result<()> {
+    let directory = tempdir()?;
+    let config = directory.path().join("missing.toml");
+    let mut process = spawn_tui(&config)?;
+
+    let initial =
+        wait_for_text_capture(&mut process.master, "界面语言", Duration::from_secs(3)).await?;
+    assert!(!initial.contains("API Key"));
+    process.master.write_all(b"\r")?;
+    wait_for_text(&mut process.master, "API 服务地址", Duration::from_secs(3)).await?;
+    process.master.write_all(b"http://127.0.0.1:11434/v1\r")?;
+    wait_for_text(&mut process.master, "API Key", Duration::from_secs(3)).await?;
+    // Empty key, then accept model, API type, confirmation, and execution-user defaults.
+    process.master.write_all(b"\r\r\r\r\r")?;
+    wait_for_text(&mut process.master, "Ctrl+Q", Duration::from_secs(3)).await?;
+
+    let loaded = nl2sh::config::load_from(&config)?;
+    assert_eq!(loaded.endpoint, "http://127.0.0.1:11434/v1");
+    assert!(loaded.api_key.is_empty());
+    assert!(process.child.try_wait()?.is_none());
+    process.master.write_all(&[0x11])?;
+    assert!(timeout(Duration::from_secs(3), process.child.wait())
+        .await??
+        .success());
+    Ok(())
+}
+
+#[tokio::test]
+async fn slash_config_reconfigures_and_returns_to_tui() -> anyhow::Result<()> {
+    let directory = tempdir()?;
+    let config = directory.path().join("config.toml");
+    std::fs::write(
+        &config,
+        "api_key=''\nmodel='before-config'\nendpoint='http://127.0.0.1:11434/v1'\napi_type='responses'\n",
+    )?;
+    let mut process = spawn_tui(&config)?;
+    wait_for_text(&mut process.master, "Ctrl+Q", Duration::from_secs(3)).await?;
+    process.master.write_all(b"/config\r")?;
+    wait_for_text(&mut process.master, "界面语言", Duration::from_secs(3)).await?;
+    process.master.write_all(b"\r")?;
+    wait_for_text(&mut process.master, "API 服务地址", Duration::from_secs(3)).await?;
+    process.master.write_all(b"\r")?;
+    wait_for_text(&mut process.master, "API Key", Duration::from_secs(3)).await?;
+    process.master.write_all(b"\r")?;
+    wait_for_text(&mut process.master, "模型", Duration::from_secs(3)).await?;
+    process.master.write_all(b"reconfigured-model\r")?;
+    wait_for_text(&mut process.master, "API 类型", Duration::from_secs(3)).await?;
+    process.master.write_all(b"\r")?;
+    wait_for_text(
+        &mut process.master,
+        "reconfigured-model",
+        Duration::from_secs(3),
+    )
+    .await?;
+
+    assert_eq!(
+        nl2sh::config::load_from(&config)?.model,
+        "reconfigured-model"
+    );
+    assert!(process.child.try_wait()?.is_none());
+    process.master.write_all(&[0x11])?;
+    assert!(timeout(Duration::from_secs(3), process.child.wait())
+        .await??
+        .success());
+    Ok(())
+}
+
+fn spawn_tui(config: &std::path::Path) -> anyhow::Result<PtyChild> {
+    let pair = openpty(
+        Some(&Winsize {
+            ws_row: 30,
+            ws_col: 100,
+            ws_xpixel: 0,
+            ws_ypixel: 0,
+        }),
+        None,
+    )?;
+    let raw_master = pair.master.into_raw_fd();
+    let flags = OFlag::from_bits_truncate(fcntl(raw_master, FcntlArg::F_GETFL)?);
+    fcntl(raw_master, FcntlArg::F_SETFL(flags | OFlag::O_NONBLOCK))?;
+    let master = unsafe { File::from_raw_fd(raw_master) };
+    let slave = File::from(pair.slave);
+    let stdin = slave.try_clone()?;
+    let stdout = slave.try_clone()?;
+    let mut command = Command::new(env!("CARGO_BIN_EXE_nl2sh"));
+    command
+        .arg("--config")
+        .arg(config)
+        .env("TERM", "xterm-256color")
+        .stdin(Stdio::from(stdin))
+        .stdout(Stdio::from(stdout))
+        .stderr(Stdio::from(slave));
+    unsafe {
+        command.as_std_mut().pre_exec(|| {
+            if libc::setsid() == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            if libc::ioctl(libc::STDIN_FILENO, libc::TIOCSCTTY, 0) == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let child = command.spawn()?;
+    Ok(PtyChild { master, child })
+}
+
+async fn wait_for_text_capture(
+    master: &mut File,
+    needle: &str,
+    limit: Duration,
+) -> anyhow::Result<String> {
+    let deadline = Instant::now() + limit;
+    let mut captured = String::new();
+    let mut buffer = [0_u8; 8192];
+    loop {
+        match master.read(&mut buffer) {
+            Ok(0) => {}
+            Ok(count) => captured.push_str(&String::from_utf8_lossy(&buffer[..count])),
+            Err(error) if error.kind() == ErrorKind::WouldBlock => {}
+            Err(error) if error.raw_os_error() == Some(libc::EIO) => {}
+            Err(error) => return Err(error.into()),
+        }
+        if captured.contains(needle) {
+            return Ok(captured);
+        }
+        if Instant::now() >= deadline {
+            anyhow::bail!("timed out waiting for {needle:?}; captured {captured:?}")
+        }
+        sleep(Duration::from_millis(20)).await;
+    }
+}
+
+async fn wait_for_text(master: &mut File, needle: &str, limit: Duration) -> anyhow::Result<()> {
+    let deadline = Instant::now() + limit;
+    let mut captured = String::new();
+    let mut buffer = [0_u8; 8192];
+    loop {
+        match master.read(&mut buffer) {
+            Ok(0) => {}
+            Ok(count) => captured.push_str(&String::from_utf8_lossy(&buffer[..count])),
+            Err(error) if error.kind() == ErrorKind::WouldBlock => {}
+            Err(error) if error.raw_os_error() == Some(libc::EIO) => {}
+            Err(error) => return Err(error.into()),
+        }
+        if captured.contains(needle) {
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            anyhow::bail!("timed out waiting for {needle:?}; captured {captured:?}")
+        }
+        sleep(Duration::from_millis(20)).await;
+    }
+}

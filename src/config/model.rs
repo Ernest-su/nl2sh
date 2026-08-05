@@ -1,0 +1,192 @@
+use anyhow::{bail, Context, Result};
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+use url::Url;
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+/// Supported OpenAI-compatible wire protocol.
+pub enum ApiType {
+    /// `/chat/completions` messages protocol.
+    ChatCompletions,
+    #[default]
+    /// `/responses` item protocol.
+    Responses,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+/// General user confirmation preference, subordinate to tool policy.
+pub enum ConfirmPolicy {
+    /// Confirm every command.
+    Always,
+    #[default]
+    /// Confirm commands according to assessed risk.
+    RiskOnly,
+    /// Skip general confirmation where mandatory safety policy permits.
+    Never,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+/// Overall safety posture.
+pub enum SecurityLevel {
+    /// Confirm every command.
+    Strict,
+    #[default]
+    /// Auto-run reads and confirm state changes.
+    Balanced,
+    /// Auto-run ordinary changes but retain dangerous confirmation.
+    Unsafe,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+/// User identity used for command execution.
+pub enum ExecuteUserMode {
+    #[default]
+    /// Elevate only when local policy says root is required.
+    Auto,
+    /// Never invoke `su`.
+    Normal,
+    /// Require UID zero or `su` for every command.
+    Root,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+/// Language used by the terminal interface.
+pub enum UiLanguage {
+    #[default]
+    /// Simplified Chinese interface.
+    ZhCn,
+    /// English interface.
+    En,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+/// Fully defaulted and validated runtime configuration.
+pub struct Config {
+    /// Optional bearer token; empty is valid for non-OpenAI local services.
+    pub api_key: String,
+    /// Provider model identifier.
+    pub model: String,
+    /// API base URL, normally ending in `/v1`.
+    pub endpoint: String,
+    /// Selected API wire protocol.
+    pub api_type: ApiType,
+    /// Maximum complete text interaction units retained.
+    pub max_context_turns: usize,
+    /// Maximum model/tool iterations per request.
+    pub max_agent_steps: usize,
+    /// Number of retries after the initial LLM attempt.
+    pub llm_retry_count: u32,
+    /// Initial exponential retry delay.
+    pub llm_retry_base_delay_ms: u64,
+    /// HTTP request timeout.
+    pub llm_request_timeout_secs: u64,
+    /// Ordinary command timeout.
+    pub execute_timeout_secs: u64,
+    /// Interactive timeout; zero disables it.
+    pub interactive_execute_timeout_secs: u64,
+    /// General confirmation preference.
+    pub execute_confirm_policy: ConfirmPolicy,
+    /// Safety posture.
+    pub security_level: SecurityLevel,
+    /// Command execution identity mode.
+    pub execute_user_mode: ExecuteUserMode,
+    /// Enables real PTY execution instead of pipeline fallback.
+    pub enable_pty: bool,
+    /// Replaces Emoji labels with ASCII labels.
+    pub ascii_symbols: bool,
+    /// Terminal interface language; Simplified Chinese is the default.
+    pub ui_language: UiLanguage,
+    /// JSON Lines interaction log, relative to the configuration directory by default.
+    pub history_log_file: PathBuf,
+    /// Additional rules that can only raise risk.
+    pub security_rules: Vec<SecurityRuleConfig>,
+    #[serde(skip)]
+    /// File that produced this configuration.
+    pub source: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+/// User-supplied regular-expression security rule.
+pub struct SecurityRuleConfig {
+    /// Stable identifier shown in assessments.
+    pub id: String,
+    /// Rust regular expression matched against normalized command text.
+    pub pattern: String,
+    /// `read_only`, `mutating`, `dangerous`, or `critical`.
+    pub risk: String,
+    /// User-facing explanation.
+    pub message: String,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            api_key: String::new(),
+            model: "gpt-4o-mini".into(),
+            endpoint: "https://api.openai.com/v1".into(),
+            api_type: ApiType::Responses,
+            max_context_turns: 10,
+            max_agent_steps: 8,
+            llm_retry_count: 3,
+            llm_retry_base_delay_ms: 500,
+            llm_request_timeout_secs: 60,
+            execute_timeout_secs: 30,
+            interactive_execute_timeout_secs: 0,
+            execute_confirm_policy: ConfirmPolicy::RiskOnly,
+            security_level: SecurityLevel::Balanced,
+            execute_user_mode: ExecuteUserMode::Auto,
+            enable_pty: true,
+            ascii_symbols: false,
+            ui_language: UiLanguage::ZhCn,
+            history_log_file: PathBuf::from("nl2sh.log"),
+            security_rules: Vec::new(),
+            source: None,
+        }
+    }
+}
+
+impl Config {
+    /// Validates URLs, bounds, enum-like rule values, and provider key needs.
+    pub fn validate(&self) -> Result<()> {
+        let url = Url::parse(&self.endpoint).context("endpoint is not a valid URL")?;
+        if !matches!(url.scheme(), "http" | "https") {
+            bail!("endpoint must use http or https")
+        }
+        if self.model.trim().is_empty() {
+            bail!("model must not be empty")
+        }
+        if url.host_str() == Some("api.openai.com") && self.api_key.trim().is_empty() {
+            bail!("api_key is required for api.openai.com")
+        }
+        if self.max_context_turns == 0 || self.max_agent_steps == 0 {
+            bail!("context turns and agent steps must be positive")
+        }
+        if self.llm_request_timeout_secs == 0 || self.execute_timeout_secs == 0 {
+            bail!("request and execution timeouts must be positive")
+        }
+        if self.history_log_file.as_os_str().is_empty() {
+            bail!("history_log_file must not be empty")
+        }
+        for rule in &self.security_rules {
+            if rule.id.trim().is_empty() || rule.message.trim().is_empty() {
+                bail!("custom security rule id and message must not be empty")
+            }
+            if !matches!(
+                rule.risk.as_str(),
+                "read_only" | "readonly" | "mutating" | "dangerous" | "critical"
+            ) {
+                bail!("invalid risk for security rule {}: {}", rule.id, rule.risk)
+            }
+            regex::Regex::new(&rule.pattern)
+                .with_context(|| format!("invalid security rule {}", rule.id))?;
+        }
+        Ok(())
+    }
+}

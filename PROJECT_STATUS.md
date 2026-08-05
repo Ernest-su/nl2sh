@@ -1,0 +1,78 @@
+# Project Status
+
+Last Updated: 2026-08-05
+
+## Current Phase
+
+Phase 10：本地功能与验证基本完成，等待 Android 交叉编译和真机验证。
+
+## Overall Status
+
+- Build status: `cargo check` 和 `cargo build --release` 已于 2026-08-05 在当前 Linux 主机通过。
+- Test status: `cargo test` 已通过（53 个 unit/integration tests，0 failure）。
+- Android cross-compile status: 已使用 NDK r28c、API 26 成功构建 `aarch64-linux-android` release 产物。
+- Android device validation: 已在 KONKA Android TV（API 34、`armeabi-v7a`）完成部署、Agent/PTY 和 TUI smoke test。
+- Known blockers: 尚未验证真实 root 提权、修改确认、超时和全屏交互程序。
+
+## Completed
+
+- 模块化 Cargo 工程、CLI、配置加载/校验/向导。
+- 两种 OpenAI API adapter 与统一 LLM trait。
+- Agent loop、shell tool、真实结果回传和最大轮数。
+- 四级安全评估、内置/自定义规则和确认接口。
+- root 模式解析、su 参数化执行、pipeline timeout 和进程组清理。
+- 可持续多轮输入、完整历史回放、滚动和 terminal guard 的 TUI。
+- openpty 主执行器、pipeline fallback、交互双向桥接、resize、ANSI 过滤和实时 output sink。
+- Ctrl+C 对 LLM 请求/退避及命令进程组的取消路径；编辑命令重新分类。
+- endpoint/model/api-type CLI 覆盖，覆盖后统一配置校验。
+- 隔离子进程 SIGINT 回归测试，验证 Agent 退出及 PTY 进程组回收。
+- 单 frame Agent TUI、内嵌确认弹窗、实时状态/输出，以及真实伪终端生命周期回归测试。
+- 缺失配置时按 Base URL → API Key 顺序初始化并继续启动；TUI `/config` 可原子更新 provider 配置并热重载客户端。
+- TUI 底部输入框独占一行，运行状态、轮数和剩余上下文在下一行显示。
+- 对话历史按用户、Tool、Agent、命令、成功和错误等语义类型使用不同颜色。
+- 对话历史逐条持久化到默认配置目录下的 `0600` JSON Lines 日志，供异常排查。
+- 只读应用版本查询及其命令替换循环不再误判为修改操作；替换内副作用仍需确认。
+- TUI 会捕获并在退出时恢复鼠标事件，历史窗口支持滚轮及 PageUp/PageDown 浏览。
+- TUI、初始化向导与安全确认支持中文/英文，默认中文；启动历史区预置常用 Android 任务和操作说明，且不进入模型上下文。
+- 仅用户输入文字所在行使用低亮度淡灰背景；快捷键上分割线、状态行和下分割线保持终端默认背景。
+- `android-run.sh` 会先执行 `adb root`、等待 adbd 并验证 UID 0，再交叉编译、推送和启动；不支持 root adbd 时才回退 `su -c`，私有配置不可读则提前失败。
+- adb TTY 将鼠标 SGR 序列拆成按键字符时，输入边界会过滤 `[<数字;数字;数字M/m`，且空闲 Esc 不再误清已有输入；确认弹窗 Esc 行为不变。
+- `/dev/null` 重定向与 fd 复制不再把只读诊断误判为修改或连带要求 root；真实文件写入和命令副作用仍受确认保护，strict 仍按定义确认全部命令。
+- 工具执行期间保留实时输出，完成后结果默认折叠并可用 F2 展开/收起；模型仍接收完整结果，最终答复被要求使用用户语言及可读表格或文本总结。
+- Agent Markdown 原生映射为 ratatui 行与样式，支持标题、行内样式、列表、引用、代码块、链接和分隔线；表格按 Unicode 宽度对齐、换行，并在窄屏降级为键值列表。
+- F2 展开工具结果后按 ratatui 实际换行高度定位和滚动，不再用逻辑历史条目数限制大结果，长命令与输出可完整浏览。
+- 交互命令退出后恢复备用屏幕与鼠标捕获，并使 ratatui 强制完整重绘，避免第二轮对话只显示结果而框架消失。
+- 配置、安全、root、HTTP mock 和 Agent loop 测试源码。
+
+## In Progress
+
+- 扩展真机 smoke test，覆盖 root 提权、修改确认、超时和全屏交互程序。
+
+## Pending / Known Issues
+
+- PTY 已在 API 34 ARMv7 真机执行只读命令；不同 su/fullscreen 程序仍可能需要兼容调整。
+- Agent TUI 在 LLM 和捕获式命令执行期间保持同一 ratatui frame；全屏交互命令会临时挂起 TUI，退出后恢复并完整重绘。
+
+## Technical Decisions
+
+- reqwest 关闭默认 feature，只使用 rustls、JSON 和 stream feature。
+- Provider JSON 与 Agent 通过统一类型隔离。
+- su 命令作为独立 argv 传递，避免 nl2sh 自己做不安全 shell quoting。
+- 安全规则只允许自定义规则提高风险，内置规则不可被清空。
+- Android 使用 `/system/bin/sh`，非 Android 开发主机条件使用 `/bin/sh`。
+
+## Verification Performed
+
+- `cargo check`：通过。
+- `cargo test`：通过，测试覆盖配置/CLI、安全、历史日志、root、双 LLM 协议、重试/timeout、Agent 历史/失败/取消、真实 SIGINT、PTY、初始化顺序、TUI 重配置、双行布局和语义配色。
+- `cargo fmt --all -- --check`：通过。
+- `cargo clippy --all-targets -- -D warnings`：通过。
+- `cargo build --release`：通过。
+- `RUSTDOCFLAGS='-D missing_docs' cargo doc --no-deps`：通过。
+- `./cross-compile.sh`：通过；使用 `/home/ernest/Android/Sdk/ndk/28.2.13676358` 构建 Android 26 AArch64 PIE，解释器为 `/system/bin/linker64`。
+- ARMv7 真机：`--version`、Responses Agent 两轮请求、`getprop` PTY 执行/结果回传和 `adb shell -t` TUI Ctrl+Q 恢复均通过。
+
+## Next Steps
+
+1. 在 root 与非 root 设备补测确认、提权、超时和全屏程序。
+2. 根据真机结果优化窄屏布局和全屏交互程序切换。

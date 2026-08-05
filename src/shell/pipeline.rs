@@ -1,0 +1,114 @@
+use super::{process, ExecutionRequest, ExecutionResult};
+use anyhow::{Context, Result};
+use std::process::Stdio;
+use tokio::{
+    io::{AsyncReadExt, BufReader},
+    process::Command,
+    sync::mpsc,
+    time::Duration,
+};
+pub async fn execute(req: ExecutionRequest) -> Result<ExecutionResult> {
+    let mut cmd = Command::new(&req.program);
+    cmd.args(&req.args)
+        .stdin(if req.interactive {
+            Stdio::inherit()
+        } else {
+            Stdio::null()
+        })
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    unsafe {
+        cmd.pre_exec(|| {
+            if libc::setpgid(0, 0) < 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let mut child = cmd.spawn().context("failed to spawn shell")?;
+    let pid = child.id().context("child has no pid")?;
+    let out = child.stdout.take().context("missing stdout")?;
+    let err = child.stderr.take().context("missing stderr")?;
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let tx2 = tx.clone();
+    tokio::spawn(read(out, false, tx, req.output.clone()));
+    tokio::spawn(read(err, true, tx2, req.output.clone()));
+    enum End {
+        Status(std::process::ExitStatus),
+        Timeout,
+        Interrupted,
+    }
+    let end = if req.timeout_secs == 0 {
+        tokio::select! {
+            status = child.wait() => End::Status(status?),
+            signal = tokio::signal::ctrl_c() => { signal?; End::Interrupted }
+        }
+    } else {
+        tokio::select! {
+            status = child.wait() => End::Status(status?),
+            _ = tokio::time::sleep(Duration::from_secs(req.timeout_secs)) => End::Timeout,
+            signal = tokio::signal::ctrl_c() => { signal?; End::Interrupted }
+        }
+    };
+    let (timed, interrupted, status) = match end {
+        End::Status(status) => (false, false, Some(status)),
+        End::Timeout | End::Interrupted => {
+            let interrupted = matches!(end, End::Interrupted);
+            if interrupted {
+                process::signal_group(pid, nix::sys::signal::Signal::SIGINT);
+                tokio::time::sleep(Duration::from_millis(250)).await;
+                if child.try_wait()?.is_none() {
+                    process::signal_group(pid, nix::sys::signal::Signal::SIGTERM);
+                }
+                tokio::time::sleep(Duration::from_millis(250)).await;
+            } else {
+                process::signal_group(pid, nix::sys::signal::Signal::SIGTERM);
+                tokio::time::sleep(Duration::from_millis(500)).await;
+            }
+            if child.try_wait()?.is_none() {
+                process::signal_group(pid, nix::sys::signal::Signal::SIGKILL);
+            }
+            let status = child.wait().await.ok();
+            (!interrupted, interrupted, status)
+        }
+    };
+    let mut stdout = String::new();
+    let mut stderr = String::new();
+    while let Some((is_err, b)) = rx.recv().await {
+        if is_err {
+            stderr.push_str(&b)
+        } else {
+            stdout.push_str(&b)
+        }
+    }
+    Ok(ExecutionResult {
+        stdout,
+        stderr,
+        exit_code: status.and_then(|s| s.code()),
+        timed_out: timed,
+        interrupted,
+    })
+}
+async fn read<R: tokio::io::AsyncRead + Unpin>(
+    r: R,
+    e: bool,
+    tx: mpsc::UnboundedSender<(bool, String)>,
+    output: std::sync::Arc<dyn super::OutputSink>,
+) {
+    let mut r = BufReader::new(r);
+    let mut b = [0; 4096];
+    loop {
+        match r.read(&mut b).await {
+            Ok(0) | Err(_) => break,
+            Ok(n) => {
+                let text = super::filter_unsafe_ansi(&String::from_utf8_lossy(&b[..n]));
+                if e {
+                    output.stderr(&text)
+                } else {
+                    output.stdout(&text)
+                }
+                let _ = tx.send((e, text));
+            }
+        }
+    }
+}

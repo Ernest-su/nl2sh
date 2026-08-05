@@ -1,0 +1,26 @@
+api_key = "sk-xxx"
+model = "gpt-4o-mini"
+endpoint = "https://api.openai.com/v1"
+api_type = "responses"
+
+max_context_turns = 10
+max_agent_steps = 8
+llm_retry_count = 3
+llm_retry_base_delay_ms = 500
+llm_request_timeout_secs = 60
+
+execute_timeout_secs = 30
+interactive_execute_timeout_secs = 0
+execute_confirm_policy = "risk_only"
+security_level = "balanced"
+execute_user_mode = "auto"
+enable_pty = true
+ascii_symbols = false
+ui_language = "zh_cn" # zh_cn or en
+history_log_file = "nl2sh.log"
+
+# [[security_rules]]
+# id = "organization-policy"
+# pattern = "forbidden-command"
+# risk = "dangerous"
+# message = "This command is forbidden by local policy."
