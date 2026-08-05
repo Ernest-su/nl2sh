@@ -32,6 +32,7 @@
 - Native Windows PowerShell Android build/deploy/run script using the NDK Windows LLVM toolchain without Bash or WSL.
 - Linux and Windows PowerShell deploy/run scripts that push a prebuilt adjacent `nl2sh` binary without compiling it.
 - Arrow-key provider selection for common OpenAI-compatible API base URLs, custom endpoints, and visible API-key entry in initial setup and `/config`.
+- GitHub Actions release workflow that builds `aarch64-linux-android` and `armv7-linux-androideabi` release binaries with NDK r28c on tag push, packages each with `android-run-linux.sh`, `android-run-windows.ps1` and `config.toml.example` as `.tar.gz`/`.zip` with SHA256 checksums, and publishes them to a GitHub Release.
 
 ### Changed
 

@@ -1,0 +1,147 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag for the draft release (e.g. v0.1.0)"
+        required: false
+        default: "v0.1.0-draft"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  NDK_VERSION: r28c
+  NDK_FOLDER: android-ndk-r28c
+  NDK_ZIP: android-ndk-r28c-linux.zip
+  NDK_SHA1: a7b54a5de87fecd125a17d54f73c446199e72a64
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-linux-android
+          - target: armv7-linux-androideabi
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        id: toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
+
+      - name: Cache Cargo target
+        uses: actions/cache@v4
+        with:
+          path: target
+          key: ${{ runner.os }}-cargo-target-${{ matrix.target }}-${{ steps.toolchain.outputs.rustc-hash }}-${{ hashFiles('Cargo.lock') }}
+
+      - name: Cache Android NDK
+        id: ndk-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/${{ env.NDK_FOLDER }}
+          key: ${{ runner.os }}-ndk-${{ env.NDK_VERSION }}
+
+      - name: Download Android NDK
+        if: steps.ndk-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          cd "${RUNNER_TEMP}"
+          curl -fL --retry 3 -o "${NDK_ZIP}" "https://dl.google.com/android/repository/${NDK_ZIP}"
+          sha1sum -c - <<< "${NDK_SHA1}  ${NDK_ZIP}"
+          unzip -q "${NDK_ZIP}"
+          rm "${NDK_ZIP}"
+
+      - name: Cross-compile release binary
+        run: |
+          set -euo pipefail
+          export ANDROID_NDK_HOME="${RUNNER_TEMP}/${NDK_FOLDER}"
+          export RUST_TARGET="${{ matrix.target }}"
+          ./cross-compile.sh
+
+      - name: Verify binary ABI
+        run: file "target/${{ matrix.target }}/release/nl2sh"
+
+      - name: Assemble package
+        run: |
+          set -euo pipefail
+          NAME="nl2sh-${{ matrix.target }}"
+          mkdir -p "dist/${NAME}"
+          cp "target/${{ matrix.target }}/release/nl2sh" "dist/${NAME}/nl2sh"
+          cp android-run-linux.sh android-run-windows.ps1 config.toml.example "dist/${NAME}/"
+          chmod +x "dist/${NAME}/nl2sh" "dist/${NAME}/android-run-linux.sh"
+
+      - name: Create archives
+        run: |
+          set -euo pipefail
+          NAME="nl2sh-${{ matrix.target }}"
+          tar -C dist -czf "dist/${NAME}.tar.gz" "${NAME}"
+          (cd dist && zip -q -r "${NAME}.zip" "${NAME}")
+          (cd dist && sha256sum *.tar.gz *.zip > SHA256SUMS)
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/SHA256SUMS
+
+  release:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Determine release tag
+        id: tag
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            TAG="${INPUT_TAG:-draft}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
+          echo "Publishing as ${TAG}"
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: nl2sh ${{ steps.tag.outputs.tag }}
+          draft: ${{ github.event_name == 'workflow_dispatch' }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            artifacts/**/*.tar.gz
+            artifacts/**/*.zip
+            artifacts/**/SHA256SUMS

@@ -12,7 +12,8 @@ Phase 10：本地功能与验证基本完成，等待 Android 交叉编译和真
 - Test status: `cargo test` 已通过（53 个 unit/integration tests，0 failure）。
 - Android cross-compile status: 已使用 NDK r28c、API 26 成功构建 `aarch64-linux-android` release 产物。
 - Android device validation: 已在 KONKA Android TV（API 34、`armeabi-v7a`）完成部署、Agent/PTY 和 TUI smoke test。
-- Known blockers: 尚未验证真实 root 提权、修改确认、超时和全屏交互程序。
+- CI release workflow: 已添加 `.github/workflows/release.yml`，在推送 `v*` tag 时用 GitHub Actions 并行交叉编译 `aarch64-linux-android` 与 `armv7-linux-androideabi`，把预编译 `nl2sh` 与 `android-run-linux.sh`、`android-run-windows.ps1`、`config.toml.example` 打包为 `.tar.gz`/`.zip` 并附带 SHA256 校验和发布到 GitHub Release；`workflow_dispatch` 可手动触发草稿发布。
+- Known blockers: 尚未验证真实 root 提权、修改确认、超时和全屏交互程序；CI workflow 尚未在真实 GitHub Actions 上运行验证。
 
 ## Completed
 
@@ -46,6 +47,7 @@ Phase 10：本地功能与验证基本完成，等待 Android 交叉编译和真
 - F2 展开工具结果后按 ratatui 实际换行高度定位和滚动，不再用逻辑历史条目数限制大结果，长命令与输出可完整浏览。
 - 交互命令退出后恢复备用屏幕与鼠标捕获，并使 ratatui 强制完整重绘，避免第二轮对话只显示结果而框架消失。
 - 配置、安全、root、HTTP mock 和 Agent loop 测试源码。
+- GitHub Actions release workflow：tag 推送自动构建 AArch64/ARMv7 Android release、打包快速启动脚本并发布 Release。
 
 ## In Progress
 
@@ -81,3 +83,4 @@ Phase 10：本地功能与验证基本完成，等待 Android 交叉编译和真
 
 1. 在 root 与非 root 设备补测确认、提权、超时和全屏程序。
 2. 根据真机结果优化窄屏布局和全屏交互程序切换。
+3. 在真实 GitHub Actions 上验证 release workflow（`workflow_dispatch` 草稿）并发布首个版本。

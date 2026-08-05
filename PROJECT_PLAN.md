@@ -89,6 +89,7 @@
 - [x] API 34 ARMv7 Android device 基础 smoke。
 - [ ] 多设备 root/交互完整 smoke。
 
-## Phase 11 发布准备 — 未开始
+## Phase 11 发布准备 — 进行中
 
-- [ ] CI matrix、release artifact、校验和、license、安全审计和 0.1.0 发布说明。
+- [x] CI release matrix：tag 触发并行构建 AArch64/ARMv7 Android release，打包快速启动脚本与校验和，发布 GitHub Release。
+- [ ] license、安全审计和 0.1.0 发布说明。
