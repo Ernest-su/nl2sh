@@ -71,7 +71,7 @@ $env:ADB_SERIAL = "device-serial"
 
 ### 通过 GitHub Actions 自动发布
 
-仓库内置 `.github/workflows/release.yml`。推送 `v*` tag（如 `git tag v0.1.0 && git push --tags`）会触发 GitHub Actions：并行交叉编译 `aarch64-linux-android`（arm64-v8a）与 `armv7-linux-androideabi`（armeabi-v7a）两个 release 产物，每个产物连同 `android-run-linux.sh`、`android-run-windows.ps1` 和 `config.toml.example` 打包成 `.tar.gz` 与 `.zip`，并附带 `SHA256SUMS` 发布到对应 tag 的 GitHub Release。Actions 页的 `workflow_dispatch` 可手动触发并生成草稿 Release（tag 通过输入指定）。
+仓库内置 `.github/workflows/release.yml`。推送 `v*` tag（如 `git tag v0.1.0 && git push --tags`）会触发 GitHub Actions：并行交叉编译 `aarch64-linux-android`（arm64-v8a）与 `armv7-linux-androideabi`（armeabi-v7a）两个 release 产物，每个产物连同 Linux/Windows 启动脚本、`config.toml.example` 和面向普通用户的 `使用说明.md` 打包成 `.tar.gz` 与 `.zip`，并附带 `SHA256SUMS` 发布到对应 tag 的 GitHub Release。Actions 页的 `workflow_dispatch` 可手动触发并生成草稿 Release（tag 通过输入指定）。
 
 下载适合设备 ABI 的包解压后，Linux/macOS 直接运行 `./android-run-linux.sh`，Windows PowerShell 运行 `.\android-run-windows.ps1`；脚本会查找同目录的预编译 `nl2sh` 并完成 root adbd/`su` 回退部署，无需 Rust 或 NDK。
 
@@ -173,6 +173,7 @@ Android 真机建议依次验证：启动/退出后终端恢复；`id` 和 `getp
 
 ## 文档
 
+- `使用说明.md`：面向下载预编译压缩包的 Linux/Windows 用户。
 - `ARCHITECTURE.md`：模块、数据流、安全、执行与扩展架构。
 - `AGENTS.md`：后续 AI 维护约束。
 - `PROJECT_PLAN.md`：阶段计划与实际状态。

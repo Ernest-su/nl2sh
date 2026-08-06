@@ -12,7 +12,7 @@ Phase 10：本地功能与验证基本完成，等待 Android 交叉编译和真
 - Test status: `cargo test` 已通过（53 个 unit/integration tests，0 failure）。
 - Android cross-compile status: 已使用 NDK r28c、API 26 成功构建 `aarch64-linux-android` release 产物。
 - Android device validation: 已在 KONKA Android TV（API 34、`armeabi-v7a`）完成部署、Agent/PTY 和 TUI smoke test。
-- CI release workflow: 已添加 `.github/workflows/release.yml`，在推送 `v*` tag 时用 GitHub Actions 并行交叉编译 `aarch64-linux-android` 与 `armv7-linux-androideabi`，把预编译 `nl2sh` 与 `android-run-linux.sh`、`android-run-windows.ps1`、`config.toml.example` 打包为 `.tar.gz`/`.zip` 并附带 SHA256 校验和发布到 GitHub Release；`workflow_dispatch` 可手动触发草稿发布。
+- CI release workflow: 已添加 `.github/workflows/release.yml`，在推送 `v*` tag 时用 GitHub Actions 并行交叉编译 `aarch64-linux-android` 与 `armv7-linux-androideabi`，把预编译 `nl2sh` 与 Linux/Windows 启动脚本、`config.toml.example`、`使用说明.md` 打包为 `.tar.gz`/`.zip` 并附带 SHA256 校验和发布到 GitHub Release；`workflow_dispatch` 可手动触发草稿发布。
 - Known blockers: 尚未验证真实 root 提权、修改确认、超时和全屏交互程序；CI workflow 尚未在真实 GitHub Actions 上运行验证。
 
 ## Completed
@@ -48,6 +48,7 @@ Phase 10：本地功能与验证基本完成，等待 Android 交叉编译和真
 - 交互命令退出后恢复备用屏幕与鼠标捕获，并使 ratatui 强制完整重绘，避免第二轮对话只显示结果而框架消失。
 - 配置、安全、root、HTTP mock 和 Agent loop 测试源码。
 - GitHub Actions release workflow：tag 推送自动构建 AArch64/ARMv7 Android release、打包快速启动脚本并发布 Release。
+- 面向普通用户的中文使用说明，覆盖 ADB 连接、Linux/Windows 启动、32/64 位选择和常见故障，并纳入所有 release 压缩包。
 
 ## In Progress
 
@@ -73,6 +74,7 @@ Phase 10：本地功能与验证基本完成，等待 Android 交叉编译和真
 - `cargo test`：通过，测试覆盖配置/CLI、安全、历史日志、root、双 LLM 协议、重试/timeout、Agent 历史/失败/取消、真实 SIGINT、PTY、初始化顺序、TUI 重配置、双行布局和语义配色。
 - `android-run.ps1`：PowerShell AST 语法解析与 `git diff --check` 通过；因当前未授权实际部署，未执行 adb/NDK 真机流程。
 - `cargo fmt --all -- --check`：通过。
+- Release 用户说明打包：`release.yml` 已通过 `actionlint`，已在本地模拟 AArch64/ARMv7 目录并确认 `.tar.gz` 和 `.zip` 均包含 `使用说明.md`。
 - `cargo clippy --all-targets -- -D warnings`：通过。
 - `cargo build --release`：通过。
 - `RUSTDOCFLAGS='-D missing_docs' cargo doc --no-deps`：通过。

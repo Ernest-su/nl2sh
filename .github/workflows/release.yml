@@ -55,7 +55,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: target
-          key: ${{ runner.os }}-cargo-target-${{ matrix.target }}-${{ steps.toolchain.outputs.rustc-hash }}-${{ hashFiles('Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-target-${{ matrix.target }}-${{ steps.toolchain.outputs.cachekey }}-${{ hashFiles('Cargo.lock') }}
 
       - name: Cache Android NDK
         id: ndk-cache
@@ -90,7 +90,7 @@ jobs:
           NAME="nl2sh-${{ matrix.target }}"
           mkdir -p "dist/${NAME}"
           cp "target/${{ matrix.target }}/release/nl2sh" "dist/${NAME}/nl2sh"
-          cp android-run-linux.sh android-run-windows.ps1 config.toml.example "dist/${NAME}/"
+          cp android-run-linux.sh android-run-windows.ps1 config.toml.example 使用说明.md "dist/${NAME}/"
           chmod +x "dist/${NAME}/nl2sh" "dist/${NAME}/android-run-linux.sh"
 
       - name: Create archives
@@ -99,7 +99,7 @@ jobs:
           NAME="nl2sh-${{ matrix.target }}"
           tar -C dist -czf "dist/${NAME}.tar.gz" "${NAME}"
           (cd dist && zip -q -r "${NAME}.zip" "${NAME}")
-          (cd dist && sha256sum *.tar.gz *.zip > SHA256SUMS)
+          (cd dist && sha256sum -- *.tar.gz *.zip > SHA256SUMS)
 
       - name: Upload package artifacts
         uses: actions/upload-artifact@v4
