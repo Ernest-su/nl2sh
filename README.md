@@ -1,10 +1,14 @@
 # nl2sh
 
-Natural Language to Shell 是一个面向 Android 原生 `adb shell` 的单二进制 AI Shell Agent。它把自然语言交给 OpenAI 兼容模型，通过 Tool Calling 生成命令，在本地安全分类和确认之后执行，并把真实结果返回模型。
+Natural Language to Shell 是面向 Android 原生 `adb shell` 的类 Hermes AI Agent。核心程序以单个 Android 可执行文件交付，无需 Termux 或设备端运行时依赖；同时提供丰富的 TUI，用于多轮对话、实时命令输出、安全确认、历史浏览和配置。它把自然语言交给 OpenAI 兼容模型，通过 Tool Calling 生成命令，在本地安全分类和确认之后执行，并把真实结果返回模型。
+
+“类 Hermes”指的是自主 Agent 的产品形态和 Tool Calling 交互方式；nl2sh 专注 Android shell，不声称与 Hermes 的 API、插件或全部功能兼容。
 
 ## 特性与安全边界
 
 - 默认使用多轮 Agent Tool Calling；也支持只生成单条命令的 Command 模式。
+- 核心程序是单文件 Android 可执行程序，可直接推送到设备运行。
+- 丰富 TUI 支持实时状态与输出、内嵌确认、历史滚动、工具结果折叠、Markdown 渲染、中英文界面和热重配置。
 - 支持 Chat Completions 与 Responses API、自定义 OpenAI 兼容 endpoint。
 - `balanced` 默认策略自动执行只读查询、确认修改操作、二次确认危险操作。
 - LLM 不能决定确认、风险等级、root 提升或超时；用户编辑后的命令必须重新分类。

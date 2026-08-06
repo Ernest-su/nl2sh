@@ -2,7 +2,7 @@
 
 ## 项目简介
 
-nl2sh 是 Android 优先的 stable Rust 2021 单二进制 AI Shell Agent，使用 tokio、ratatui/crossterm、reqwest rustls、serde 和 clap。默认模式为 Tool Calling Agent。核心安全边界永远是 `LLM → Security → Confirmation → Execution`；模型、root 模式和用户编辑都不能绕过它。
+nl2sh 定位为 Android 原生 shell 版的类 Hermes AI Agent：使用 stable Rust 2021 构建，核心程序以单个可执行文件交付，并提供丰富的 ratatui/crossterm TUI。项目还使用 tokio、reqwest rustls、serde 和 clap，默认模式为多轮 Tool Calling Agent。“类 Hermes”描述产品形态与 Agent 交互方式，不表示 API、插件或功能完全兼容。核心安全边界永远是 `LLM → Security → Confirmation → Execution`；模型、root 模式和用户编辑都不能绕过它。
 
 ## 开始工作前
 

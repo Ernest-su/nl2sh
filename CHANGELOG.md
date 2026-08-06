@@ -37,6 +37,7 @@
 
 ### Changed
 
+- Unified project documentation around nl2sh's positioning as an Android shell-focused Hermes-like AI agent delivered as a single executable with a rich TUI; this describes product shape, not Hermes API or plugin compatibility.
 - Restyled the input row as a Codex-like muted-gray editor strip while keeping the shortcut separator, status row, and bottom separator on the terminal background.
 - Agent final-answer guidance now favors user-language summaries, Markdown tables for structured comparisons, and concise readable text over raw tool output.
 - Documented Android's misleading `No such file or directory` error for ABI/ELF-interpreter mismatches, including ARMv7 rebuild and verification commands.

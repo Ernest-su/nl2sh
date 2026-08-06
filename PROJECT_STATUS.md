@@ -8,6 +8,7 @@ Phase 10：本地功能与验证基本完成，等待 Android 交叉编译和真
 
 ## Overall Status
 
+- Product positioning: Android 原生 shell 版的类 Hermes AI Agent；核心程序以单个可执行文件交付，提供多轮 Tool Calling 和丰富 TUI，不声称与 Hermes API 或插件兼容。
 - Build status: `cargo check` 和 `cargo build --release` 已于 2026-08-05 在当前 Linux 主机通过。
 - Test status: `cargo test` 已通过（53 个 unit/integration tests，0 failure）。
 - Android cross-compile status: 已使用 NDK r28c、API 26 成功构建 `aarch64-linux-android` release 产物。
@@ -17,6 +18,7 @@ Phase 10：本地功能与验证基本完成，等待 Android 交叉编译和真
 
 ## Completed
 
+- Android shell 版类 Hermes AI Agent 的产品定位，以单文件 Android 可执行程序和丰富 TUI 为主要交付形态。
 - 模块化 Cargo 工程、CLI、配置加载/校验/向导。
 - 两种 OpenAI API adapter 与统一 LLM trait。
 - Agent loop、shell tool、真实结果回传和最大轮数。

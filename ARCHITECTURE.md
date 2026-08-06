@@ -1,5 +1,9 @@
 # Architecture
 
+## 产品定位
+
+nl2sh 是 Android 原生 shell 版的类 Hermes AI Agent，以多轮 Tool Calling 连接模型、本地安全引擎和真实 Android 执行结果。其部署单元是单个 stable Rust Android 可执行文件，配置、日志和发布辅助脚本不是运行时程序依赖。终端交互以丰富 TUI 为主，同时保留单次 CLI 模式。“类 Hermes”不构成对 Hermes API、插件系统或功能集的兼容承诺。
+
 ## 系统整体架构
 
 ```text

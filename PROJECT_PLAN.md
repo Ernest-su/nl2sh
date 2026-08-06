@@ -4,6 +4,7 @@
 
 ## Phase 0 项目初始化与工程基线 — 完成
 
+- [x] 确立 Android shell 版类 Hermes AI Agent 的产品定位，以单个可执行文件和丰富 TUI 为核心交付形态。
 - [x] 创建 Cargo 工程、模块树、release profile、gitignore。
 - [x] 建立 stable Rust 2021 和 rustls-only 依赖基线。
 - [x] 本地 build/test/release 工程基线。
