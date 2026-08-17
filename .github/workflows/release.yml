@@ -91,6 +91,7 @@ jobs:
           mkdir -p "dist/${NAME}"
           cp "target/${{ matrix.target }}/release/nl2sh" "dist/${NAME}/nl2sh"
           cp android-run-linux.sh android-run-windows.ps1 config.toml.example 使用说明.md "dist/${NAME}/"
+          cp -r screenshots "dist/${NAME}/screenshots"
           chmod +x "dist/${NAME}/nl2sh" "dist/${NAME}/android-run-linux.sh"
 
       - name: Create archives

@@ -34,6 +34,7 @@
 - Arrow-key provider selection for common OpenAI-compatible API base URLs, custom endpoints, and visible API-key entry in initial setup and `/config`.
 - GitHub Actions release workflow that builds `aarch64-linux-android` and `armv7-linux-androideabi` release binaries with NDK r28c on tag push, packages each with `android-run-linux.sh`, `android-run-windows.ps1` and `config.toml.example` as `.tar.gz`/`.zip` with SHA256 checksums, and publishes them to a GitHub Release.
 - A plain-language Chinese user guide covering ADB setup, Linux and Windows launch steps, ABI package selection, first-run configuration, and common troubleshooting; every 32-bit and 64-bit release archive includes it.
+- Screenshot of the memory-query TUI conversation embedded in the Chinese user guide and README, and included in release archives so the packaged guide keeps its image.
 
 ### Changed
 

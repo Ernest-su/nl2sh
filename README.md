@@ -156,6 +156,10 @@ Command 模式生成、分类后执行单条命令；`--dry-run` 只展示。修
 
 包版本查询（如 `pm list packages --show-versioncode`、`dumpsys package … | grep versionName`，以及只读的命令替换循环）按只读操作处理，不会因为使用 `$()` 本身反复弹出安全确认；替换内部的修改或危险命令仍会重新分类并确认。
 
+例如，输入“查看当前内存使用情况”后，TUI 会实时显示命令输出、状态和 Agent 的最终总结：
+
+![Querying current memory usage in the TUI](screenshots/query_memory.jpg)
+
 ## 测试和真机 smoke test
 
 ```bash

@@ -51,6 +51,7 @@ Phase 10：本地功能与验证基本完成，等待 Android 交叉编译和真
 - 配置、安全、root、HTTP mock 和 Agent loop 测试源码。
 - GitHub Actions release workflow：tag 推送自动构建 AArch64/ARMv7 Android release、打包快速启动脚本并发布 Release。
 - 面向普通用户的中文使用说明，覆盖 ADB 连接、Linux/Windows 启动、32/64 位选择和常见故障，并纳入所有 release 压缩包。
+- 内存查询示例截图嵌入中文使用说明与 README，release 压缩包同步包含 `screenshots/`，保证打包后的说明图文完整。
 
 ## In Progress
 
