@@ -42,7 +42,7 @@ pub fn draw(f: &mut Frame, app: &App) {
     f.render_widget(
         Paragraph::new(Text::from(lines)).scroll((scroll, 0)).block(
             Block::default()
-                .borders(Borders::ALL)
+                .borders(Borders::TOP | Borders::BOTTOM)
                 .title(match app.language {
                     UiLanguage::ZhCn => "对话历史",
                     UiLanguage::En => "Conversation",
@@ -82,8 +82,8 @@ pub fn draw(f: &mut Frame, app: &App) {
             .borders(Borders::TOP | Borders::BOTTOM)
             .border_style(Style::default().fg(Color::DarkGray))
             .title(match app.language {
-                UiLanguage::ZhCn => "Enter 发送 | F2 结果 | 滚轮/PgUp/PgDn 历史 | Ctrl+Q 退出",
-                UiLanguage::En => "Enter send | F2 results | Wheel/PgUp/PgDn history | Ctrl+Q quit",
+                UiLanguage::ZhCn => "Enter 发送 | F2 结果 | 滚轮/PgUp/PgDn | Shift+拖选/右键复制 | Ctrl+Q",
+                UiLanguage::En => "Enter send | F2 results | Wheel/PgUp/PgDn | Shift+drag/right-click copy | Ctrl+Q",
             }),
     );
     f.render_widget(input, areas[2]);

@@ -13,7 +13,7 @@ Natural Language to Shell 是面向 Android 原生 `adb shell` 的类 Hermes AI 
 - `balanced` 默认策略自动执行只读查询、确认修改操作、二次确认危险操作。
 - LLM 不能决定确认、风险等级、root 提升或超时；用户编辑后的命令必须重新分类。
 - 支持当前用户、自动提升和强制 root 模式。非 root 提升使用参数化的 `su -c <command>`，不拼接 shell 字符串。
-- crossterm + ratatui 终端界面通过 RAII 和 panic hook 恢复 raw mode、alternate screen、鼠标捕获和光标。
+- crossterm + ratatui 终端界面通过 RAII 和 panic hook 恢复 raw mode、alternate screen、鼠标捕获和光标；滚轮浏览历史，Shift+拖选后可使用宿主终端的右键菜单复制。
 - 主要目标为 Android API 26+、`aarch64-linux-android` 和 `/data/local/tmp`。不依赖或专门支持 Termux。
 
 默认执行路径使用 Unix `openpty`：slave 成为子进程 controlling terminal，master 非阻塞读取，stdout/stderr 合并，超时会清理整个进程组。识别到全屏/交互命令时，nl2sh 临时使用本地 raw mode，桥接 stdin/master 输出并同步窗口尺寸，结束后恢复终端。不同 Android 终端和全屏应用仍可能存在兼容差异，详见 `PROJECT_STATUS.md`。
@@ -137,7 +137,7 @@ cp config.toml.example config.toml
 
 `history_log_file` 默认为 `nl2sh.log`，相对路径按 `config.toml` 所在目录解析。日志采用逐行 JSON，记录用户输入、命令、输出、结果和错误并在每条记录后刷新；新文件权限为 `0600`。日志可能包含命令输出中的设备信息，排查完成后应按实际保密要求保管或清理，但不会写入 API Key。
 
-`ui_language` 控制终端界面语言，可选 `zh_cn` 或 `en`，默认 `zh_cn`。首次初始化及 `/config` 重配置会先询问界面语言，之后的向导、状态栏、确认弹窗和快捷键说明使用所选语言。`/config` 会优先选中当前 URL 对应的内置服务商，未知 URL 则进入自定义项；API Key 留空会保留当前配置。每次启动时，对话历史区会展示常用任务示例以及 `/config`、Enter、滚轮/PageUp/PageDown、Ctrl+C、Ctrl+Q 的操作说明；这些提示不会发送给模型。
+`ui_language` 控制终端界面语言，可选 `zh_cn` 或 `en`，默认 `zh_cn`。首次初始化及 `/config` 重配置会先询问界面语言，之后的向导、状态栏、确认弹窗和快捷键说明使用所选语言。`/config` 会优先选中当前 URL 对应的内置服务商，未知 URL 则进入自定义项；API Key 留空会保留当前配置。每次启动时，对话历史区会展示常用任务示例以及 `/config`、Enter、滚轮/PageUp/PageDown、Shift+拖选与右键复制、Ctrl+C、Ctrl+Q 的操作说明；这些提示不会发送给模型。
 
 ## 使用
 
@@ -150,7 +150,7 @@ nl2sh --endpoint http://127.0.0.1:11434/v1 --model local --api-type chat_complet
 nl2sh --no-pty --ascii
 ```
 
-Command 模式生成、分类后执行单条命令；`--dry-run` 只展示。修改或危险命令在无 TTY 时会拒绝，不能用管道伪造确认。需要多轮执行和结果回传时使用默认 Agent 模式。Agent TUI 在请求和捕获式执行期间保持活跃，并在界面内显示输出与确认弹窗；命令运行时实时展示输出，完成后工具结果默认折叠，按 F2 可统一展开或收起，完整结果仍写入日志并回传模型。Agent 总结支持终端 Markdown 渲染：标题、粗体、斜体、行内代码、列表、引用、代码块、链接、分隔线和表格；表格按中英文显示宽度对齐、过长单元格自动换行，极窄屏幕降级为键值列表。底部仅输入文字所在行使用低亮度淡灰背景，上下分割线和状态行保持终端默认背景。历史窗口支持鼠标滚轮和 PageUp/PageDown，另支持 Enter 提交、`/config` 重新配置 provider、Ctrl+C 取消当前任务（空闲时清空输入）、Ctrl+Q 安全退出。`/config` 会保留安全和执行设置，依次更新 Base URL、Key、模型和 API 类型，然后重建客户端返回 TUI。
+Command 模式生成、分类后执行单条命令；`--dry-run` 只展示。修改或危险命令在无 TTY 时会拒绝，不能用管道伪造确认。需要多轮执行和结果回传时使用默认 Agent 模式。Agent TUI 在请求和捕获式执行期间保持活跃，并在界面内显示输出与确认弹窗；命令运行时实时展示输出，完成后工具结果默认折叠，按 F2 可统一展开或收起，完整结果仍写入日志并回传模型。Agent 总结支持终端 Markdown 渲染：标题、粗体、斜体、行内代码、列表、引用、代码块、链接、分隔线和表格；表格按中英文显示宽度对齐、过长单元格自动换行，极窄屏幕降级为键值列表。底部仅输入文字所在行使用低亮度淡灰背景，上下分割线和状态行保持终端默认背景。TUI 启用鼠标追踪以稳定接收滚轮；复制屏幕文字时按住 Shift 拖选，由宿主终端高亮选区，再通过右键系统菜单复制。另支持 PageUp/PageDown 浏览历史、Enter 提交、`/config` 重新配置 provider、Ctrl+C 取消当前任务（空闲时清空输入）、Ctrl+Q 安全退出。`/config` 会保留安全和执行设置，依次更新 Base URL、Key、模型和 API 类型，然后重建客户端返回 TUI。
 
 风险等级为 `ReadOnly`、`Mutating`、`Dangerous`、`Critical`。内置检测覆盖危险删除、格式化、块设备写入、递归根权限修改、重启/关机、分区擦除和读写 remount；自定义规则使用 `[[security_rules]]` 添加，不能替换内置规则。
 

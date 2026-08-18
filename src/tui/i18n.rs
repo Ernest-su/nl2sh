@@ -11,7 +11,7 @@ pub(crate) fn startup_history(language: UiLanguage, ascii: bool) -> Vec<String> 
             format!("{hint} 常用示例：查找占用空间最大的十个文件"),
             format!("{hint} 常用示例：查看正在运行的进程和网络连接"),
             format!("{hint} 常用命令：/config 重新配置模型服务"),
-            format!("{hint} 操作说明：Enter 发送；F2 展开/收起工具结果；滚轮浏览历史"),
+            format!("{hint} 操作说明：滚轮浏览历史；Shift+拖选文字后用右键菜单复制"),
             format!("{hint} 操作说明：Ctrl+C 取消任务或清空输入；Ctrl+Q 安全退出"),
         ],
         UiLanguage::En => vec![
@@ -21,7 +21,7 @@ pub(crate) fn startup_history(language: UiLanguage, ascii: bool) -> Vec<String> 
             format!("{hint} Example: find the ten largest files"),
             format!("{hint} Example: show running processes and network connections"),
             format!("{hint} Command: /config reconfigure the model provider"),
-            format!("{hint} Controls: Enter sends; F2 toggles tool results; Wheel browses history"),
+            format!("{hint} Controls: wheel browses history; Shift+drag selects text for context-menu copy"),
             format!("{hint} Controls: Ctrl+C cancels or clears input; Ctrl+Q quits safely"),
         ],
     }
@@ -66,7 +66,9 @@ mod tests {
         assert!(english.len() >= 8);
         assert!(chinese.iter().any(|line| line.contains("应用")));
         assert!(chinese.iter().any(|line| line.contains("/config")));
+        assert!(chinese.iter().any(|line| line.contains("Shift+拖选")));
         assert!(english.iter().any(|line| line.contains("applications")));
+        assert!(english.iter().any(|line| line.contains("Shift+drag")));
         assert!(english.iter().any(|line| line.contains("Ctrl+Q")));
     }
 }

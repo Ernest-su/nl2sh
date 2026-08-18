@@ -6,6 +6,7 @@
 
 ### Added
 
+- Mouse-wheel conversation scrolling together with native Shift+drag highlighting and right-click context-menu copy.
 - Initial Rust project structure and Android cross-build script.
 - Configuration loading, validation, secure initialization wizard and environment API-key override.
 - CLI endpoint, model, and API-type overrides applied before final validation.
