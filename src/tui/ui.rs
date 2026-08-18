@@ -58,10 +58,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         input_row,
     );
     let input = Paragraph::new(Text::from(vec![
-        Line::styled(
-            format!("> {}", app.input.text),
-            Style::default().fg(Color::White).bg(input_background),
-        ),
+        input_editor_line(app, areas[2].width as usize, input_background),
         Line::from(match app.language {
             UiLanguage::ZhCn => format!(
                 "状态：{} | 对话轮次 {} | 剩余上下文 {}",
@@ -101,6 +98,46 @@ pub fn draw(f: &mut Frame, app: &App) {
             area,
         );
     }
+}
+
+fn input_editor_line(app: &App, width: usize, background: Color) -> Line<'static> {
+    let available = width.saturating_sub(3);
+    let cursor_character = app.input.text[..app.input.cursor()].chars().count();
+    let characters = app.input.text.chars().collect::<Vec<_>>();
+    let mut start = 0;
+    while characters[start..cursor_character]
+        .iter()
+        .map(|character| UnicodeWidthChar::width(*character).unwrap_or(0))
+        .sum::<usize>()
+        >= available.max(1)
+    {
+        start += 1;
+    }
+    let mut before = String::new();
+    let mut after = String::new();
+    let mut used = 0;
+    for (index, character) in characters.iter().enumerate().skip(start) {
+        let character_width = UnicodeWidthChar::width(*character).unwrap_or(0);
+        if used + character_width + 1 > available {
+            break;
+        }
+        if index < cursor_character {
+            before.push(*character);
+        } else {
+            after.push(*character);
+        }
+        used += character_width;
+    }
+    let base = Style::default().fg(Color::White).bg(background);
+    let cursor = if app.cursor_visible { "│" } else { " " };
+    Line::from(vec![
+        ratatui::text::Span::styled(format!("> {before}"), base),
+        ratatui::text::Span::styled(
+            cursor,
+            Style::default().fg(Color::Rgb(7, 193, 96)).bg(background),
+        ),
+        ratatui::text::Span::styled(after, base),
+    ])
 }
 
 fn wrap_rendered_lines(lines: Vec<Line<'_>>, width: usize) -> Vec<Line<'static>> {
@@ -245,9 +282,11 @@ mod tests {
         let backend = TestBackend::new(100, 30);
         let mut terminal = Terminal::new(backend)?;
         let mut app = App {
-            input: Input {
-                text: "hello".into(),
-            },
+            input: Input::from("hello"),
+            input_history: Vec::new(),
+            input_history_index: None,
+            input_history_draft: String::new(),
+            cursor_visible: true,
             history: Vec::new(),
             conversation_scroll: 0,
             tool_results_expanded: false,
@@ -270,6 +309,7 @@ mod tests {
                 .collect::<String>()
         };
         assert!(row(27).contains("> hello"));
+        assert_eq!(buffer[(7, 27)].fg, Color::Rgb(7, 193, 96));
         assert!(row(28).contains("status: idle | turn 2 | context remaining 8"));
         assert_eq!(buffer[(10, 27)].bg, Color::Rgb(52, 52, 52));
         assert_eq!(buffer[(10, 28)].bg, Color::Reset);
@@ -337,6 +377,10 @@ mod tests {
         let mut terminal = Terminal::new(backend)?;
         let mut app = App {
             input: Input::default(),
+            input_history: Vec::new(),
+            input_history_index: None,
+            input_history_draft: String::new(),
+            cursor_visible: true,
             history: vec![crate::tui::session::encode_tool_result(
                 "[OK]",
                 &format!("executed_command={}\nLAST_MARKER", "x".repeat(240)),

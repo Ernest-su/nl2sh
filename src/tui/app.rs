@@ -2,8 +2,13 @@ use super::{events, i18n, input::Input, terminal::TerminalGuard, ui};
 use crate::config::UiLanguage;
 use anyhow::Result;
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers, MouseEventKind};
+use std::time::{Duration, Instant};
 pub struct App {
     pub input: Input,
+    pub input_history: Vec<String>,
+    pub input_history_index: Option<usize>,
+    pub input_history_draft: String,
+    pub cursor_visible: bool,
     pub history: Vec<String>,
     /// Number of conversation rows kept above the automatic bottom position.
     pub conversation_scroll: usize,
@@ -66,6 +71,10 @@ fn run_inner(options: TuiOptions, mut history: Vec<String>) -> Result<Option<Str
     }
     let mut app = App {
         input: Input::default(),
+        input_history: Vec::new(),
+        input_history_index: None,
+        input_history_draft: String::new(),
+        cursor_visible: true,
         history,
         conversation_scroll: 0,
         tool_results_expanded: false,
@@ -80,7 +89,12 @@ fn run_inner(options: TuiOptions, mut history: Vec<String>) -> Result<Option<Str
         status: i18n::idle(options.language).into(),
         popup: None,
     };
+    let mut last_cursor_blink = Instant::now();
     loop {
+        if last_cursor_blink.elapsed() >= Duration::from_millis(500) {
+            app.cursor_visible = !app.cursor_visible;
+            last_cursor_blink = Instant::now();
+        }
         term.terminal().draw(|f| ui::draw(f, &app))?;
         if let Some(event) = events::next()? {
             match event {
@@ -89,23 +103,36 @@ fn run_inner(options: TuiOptions, mut history: Vec<String>) -> Result<Option<Str
                     MouseEventKind::ScrollDown => app.scroll_conversation_down(3),
                     _ => {}
                 },
-                Event::Key(k) if k.kind == KeyEventKind::Press => match (k.code, k.modifiers) {
-                    (KeyCode::Char('q'), KeyModifiers::CONTROL) => return Ok(None),
-                    (KeyCode::Char('c'), KeyModifiers::CONTROL) => app.input.text.clear(),
-                    (KeyCode::Esc, _) => {}
-                    (KeyCode::PageUp, _) => app.scroll_conversation_up(10),
-                    (KeyCode::PageDown, _) => app.scroll_conversation_down(10),
-                    (KeyCode::F(2), _) => app.tool_results_expanded = !app.tool_results_expanded,
-                    (KeyCode::Enter, _) => {
-                        let s = app.input.take();
-                        if !s.trim().is_empty() {
-                            return Ok(Some(s));
+                Event::Key(k) if k.kind == KeyEventKind::Press => {
+                    app.cursor_visible = true;
+                    last_cursor_blink = Instant::now();
+                    match (k.code, k.modifiers) {
+                        (KeyCode::Char('q'), KeyModifiers::CONTROL) => return Ok(None),
+                        (KeyCode::Char('c'), KeyModifiers::CONTROL) => app.input.clear(),
+                        (KeyCode::Esc, _) => {}
+                        (KeyCode::PageUp, _) => app.scroll_conversation_up(10),
+                        (KeyCode::PageDown, _) => app.scroll_conversation_down(10),
+                        (KeyCode::F(2), _) => {
+                            app.tool_results_expanded = !app.tool_results_expanded
                         }
+                        (KeyCode::Enter, _) => {
+                            let s = app.take_input();
+                            if !s.trim().is_empty() {
+                                return Ok(Some(s));
+                            }
+                        }
+                        (KeyCode::Up, _) => app.previous_input(),
+                        (KeyCode::Down, _) => app.next_input(),
+                        (KeyCode::Left, _) => app.input.move_left(),
+                        (KeyCode::Right, _) => app.input.move_right(),
+                        (KeyCode::Home, _) => app.input.move_home(),
+                        (KeyCode::End, _) => app.input.move_end(),
+                        (KeyCode::Backspace, _) => app.input.backspace(),
+                        (KeyCode::Delete, _) => app.input.delete(),
+                        (KeyCode::Char(c), _) => app.input.push(c),
+                        _ => {}
                     }
-                    (KeyCode::Backspace, _) => app.input.backspace(),
-                    (KeyCode::Char(c), _) => app.input.push(c),
-                    _ => {}
-                },
+                }
                 _ => {}
             }
         }
@@ -113,6 +140,48 @@ fn run_inner(options: TuiOptions, mut history: Vec<String>) -> Result<Option<Str
 }
 
 impl App {
+    pub(crate) fn take_input(&mut self) -> String {
+        let input = self.input.take();
+        if !input.trim().is_empty()
+            && self.input_history.last().map(String::as_str) != Some(input.as_str())
+        {
+            self.input_history.push(input.clone());
+        }
+        self.input_history_index = None;
+        self.input_history_draft.clear();
+        input
+    }
+
+    pub(crate) fn previous_input(&mut self) {
+        if self.input_history.is_empty() {
+            return;
+        }
+        let index = match self.input_history_index {
+            Some(index) => index.saturating_sub(1),
+            None => {
+                self.input_history_draft = self.input.text.clone();
+                self.input_history.len() - 1
+            }
+        };
+        self.input_history_index = Some(index);
+        self.input.set(self.input_history[index].clone());
+    }
+
+    pub(crate) fn next_input(&mut self) {
+        let Some(index) = self.input_history_index else {
+            return;
+        };
+        if index + 1 < self.input_history.len() {
+            let next = index + 1;
+            self.input_history_index = Some(next);
+            self.input.set(self.input_history[next].clone());
+        } else {
+            self.input_history_index = None;
+            self.input
+                .set(std::mem::take(&mut self.input_history_draft));
+        }
+    }
+
     pub(crate) fn scroll_conversation_up(&mut self, rows: usize) {
         self.conversation_scroll = self
             .conversation_scroll
@@ -132,6 +201,10 @@ mod tests {
     fn app_with_history(rows: usize) -> App {
         App {
             input: Input::default(),
+            input_history: Vec::new(),
+            input_history_index: None,
+            input_history_draft: String::new(),
+            cursor_visible: true,
             history: (0..rows).map(|row| row.to_string()).collect(),
             conversation_scroll: 0,
             tool_results_expanded: false,
@@ -159,5 +232,19 @@ mod tests {
         assert_eq!(app.conversation_scroll, 98);
         app.scroll_conversation_down(100);
         assert_eq!(app.conversation_scroll, 0);
+    }
+
+    #[test]
+    fn input_history_restores_the_draft_after_navigation() {
+        let mut app = app_with_history(0);
+        app.input_history = vec!["first".into(), "second".into()];
+        app.input.set("draft".into());
+        app.previous_input();
+        assert_eq!(app.input.text, "second");
+        app.previous_input();
+        assert_eq!(app.input.text, "first");
+        app.next_input();
+        app.next_input();
+        assert_eq!(app.input.text, "draft");
     }
 }

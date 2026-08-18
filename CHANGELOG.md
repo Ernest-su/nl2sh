@@ -7,6 +7,7 @@
 ### Added
 
 - Mouse-wheel conversation scrolling together with native Shift+drag highlighting and right-click context-menu copy.
+- A blinking WeChat-green input caret, Unicode-safe cursor editing, and Up/Down input-history recall.
 - Initial Rust project structure and Android cross-build script.
 - Configuration loading, validation, secure initialization wizard and environment API-key override.
 - CLI endpoint, model, and API-type overrides applied before final validation.

@@ -29,7 +29,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tokio::sync::{mpsc, oneshot};
 
@@ -97,6 +97,10 @@ async fn run_inner(
     let mut terminal = TerminalGuard::enter()?;
     let mut app = App {
         input: Input::default(),
+        input_history: Vec::new(),
+        input_history_index: None,
+        input_history_draft: String::new(),
+        cursor_visible: true,
         history: snapshot(&history)?,
         conversation_scroll: 0,
         tool_results_expanded: false,
@@ -117,8 +121,13 @@ async fn run_inner(
     let mut quit_after_cancel = false;
     let mut cancel_signal_pending = false;
     let mut was_suspended = false;
+    let mut last_cursor_blink = Instant::now();
 
     loop {
+        if last_cursor_blink.elapsed() >= Duration::from_millis(500) {
+            app.cursor_visible = !app.cursor_visible;
+            last_cursor_blink = Instant::now();
+        }
         let is_suspended = suspended.load(Ordering::Acquire);
         if was_suspended && !is_suspended {
             // The interactive child returned to a fresh alternate screen.
@@ -219,6 +228,8 @@ async fn run_inner(
             if key.kind != KeyEventKind::Press {
                 continue;
             }
+            app.cursor_visible = true;
+            last_cursor_blink = Instant::now();
             if key.code == KeyCode::Char('q') && key.modifiers == KeyModifiers::CONTROL {
                 if active.is_some() {
                     if let Some(pending) = confirmation.as_mut() {
@@ -268,10 +279,10 @@ async fn run_inner(
                 (KeyCode::PageUp, _) => app.scroll_conversation_up(10),
                 (KeyCode::PageDown, _) => app.scroll_conversation_down(10),
                 (KeyCode::F(2), _) => app.tool_results_expanded = !app.tool_results_expanded,
-                (KeyCode::Char('c'), KeyModifiers::CONTROL) => app.input.text.clear(),
+                (KeyCode::Char('c'), KeyModifiers::CONTROL) => app.input.clear(),
                 (KeyCode::Esc, _) => {}
                 (KeyCode::Enter, _) => {
-                    let input = app.input.take();
+                    let input = app.take_input();
                     if input.trim() == "/config" {
                         return Ok(SessionExit::Reconfigure);
                     }
@@ -287,7 +298,14 @@ async fn run_inner(
                         ));
                     }
                 }
+                (KeyCode::Up, _) => app.previous_input(),
+                (KeyCode::Down, _) => app.next_input(),
+                (KeyCode::Left, _) => app.input.move_left(),
+                (KeyCode::Right, _) => app.input.move_right(),
+                (KeyCode::Home, _) => app.input.move_home(),
+                (KeyCode::End, _) => app.input.move_end(),
                 (KeyCode::Backspace, _) => app.input.backspace(),
+                (KeyCode::Delete, _) => app.input.delete(),
                 (KeyCode::Char(character), _) => app.input.push(character),
                 _ => {}
             }
