@@ -25,6 +25,7 @@
 - [x] 基础输入、Enter、Ctrl+C、Ctrl+Q。
 - [x] 完整历史、滚动、ASCII symbol set 和终端 resize。
 - [x] 单-frame Agent 后台任务、实时状态/输出和确认弹窗；全屏交互命令按需挂起并恢复。
+- [x] 集中式深色 Theme/Palette、TrueColor/ANSI 256 fallback 和跨组件语义配色。
 
 输出：可启动输入 TUI。风险：adb 终端宽度和 Emoji。
 

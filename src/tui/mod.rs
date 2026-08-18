@@ -5,6 +5,7 @@ mod input;
 mod markdown;
 mod session;
 mod terminal;
+mod theme;
 mod ui;
 pub use app::{run, TuiOptions};
 pub use session::{run_agent_session, SessionExit};

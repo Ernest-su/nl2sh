@@ -6,8 +6,9 @@
 
 ### Added
 
+- A project-wide TUI visual specification covering the dark palette, semantic colors, component styling, ANSI 256 fallback, safety boundaries, and acceptance criteria.
 - Mouse-wheel conversation scrolling together with native Shift+drag highlighting and right-click context-menu copy.
-- A blinking WeChat-green input caret, Unicode-safe cursor editing, and Up/Down input-history recall.
+- A blinking accent-colored input caret, Unicode-safe cursor editing, and Up/Down input-history recall.
 - A filtered vertical slash-command menu with keyboard selection and completion.
 - Initial Rust project structure and Android cross-build script.
 - Configuration loading, validation, secure initialization wizard and environment API-key override.
@@ -41,6 +42,7 @@
 
 ### Changed
 
+- Replaced scattered high-saturation TUI colors with a centralized GitHub-Dark-inspired semantic palette, including TrueColor/ANSI 256 selection and field-level styling for Markdown, tool results, tables, status, input, and confirmations.
 - Unified project documentation around nl2sh's positioning as an Android shell-focused Hermes-like AI agent delivered as a single executable with a rich TUI; this describes product shape, not Hermes API or plugin compatibility.
 - Restyled the input row as a Codex-like muted-gray editor strip while keeping the shortcut separator, status row, and bottom separator on the terminal background.
 - Agent final-answer guidance now favors user-language summaries, Markdown tables for structured comparisons, and concise readable text over raw tool output.

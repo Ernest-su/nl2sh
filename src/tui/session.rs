@@ -10,7 +10,7 @@ use crate::{
     config::{Config, UiLanguage},
     history::HistoryLog,
     llm::{ConversationItem, LlmClient},
-    security::SecurityAssessment,
+    security::{RiskLevel, SecurityAssessment},
     shell::{OutputSink, ShellExecutor},
 };
 use anyhow::{Context, Result};
@@ -392,10 +392,12 @@ impl ConfirmationUi {
                 UiLanguage::ZhCn => PopupView {
                     title: "安全确认".into(),
                     lines: vec!["正在关闭…".into()],
+                    dangerous: false,
                 },
                 UiLanguage::En => PopupView {
                     title: "Confirmation".into(),
                     lines: vec!["Closing…".into()],
+                    dangerous: false,
                 },
             };
         };
@@ -458,6 +460,10 @@ impl ConfirmationUi {
             }
             .into(),
             lines,
+            dangerous: matches!(
+                request.assessment.risk_level,
+                RiskLevel::Dangerous | RiskLevel::Critical
+            ),
         }
     }
 

@@ -29,6 +29,8 @@ pub struct App {
 pub struct PopupView {
     pub title: String,
     pub lines: Vec<String>,
+    /// Whether the local assessment requires danger styling in addition to text.
+    pub dangerous: bool,
 }
 /// Immutable labels and counters displayed by one TUI prompt.
 pub struct TuiOptions {

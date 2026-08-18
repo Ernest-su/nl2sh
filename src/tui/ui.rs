@@ -1,14 +1,237 @@
-use super::{app::App, markdown};
+use super::{app::App, markdown, theme::Theme};
 use crate::config::UiLanguage;
 use ratatui::{
     layout::{Constraint, Direction, Layout},
     style::{Color, Style},
-    text::{Line, Text},
+    text::{Line, Span, Text},
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
     Frame,
 };
 use unicode_width::UnicodeWidthChar;
+
+fn title_line(app: &App, theme: Theme) -> Line<'static> {
+    let separator = || Span::styled(" | ", theme.style(theme.text_muted));
+    vec![
+        Span::styled(
+            format!("nl2sh v{}", env!("CARGO_PKG_VERSION")),
+            theme.bold(theme.text_primary),
+        ),
+        separator(),
+        Span::styled(app.mode.clone(), theme.style(theme.cyan)),
+        separator(),
+        Span::styled(
+            app.root.clone(),
+            theme.style(if app.root.eq_ignore_ascii_case("root") {
+                theme.warning
+            } else {
+                theme.text_secondary
+            }),
+        ),
+        separator(),
+        Span::styled(app.model.clone(), theme.style(theme.special)),
+        separator(),
+        Span::styled(app.api_type.clone(), theme.style(theme.text_secondary)),
+        separator(),
+        Span::styled(
+            if app.ascii { "ASCII" } else { "Unicode" },
+            theme.style(theme.text_secondary),
+        ),
+    ]
+    .into()
+}
+
+fn shortcut_line(language: UiLanguage, theme: Theme) -> Line<'static> {
+    let items = match language {
+        UiLanguage::ZhCn => [
+            ("Enter", " 发送"),
+            ("F2", " 结果"),
+            ("滚轮/PgUp/PgDn", " 滚动"),
+            ("Shift+拖选/右键", " 复制"),
+            ("Ctrl+Q", " 退出"),
+        ],
+        UiLanguage::En => [
+            ("Enter", " send"),
+            ("F2", " results"),
+            ("Wheel/PgUp/PgDn", " scroll"),
+            ("Shift+drag/right-click", " copy"),
+            ("Ctrl+Q", " quit"),
+        ],
+    };
+    let mut spans = Vec::new();
+    for (index, (key, description)) in items.into_iter().enumerate() {
+        if index > 0 {
+            spans.push(Span::styled(" | ", theme.style(theme.text_muted)));
+        }
+        spans.push(Span::styled(key, theme.style(theme.cyan)));
+        spans.push(Span::styled(description, theme.style(theme.text_muted)));
+    }
+    Line::from(spans)
+}
+
+fn status_line(app: &App, theme: Theme) -> Line<'static> {
+    let remaining = app.max_context.saturating_sub(app.turn);
+    let (status_label, turn_label, remaining_label) = match app.language {
+        UiLanguage::ZhCn => ("状态：", "对话轮次 ", "剩余上下文 "),
+        UiLanguage::En => ("status: ", "turn ", "context remaining "),
+    };
+    let (primary_status, status_detail) = app
+        .status
+        .split_once([';', '；'])
+        .map_or((app.status.as_str(), None), |(status, detail)| {
+            (status, Some(detail.trim()))
+        });
+    let mut spans = vec![
+        Span::styled(
+            status_label,
+            theme.style(theme.text_secondary).bg(theme.background_alt),
+        ),
+        Span::styled(
+            primary_status.to_owned(),
+            theme
+                .style(status_color(app, theme))
+                .bg(theme.background_alt),
+        ),
+    ];
+    if let Some(detail) = status_detail {
+        spans.push(Span::styled(
+            match app.language {
+                UiLanguage::ZhCn => "；",
+                UiLanguage::En => "; ",
+            },
+            theme.style(theme.text_muted).bg(theme.background_alt),
+        ));
+        spans.extend(status_detail_spans(detail, theme));
+    }
+    spans.extend([
+        Span::styled(
+            " | ",
+            theme.style(theme.text_muted).bg(theme.background_alt),
+        ),
+        Span::styled(
+            turn_label,
+            theme.style(theme.text_muted).bg(theme.background_alt),
+        ),
+        Span::styled(
+            app.turn.to_string(),
+            theme.style(theme.text_primary).bg(theme.background_alt),
+        ),
+        Span::styled(
+            " | ",
+            theme.style(theme.text_muted).bg(theme.background_alt),
+        ),
+        Span::styled(
+            remaining_label,
+            theme.style(theme.text_muted).bg(theme.background_alt),
+        ),
+        Span::styled(
+            remaining.to_string(),
+            theme.style(theme.cyan).bg(theme.background_alt),
+        ),
+    ]);
+    Line::from(spans)
+}
+
+fn status_detail_spans(detail: &str, theme: Theme) -> Vec<Span<'static>> {
+    let mut spans = Vec::new();
+    let mut segment = String::new();
+    let mut digits = false;
+    for character in detail.chars() {
+        let character_is_digit = character.is_ascii_digit();
+        if character_is_digit != digits && !segment.is_empty() {
+            let color = if digits {
+                theme.text_primary
+            } else {
+                theme.text_muted
+            };
+            spans.push(Span::styled(
+                std::mem::take(&mut segment),
+                theme.style(color).bg(theme.background_alt),
+            ));
+        }
+        digits = character_is_digit;
+        segment.push(character);
+    }
+    if !segment.is_empty() {
+        let color = if digits {
+            theme.text_primary
+        } else {
+            theme.text_muted
+        };
+        spans.push(Span::styled(
+            segment,
+            theme.style(color).bg(theme.background_alt),
+        ));
+    }
+    spans
+}
+
+fn status_color(app: &App, theme: Theme) -> Color {
+    let status = app.status.to_ascii_lowercase();
+    if status.contains("fail")
+        || status.contains("error")
+        || app.status.contains("失败")
+        || app.status.contains("出错")
+    {
+        theme.error
+    } else if status.contains("confirm") || app.status.contains("确认") {
+        theme.warning
+    } else if status.starts_with("idle") || app.status.starts_with("空闲") {
+        theme.success
+    } else {
+        theme.cyan
+    }
+}
+
+fn popup_color(dangerous: bool, theme: Theme) -> Color {
+    if dangerous {
+        theme.error
+    } else {
+        theme.warning
+    }
+}
+
+fn popup_line(line: &str, dangerous: bool, theme: Theme) -> Line<'static> {
+    for label in ["命令：", "Command: "] {
+        if let Some(command) = line.strip_prefix(label) {
+            return Line::from(vec![
+                Span::styled(label, theme.style(theme.cyan)),
+                Span::styled(command.to_owned(), theme.style(theme.text_primary)),
+            ]);
+        }
+    }
+    for label in ["风险：", "Risk: "] {
+        if let Some(value) = line.strip_prefix(label) {
+            let mut spans = vec![
+                Span::styled(label, theme.style(theme.text_secondary)),
+                Span::styled(
+                    value.trim_end_matches(" | ROOT").to_owned(),
+                    theme.style(if dangerous {
+                        theme.error
+                    } else {
+                        theme.warning
+                    }),
+                ),
+            ];
+            if value.ends_with(" | ROOT") {
+                spans.push(Span::styled(" | ROOT", theme.bold(theme.warning)));
+            }
+            return Line::from(spans);
+        }
+    }
+    let color = if line.contains("高风险") || line.to_ascii_lowercase().contains("high risk") {
+        theme.error
+    } else {
+        theme.text_primary
+    };
+    Line::styled(line.to_owned(), theme.style(color))
+}
+
 pub fn draw(f: &mut Frame, app: &App) {
+    let theme = Theme::detect();
+    f.render_widget(
+        Block::default().style(Style::default().bg(theme.background)),
+        f.area(),
+    );
     let areas = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -17,20 +240,15 @@ pub fn draw(f: &mut Frame, app: &App) {
             Constraint::Length(4),
         ])
         .split(f.area());
-    let title = Paragraph::new(format!(
-        "nl2sh v{} | {} | {} | {} | {} | {}",
-        env!("CARGO_PKG_VERSION"),
-        app.mode,
-        app.root,
-        app.model,
-        app.api_type,
-        if app.ascii { "ASCII" } else { "Unicode" }
-    ))
-    .block(Block::default().borders(Borders::ALL));
+    let title = Paragraph::new(title_line(app, theme)).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(theme.style(theme.border)),
+    );
     f.render_widget(title, areas[0]);
     let conversation_width = areas[1].width.saturating_sub(2) as usize;
     let lines = wrap_rendered_lines(
-        conversation_lines(app, conversation_width),
+        conversation_lines(app, conversation_width, theme),
         conversation_width,
     );
     let visible_rows = areas[1].height.saturating_sub(2) as usize;
@@ -43,67 +261,76 @@ pub fn draw(f: &mut Frame, app: &App) {
         Paragraph::new(Text::from(lines)).scroll((scroll, 0)).block(
             Block::default()
                 .borders(Borders::TOP | Borders::BOTTOM)
-                .title(match app.language {
-                    UiLanguage::ZhCn => "对话历史",
-                    UiLanguage::En => "Conversation",
-                }),
+                .border_style(theme.style(theme.border))
+                .title(Line::styled(
+                    match app.language {
+                        UiLanguage::ZhCn => "对话历史",
+                        UiLanguage::En => "Conversation",
+                    },
+                    theme.bold(theme.accent),
+                )),
         ),
         areas[1],
     );
-    let input_background = Color::Rgb(52, 52, 52);
+    let input_background = theme.background_alt;
     let input_row =
         ratatui::layout::Rect::new(areas[2].x, areas[2].y.saturating_add(1), areas[2].width, 1);
+    let status_row =
+        ratatui::layout::Rect::new(areas[2].x, areas[2].y.saturating_add(2), areas[2].width, 1);
     f.render_widget(
         Block::default().style(Style::default().bg(input_background)),
         input_row,
     );
+    f.render_widget(
+        Block::default().style(Style::default().bg(theme.background_alt)),
+        status_row,
+    );
     let input = Paragraph::new(Text::from(vec![
-        input_editor_line(app, areas[2].width as usize, input_background),
-        Line::from(match app.language {
-            UiLanguage::ZhCn => format!(
-                "状态：{} | 对话轮次 {} | 剩余上下文 {}",
-                app.status,
-                app.turn,
-                app.max_context.saturating_sub(app.turn)
-            ),
-            UiLanguage::En => format!(
-                "status: {} | turn {} | context remaining {}",
-                app.status,
-                app.turn,
-                app.max_context.saturating_sub(app.turn)
-            ),
-        }),
+        input_editor_line(app, areas[2].width as usize, theme),
+        status_line(app, theme),
     ]))
     .block(
         Block::default()
             .borders(Borders::TOP | Borders::BOTTOM)
-            .border_style(Style::default().fg(Color::DarkGray))
-            .title(match app.language {
-                UiLanguage::ZhCn => "Enter 发送 | F2 结果 | 滚轮/PgUp/PgDn | Shift+拖选/右键复制 | Ctrl+Q",
-                UiLanguage::En => "Enter send | F2 results | Wheel/PgUp/PgDn | Shift+drag/right-click copy | Ctrl+Q",
-            }),
+            .border_style(theme.style(if app.popup.is_none() {
+                theme.border_focus
+            } else {
+                theme.border
+            }))
+            .title(shortcut_line(app.language, theme)),
     );
     f.render_widget(input, areas[2]);
     if app.popup.is_none() {
-        render_command_menu(f, app, areas[2]);
+        render_command_menu(f, app, areas[2], theme);
     }
     if let Some(popup) = &app.popup {
         let area = centered_rect(78, 45, f.area());
         f.render_widget(Clear, area);
         f.render_widget(
-            Paragraph::new(popup.lines.join("\n"))
-                .wrap(Wrap { trim: false })
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .title(popup.title.as_str()),
-                ),
+            Paragraph::new(Text::from(
+                popup
+                    .lines
+                    .iter()
+                    .map(|line| popup_line(line, popup.dangerous, theme))
+                    .collect::<Vec<_>>(),
+            ))
+            .style(theme.style(theme.text_primary))
+            .wrap(Wrap { trim: false })
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(theme.style(popup_color(popup.dangerous, theme)))
+                    .title(Line::styled(
+                        popup.title.as_str(),
+                        theme.bold(popup_color(popup.dangerous, theme)),
+                    )),
+            ),
             area,
         );
     }
 }
 
-fn render_command_menu(f: &mut Frame, app: &App, input_area: ratatui::layout::Rect) {
+fn render_command_menu(f: &mut Frame, app: &App, input_area: ratatui::layout::Rect, theme: Theme) {
     let suggestions = app.command_suggestions();
     if suggestions.is_empty() || input_area.y < 3 {
         return;
@@ -125,26 +352,37 @@ fn render_command_menu(f: &mut Frame, app: &App, input_area: ratatui::layout::Re
                 UiLanguage::En => "Reconfigure the model provider",
             };
             let style = if index == selected {
-                Style::default().fg(Color::Black).bg(Color::Rgb(7, 193, 96))
+                theme.bold(theme.text_primary).bg(theme.background_alt)
             } else {
-                Style::default().fg(Color::White)
+                theme.style(theme.text_secondary)
             };
-            Line::styled(format!(" {command:<12} {description}"), style)
+            Line::from(vec![
+                Span::styled(format!(" {command:<12}"), style.fg(theme.cyan)),
+                Span::styled(format!(" {description}"), style),
+            ])
         })
         .collect::<Vec<_>>();
     f.render_widget(Clear, area);
     f.render_widget(
-        Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title(
-            match app.language {
-                UiLanguage::ZhCn => "命令",
-                UiLanguage::En => "Commands",
-            },
-        )),
+        Paragraph::new(lines)
+            .style(theme.style(theme.text_primary))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(theme.style(theme.border_focus))
+                    .title(Line::styled(
+                        match app.language {
+                            UiLanguage::ZhCn => "命令",
+                            UiLanguage::En => "Commands",
+                        },
+                        theme.bold(theme.accent),
+                    )),
+            ),
         area,
     );
 }
 
-fn input_editor_line(app: &App, width: usize, background: Color) -> Line<'static> {
+fn input_editor_line(app: &App, width: usize, theme: Theme) -> Line<'static> {
     let available = width.saturating_sub(3);
     let cursor_character = app.input.text[..app.input.cursor()].chars().count();
     let characters = app.input.text.chars().collect::<Vec<_>>();
@@ -172,15 +410,13 @@ fn input_editor_line(app: &App, width: usize, background: Color) -> Line<'static
         }
         used += character_width;
     }
-    let base = Style::default().fg(Color::White).bg(background);
+    let base = theme.style(theme.text_primary).bg(theme.background_alt);
     let cursor = if app.cursor_visible { "│" } else { " " };
     Line::from(vec![
-        ratatui::text::Span::styled(format!("> {before}"), base),
-        ratatui::text::Span::styled(
-            cursor,
-            Style::default().fg(Color::Rgb(7, 193, 96)).bg(background),
-        ),
-        ratatui::text::Span::styled(after, base),
+        Span::styled("> ", theme.style(theme.accent).bg(theme.background_alt)),
+        Span::styled(before, base),
+        ratatui::text::Span::styled(cursor, theme.style(theme.accent).bg(theme.background_alt)),
+        Span::styled(after, base),
     ])
 }
 
@@ -219,7 +455,7 @@ fn wrap_rendered_lines(lines: Vec<Line<'_>>, width: usize) -> Vec<Line<'static>>
     output
 }
 
-fn conversation_lines(app: &App, width: usize) -> Vec<Line<'_>> {
+fn conversation_lines(app: &App, width: usize, theme: Theme) -> Vec<Line<'_>> {
     let mut lines = Vec::new();
     for entry in &app.history {
         if let Some(encoded) = entry.strip_prefix(super::session::TOOL_RESULT_PREFIX) {
@@ -229,33 +465,33 @@ fn conversation_lines(app: &App, width: usize) -> Vec<Line<'_>> {
                     UiLanguage::ZhCn => "工具结果：",
                     UiLanguage::En => "Tool result:",
                 };
-                lines.push(conversation_line_owned(format!("{prefix} {label}")));
-                lines.extend(details.lines().map(conversation_line));
+                lines.push(tool_result_heading(prefix, label, theme));
+                lines.extend(tool_result_lines(details, theme));
             } else {
                 let label = match app.language {
                     UiLanguage::ZhCn => "工具结果已折叠（F2 展开）",
                     UiLanguage::En => "Tool result collapsed (F2 to expand)",
                 };
-                lines.push(conversation_line_owned(format!("{prefix} {label}")));
+                lines.push(tool_result_heading(prefix, label, theme));
             }
         } else if let Some(visible) = entry.strip_prefix(super::session::LIVE_OUTPUT_PREFIX) {
-            lines.push(conversation_line(visible));
+            lines.push(conversation_line(visible, theme));
         } else if starts_with_any(entry, &["[AGENT]", "🤖"]) {
-            lines.extend(markdown::render(entry, width, Color::Green, app.ascii));
+            lines.extend(markdown::render(entry, width, theme, app.ascii));
         } else {
-            append_multiline_entry(&mut lines, entry);
+            append_multiline_entry(&mut lines, entry, theme);
         }
     }
     lines
 }
 
-fn append_multiline_entry<'a>(lines: &mut Vec<Line<'a>>, entry: &'a str) {
-    let continuation_color = conversation_color(entry);
+fn append_multiline_entry<'a>(lines: &mut Vec<Line<'a>>, entry: &'a str, theme: Theme) {
+    let continuation_color = conversation_color(entry, theme);
     for (index, line) in entry.lines().enumerate() {
-        if index == 0 || continuation_color == Color::Reset {
-            lines.push(conversation_line(line));
+        if index == 0 {
+            lines.push(conversation_line(line, theme));
         } else {
-            lines.push(Line::styled(line, Style::default().fg(continuation_color)));
+            lines.push(Line::styled(line, theme.style(continuation_color)));
         }
     }
     if entry.is_empty() {
@@ -263,32 +499,129 @@ fn append_multiline_entry<'a>(lines: &mut Vec<Line<'a>>, entry: &'a str) {
     }
 }
 
-fn conversation_line(value: &str) -> Line<'_> {
-    Line::styled(value, Style::default().fg(conversation_color(value)))
+fn conversation_line(value: &str, theme: Theme) -> Line<'_> {
+    for prefix in [
+        "> ",
+        "[OUT] ",
+        "[OK] ",
+        "✅ ",
+        "[ERR] ",
+        "[ERROR] ",
+        "[TIMEOUT] ",
+        "❌ ",
+        "⏱ ",
+        "⛔ ",
+        "[CMD] ",
+        "💻 ",
+        "[WARN] ",
+        "⚠️ ",
+        "[TOOL] ",
+        "🔧 ",
+        "[CONFIG] ",
+    ] {
+        if let Some(content) = value.strip_prefix(prefix) {
+            return Line::from(vec![
+                Span::styled(prefix, theme.style(conversation_color(value, theme))),
+                Span::styled(content, theme.style(theme.text_primary)),
+            ]);
+        }
+    }
+    Line::styled(value, theme.style(conversation_color(value, theme)))
 }
 
-fn conversation_line_owned(value: String) -> Line<'static> {
-    let color = conversation_color(&value);
-    Line::styled(value, Style::default().fg(color))
-}
-
-fn conversation_color(value: &str) -> Color {
-    if value.starts_with("> ") {
-        Color::Cyan
-    } else if starts_with_any(value, &["[AGENT]", "🤖"]) {
-        Color::Green
-    } else if starts_with_any(value, &["[TOOL]", "🔧"]) {
-        Color::Magenta
-    } else if starts_with_any(value, &["[CMD]", "💻", "[WARN]", "⚠️"]) {
-        Color::Yellow
-    } else if starts_with_any(value, &["[OUT]", "[OK]", "✅"]) {
-        Color::LightGreen
-    } else if starts_with_any(value, &["[ERR]", "[ERROR]", "[TIMEOUT]", "❌", "⏱", "⛔"]) {
-        Color::LightRed
-    } else if value.starts_with("[CONFIG]") {
-        Color::LightBlue
+fn tool_result_heading(prefix: &str, label: &str, theme: Theme) -> Line<'static> {
+    let color = if starts_with_any(prefix, &["[ERROR]", "[ERR]", "❌", "⛔"]) {
+        theme.error
     } else {
-        Color::Reset
+        theme.success
+    };
+    Line::styled(format!("{prefix} {label}"), theme.bold(color))
+}
+
+fn tool_result_lines(details: &str, theme: Theme) -> Vec<Line<'static>> {
+    let mut output_section = false;
+    details
+        .lines()
+        .map(|line| {
+            if line == "stdout:" || line == "stderr:" {
+                output_section = true;
+                let color = if line == "stdout:" {
+                    theme.accent
+                } else {
+                    theme.warning
+                };
+                return Line::styled(line.to_owned(), theme.bold(color));
+            }
+            if output_section {
+                return Line::styled(line.to_owned(), theme.style(theme.text_primary));
+            }
+            if let Some(value) = line.strip_prefix("executed_command=") {
+                return Line::from(vec![
+                    Span::styled("executed_command", theme.style(theme.cyan)),
+                    Span::styled("=", theme.style(theme.text_muted)),
+                    Span::styled(value.to_owned(), theme.style(theme.text_primary)),
+                ]);
+            }
+            let fields = line.split_whitespace().collect::<Vec<_>>();
+            if !fields.is_empty() && fields.iter().all(|field| field.contains('=')) {
+                let mut spans = Vec::new();
+                for (index, field) in fields.into_iter().enumerate() {
+                    let Some((key, value)) = field.split_once('=') else {
+                        continue;
+                    };
+                    if index > 0 {
+                        spans.push(Span::styled(" ", theme.style(theme.text_muted)));
+                    }
+                    spans.push(Span::styled(
+                        key.to_owned(),
+                        theme.style(theme.text_secondary),
+                    ));
+                    spans.push(Span::styled("=", theme.style(theme.text_muted)));
+                    spans.push(Span::styled(
+                        value.to_owned(),
+                        theme.style(tool_field_value_color(key, value, theme)),
+                    ));
+                }
+                return Line::from(spans);
+            }
+            Line::styled(
+                line.to_owned(),
+                theme.style(if output_section {
+                    theme.text_primary
+                } else {
+                    theme.text_secondary
+                }),
+            )
+        })
+        .collect()
+}
+
+fn tool_field_value_color(key: &str, value: &str, theme: Theme) -> Color {
+    match (key, value) {
+        ("risk", "ReadOnly" | "只读") | ("exit", "Some(0)") => theme.success,
+        ("risk", "Dangerous" | "Critical" | "危险" | "严重危险") => theme.error,
+        ("risk", _) => theme.warning,
+        _ => theme.text_primary,
+    }
+}
+
+fn conversation_color(value: &str, theme: Theme) -> Color {
+    if value.starts_with("> ") {
+        theme.accent
+    } else if starts_with_any(value, &["[AGENT]", "🤖"]) {
+        theme.text_primary
+    } else if starts_with_any(value, &["[TOOL]", "🔧"]) {
+        theme.cyan
+    } else if starts_with_any(value, &["[CMD]", "💻", "[WARN]", "⚠️"]) {
+        theme.warning
+    } else if starts_with_any(value, &["[OUT]", "[OK]", "✅"]) {
+        theme.success
+    } else if starts_with_any(value, &["[ERR]", "[ERROR]", "[TIMEOUT]", "❌", "⏱", "⛔"]) {
+        theme.error
+    } else if value.starts_with("[CONFIG]") {
+        theme.accent
+    } else {
+        theme.text_primary
     }
 }
 
@@ -323,6 +656,7 @@ mod tests {
 
     #[test]
     fn input_and_status_use_separate_rows() -> anyhow::Result<()> {
+        let theme = Theme::detect();
         let backend = TestBackend::new(100, 30);
         let mut terminal = Terminal::new(backend)?;
         let mut app = App {
@@ -354,12 +688,12 @@ mod tests {
                 .collect::<String>()
         };
         assert!(row(27).contains("> hello"));
-        assert_eq!(buffer[(7, 27)].fg, Color::Rgb(7, 193, 96));
+        assert_eq!(buffer[(7, 27)].fg, theme.accent);
         assert!(row(28).contains("status: idle | turn 2 | context remaining 8"));
-        assert_eq!(buffer[(10, 27)].bg, Color::Rgb(52, 52, 52));
-        assert_eq!(buffer[(10, 28)].bg, Color::Reset);
-        assert_eq!(buffer[(10, 26)].bg, Color::Reset);
-        assert_eq!(buffer[(10, 29)].bg, Color::Reset);
+        assert_eq!(buffer[(10, 27)].bg, theme.background_alt);
+        assert_eq!(buffer[(10, 28)].bg, theme.background_alt);
+        assert_eq!(buffer[(10, 26)].bg, theme.background);
+        assert_eq!(buffer[(10, 29)].bg, theme.background);
         assert!(row(26).contains('─'));
         assert!(row(29).contains('─'));
         assert_eq!(buffer[(0, 10)].symbol(), " ");
@@ -380,29 +714,51 @@ mod tests {
             .buffer()
             .content()
             .iter()
-            .any(|cell| cell.bg == Color::Rgb(7, 193, 96)));
+            .any(|cell| cell.bg == theme.background_alt && cell.fg == theme.cyan));
 
         app.history = vec![crate::tui::session::encode_tool_result(
             "[OK]",
-            "executed_command=id\nexit=Some(0)\nstdout:\nuid=0",
+            "executed_command=id\nrisk=ReadOnly root=false matched_rules=[]\nexit=Some(0) timed_out=false\nstdout:\nuid=0",
         )];
-        let collapsed = conversation_lines(&app, 98);
+        let collapsed = conversation_lines(&app, 98, theme);
         assert_eq!(collapsed.len(), 1);
         assert!(collapsed[0].to_string().contains("collapsed"));
         assert!(!collapsed[0].to_string().contains("executed_command"));
         app.tool_results_expanded = true;
-        let expanded = conversation_lines(&app, 98);
+        let expanded = conversation_lines(&app, 98, theme);
         assert!(expanded.len() > 1);
         assert!(expanded
             .iter()
             .any(|line| line.to_string().contains("executed_command=id")));
+        let command = expanded
+            .iter()
+            .find(|line| line.to_string().starts_with("executed_command="))
+            .ok_or_else(|| anyhow::anyhow!("missing command field"))?;
+        assert_eq!(command.spans[0].style.fg, Some(theme.cyan));
+        assert_eq!(command.spans[2].style.fg, Some(theme.text_primary));
+        let exit = expanded
+            .iter()
+            .find(|line| line.to_string().starts_with("exit="))
+            .ok_or_else(|| anyhow::anyhow!("missing exit field"))?;
+        assert_eq!(exit.spans[2].style.fg, Some(theme.success));
+        let risk = expanded
+            .iter()
+            .find(|line| line.to_string().starts_with("risk="))
+            .ok_or_else(|| anyhow::anyhow!("missing risk field"))?;
+        assert_eq!(risk.spans[2].style.fg, Some(theme.success));
+        assert_eq!(risk.spans[6].style.fg, Some(theme.text_primary));
+        let raw_output = expanded
+            .iter()
+            .find(|line| line.to_string() == "uid=0")
+            .ok_or_else(|| anyhow::anyhow!("missing stdout"))?;
+        assert_eq!(raw_output.style.fg, Some(theme.text_primary));
 
         app.history = vec![
             "[AGENT] 查询结果汇总：\n\n## 内存占用\n| 应用 | RSS |\n|---|---|\n| example | 288 MB |"
                 .into(),
         ];
         app.tool_results_expanded = false;
-        let markdown = conversation_lines(&app, 98);
+        let markdown = conversation_lines(&app, 98, theme);
         assert!(markdown.len() > 6);
         assert_eq!(markdown[2].to_string(), "内存占用");
         assert!(markdown
@@ -416,23 +772,61 @@ mod tests {
 
     #[test]
     fn conversation_types_have_distinct_colors() {
-        assert_eq!(conversation_line("> user").style.fg, Some(Color::Cyan));
-        assert_eq!(
-            conversation_line("[TOOL] call").style.fg,
-            Some(Color::Magenta)
-        );
-        assert_eq!(
-            conversation_line("[AGENT] answer").style.fg,
-            Some(Color::Green)
-        );
-        assert_ne!(
-            conversation_line("> user").style.fg,
-            conversation_line("[TOOL] call").style.fg
-        );
-        assert_ne!(
-            conversation_line("[TOOL] call").style.fg,
-            conversation_line("[AGENT] answer").style.fg
-        );
+        let theme = Theme::for_mode(super::super::theme::ColorMode::TrueColor);
+        let user = conversation_line("> user", theme);
+        let tool = conversation_line("[TOOL] call", theme);
+        let agent = conversation_line("[AGENT] answer", theme);
+        assert_eq!(user.spans[0].style.fg, Some(theme.accent));
+        assert_eq!(user.spans[1].style.fg, Some(theme.text_primary));
+        assert_eq!(tool.spans[0].style.fg, Some(theme.cyan));
+        assert_eq!(agent.style.fg, Some(theme.text_primary));
+        assert_eq!(tool.spans[1].style.fg, Some(theme.text_primary));
+        assert_ne!(tool.spans[0].style.fg, tool.spans[1].style.fg);
+    }
+
+    #[test]
+    fn title_status_and_confirmation_follow_semantic_roles() {
+        let theme = Theme::for_mode(super::super::theme::ColorMode::TrueColor);
+        let mut app = App {
+            input: Input::default(),
+            input_history: Vec::new(),
+            input_history_index: None,
+            input_history_draft: String::new(),
+            cursor_visible: true,
+            command_selection: 0,
+            history: Vec::new(),
+            conversation_scroll: 0,
+            tool_results_expanded: false,
+            model: "deepseek-v4-flash".into(),
+            root: "Root".into(),
+            ascii: false,
+            language: UiLanguage::ZhCn,
+            api_type: "Responses".into(),
+            mode: "智能体".into(),
+            turn: 3,
+            max_context: 10,
+            status: "空闲；上次执行 4 步".into(),
+            popup: None,
+        };
+        let title = title_line(&app, theme);
+        assert_eq!(title.spans[2].style.fg, Some(theme.cyan));
+        assert_eq!(title.spans[4].style.fg, Some(theme.warning));
+        assert_eq!(title.spans[6].style.fg, Some(theme.special));
+
+        let status = status_line(&app, theme);
+        assert_eq!(status.spans[1].style.fg, Some(theme.success));
+        assert!(status
+            .spans
+            .iter()
+            .any(|span| span.content == "4" && span.style.fg == Some(theme.text_primary)));
+
+        let risk = popup_line("风险：严重危险 | ROOT", true, theme);
+        assert_eq!(risk.spans[0].style.fg, Some(theme.text_secondary));
+        assert_eq!(risk.spans[1].style.fg, Some(theme.error));
+        assert_eq!(risk.spans[2].style.fg, Some(theme.warning));
+
+        app.status = "出错后空闲".into();
+        assert_eq!(status_color(&app, theme), theme.error);
     }
 
     #[test]

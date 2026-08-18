@@ -1,0 +1,176 @@
+# TUI 视觉与语义配色规范
+
+## 1. 目的与适用范围
+
+本文定义 nl2sh 在 `adb shell` 深色终端中的统一视觉语言，是 TUI 主题、Widget、日志展示、Markdown 渲染、工具调用、确认界面、输入框和状态栏的实现依据。目标风格为 GitHub Dark、Lazygit 与现代 Coding Agent TUI 所共有的克制、清晰和高信息密度，但不照搬任何产品。
+
+颜色只表达语义，不用于装饰整段内容。普通正文保持灰白；高饱和度颜色只标记标题、焦点、状态和风险。任何组件不得自行定义与本文冲突的 RGB 或 ANSI 色值。
+
+本规范不改变安全边界。Root、风险等级、确认要求和执行结果仍以真实状态为准；颜色只是附加提示，不能成为唯一提示，也不能代替文字、图标或强确认流程。
+
+## 2. 设计原则
+
+- 保持深色终端风格，不以纯黑 `#000000` 作为大面积背景。
+- 不以纯白 `#FFFFFF` 作为大面积正文，不以高亮纯绿 `#00FF00` 作为普通正文。
+- 灰白承载内容，青蓝承载导航、标题、交互和当前焦点。
+- 绿色仅表示成功、正常或通过；黄色仅表示警告、风险、Root 或需要注意；红色仅表示错误、失败和危险；紫色仅少量表示模型或特殊对象。
+- 同一视区限制高饱和度颜色数量。长文本、原始 stdout 和 AI 自然语言回答不得整段着色为状态色。
+- 颜色必须与文本标签、符号或结构共同表达含义，保证低色彩能力终端和色觉差异场景仍可理解。
+- 优先保证 `adb shell`、深色宿主终端、窄屏和长时间阅读时的可读性。
+
+## 3. 统一 Palette
+
+实现应在 `src/tui` 内建立唯一的 `Theme` 或 `Palette` 定义，所有渲染路径引用语义 token，不在组件中硬编码颜色。推荐 token 如下：
+
+| Token | TrueColor | ANSI 256 fallback | 用途 |
+|---|---:|---:|---|
+| `background` | `#161B22` | `233` | 主背景 |
+| `background_alt` | `#21262D` | `235` | 输入区、状态栏、可选表头背景 |
+| `border` | `#3D444D` | `238` | 默认边框、分隔线 |
+| `border_focus` | `#58A6FF` | `75` | 当前焦点边框 |
+| `text_primary` | `#D8DEE9` | `253` | 正文、用户输入、字段值 |
+| `text_secondary` | `#8B949E` | `245` | 标签、次要信息 |
+| `text_muted` | `#6E7681` | `242` | 分隔符、提示、低权重状态 |
+| `accent` | `#58A6FF` | `75` | 一级标题、导航、交互 |
+| `cyan` | `#56D4DD` | `80` | 二级标题、工具名、键名 |
+| `success` | `#3FB950` | `71` | 成功、正常、退出码 0 |
+| `warning` | `#D29922` | `178` | 警告、Root、风险、stderr 标签 |
+| `error` | `#F85149` | `203` | 错误、失败、危险 |
+| `special` | `#BC8CFF` | `141` | 模型名、特殊对象或类型 |
+
+ANSI 256 fallback 是近似值而非另一套语义。终端不支持 TrueColor 时应整体切换到 fallback，禁止退化为 ANSI 高亮纯红、纯绿或纯蓝。若只能使用 16 色，仍应保留标签、符号、粗体和边框层级，不依赖颜色单独传意。
+
+背景色只有在终端能力可靠时启用；否则背景保持透明，前景语义不变。主题能力检测不得影响 Android 路径或引入宿主专用依赖。
+
+## 4. 全局语义映射
+
+| 语义 | Token | 典型内容 |
+|---|---|---|
+| 导航、一级标题、交互、焦点 | `accent` | 历史标题、结论标题、输入提示符 |
+| 二级标题、工具、可操作键名 | `cyan` | Markdown 二级标题、字段键、快捷键 |
+| 成功、正常、通过 | `success` | `✔`、空闲、`ReadOnly`、退出码 0 |
+| 警告、权限、风险 | `warning` | Root、stderr 标签、短板、需注意信息 |
+| 错误、失败、危险 | `error` | 执行失败、危险操作、非零失败状态 |
+| 模型、特殊类型 | `special` | 模型名称 |
+| 普通内容 | `text_primary` | 用户输入、AI 正文、命令和 stdout |
+| 标签和辅助内容 | `text_secondary` | 字段名、协议、普通状态标签 |
+| 最低权重信息 | `text_muted` | 分隔符、快捷键说明、状态栏说明 |
+
+风险枚举的显示必须继续保留 `ReadOnly`、`Mutating`、`Dangerous`、`Critical` 等文字。建议 `ReadOnly` 使用 `success`，`Mutating` 使用 `warning`，`Dangerous` 和 `Critical` 使用 `error`；确认强度不能因颜色或主题改变。
+
+## 5. 区域规范
+
+### 5.1 顶部标题栏
+
+标题栏使用克制的单行层级，默认边框为 `border`：
+
+| 内容 | 样式 |
+|---|---|
+| `nl2sh v0.1.0` | `text_primary` + bold |
+| `智能体` / Agent 模式 | `cyan` |
+| `Root` | `warning` |
+| 模型名，如 `deepseek-v4-flash` | `special` |
+| `Responses`、`Unicode` | `text_secondary` |
+| `|` | `text_muted` |
+
+Root 表示高权限环境，不能与成功或普通状态共用绿色。标题栏不使用亮白色边框。
+
+### 5.2 对话历史与 Markdown
+
+- 区域标题“对话历史”使用 `accent` + bold。
+- 用户输入与 AI 普通自然语言回答使用 `text_primary`。
+- 一级标题使用 `accent` + bold，二级标题使用 `cyan` + bold。
+- 字段名和辅助信息使用 `text_secondary`，字段值使用 `text_primary`。
+- `stdout` 标签使用 `text_secondary`，`stderr` 标签使用 `warning`；其后长输出使用 `text_primary` 或 `text_secondary`。
+- 代码块、引用、列表和链接可通过字重、缩进、边框或 `text_secondary` 建立层级，不得整块套用绿色。
+- 无法识别的 Markdown 行按普通正文处理，不根据内容猜测成功或失败。
+
+AI 分析中的语义标记采用局部着色：`✔ 优点` 使用 `success`，`⚠ 短板` 使用 `warning`，`✘ 问题` 使用 `error`，随后的解释恢复 `text_primary`。结论标题使用 `accent` + bold，结论正文使用 `text_primary`。
+
+### 5.3 工具调用与结果
+
+工具结果以字段级样式呈现：
+
+| 元素 | 样式 |
+|---|---|
+| `✅ 工具结果` / `✔ 工具结果` | `success` + bold |
+| `executed_command` | `cyan` |
+| 命令内容 | `text_primary` |
+| `risk`、`root`、`exit` | `text_secondary` |
+| `ReadOnly` | `success` |
+| `false` 或普通布尔值 | `text_primary` |
+| `Some(0)` / exit code 0 | `success` |
+| `stdout` | `accent` |
+| `stderr` | `warning` |
+| 大段原始输出 | `text_primary` 或 `text_secondary` |
+
+成功执行时只高亮成功符号、成功标签和退出码 0，不能把命令或全部输出染绿。失败状态使用 `error` 标出失败符号和退出状态；stderr 的存在本身是警告色标签，不应自动覆盖对退出结果的判断。
+
+### 5.4 表格
+
+- 外边框、列分隔和表头边框使用 `border`。
+- 表头文字使用 `cyan` + bold；能力允许时可使用 `background_alt`，否则透明。
+- 左侧字段名使用 `text_secondary`，右侧字段值使用 `text_primary`。
+- 只有真正关键、可交互或当前选中的值使用 `accent`。
+- 窄屏降级为键值列表时沿用相同字段语义，不因布局变化重映射颜色。
+
+### 5.5 底部快捷键栏
+
+快捷键栏保持低视觉权重。`Enter`、`F2`、`PgUp`、`PgDn`、`Ctrl+Q` 等按键名使用 `text_primary` 或 `cyan`；“发送”“结果”“滚动”“复制”等功能说明和分隔符使用 `text_muted`。不得使用整行高饱和度颜色。
+
+### 5.6 输入区
+
+输入区是主要焦点之一：
+
+- 提示符 `>` 和光标使用 `accent`。
+- 用户输入使用 `text_primary`。
+- 获得焦点时边框使用 `border_focus`，失去焦点时使用 `border`。
+- 终端能力允许时背景使用 `background_alt`；否则保持透明。
+
+光标不得使用与成功语义冲突的绿色。焦点还应通过边框或光标位置表达，不能只依赖颜色。
+
+### 5.7 最底部状态栏
+
+状态栏可使用 `background_alt`，整体保持低权重：
+
+| 内容 | 样式 |
+|---|---|
+| `状态：` | `text_secondary` |
+| `空闲` / 正常 | `success` |
+| `上次执行`、`对话轮次`、`剩余上下文` | `text_muted` |
+| 步数和轮次数值 | `text_primary` |
+| 剩余上下文数值 | `cyan` |
+
+忙碌、等待确认、失败等状态必须依据真实状态选用相应文字和语义 token，不得把所有非空闲状态统一染色。
+
+### 5.8 确认与危险操作
+
+普通修改确认使用 `warning` 标记风险标签，危险和 Critical 操作使用 `error`。Root 同时使用 `warning` 并保留 `ROOT` 文本。确认按钮、当前选项或键盘焦点可使用 `accent`/`border_focus`，但不得通过蓝色弱化危险等级。强确认的两阶段结构、文字和默认选择不受主题影响。
+
+## 6. 实现边界
+
+- `Theme`/`Palette` 是唯一颜色来源；Widget、Markdown renderer 和工具结果 renderer 只请求语义样式。
+- 主题层不得读取或改变 LLM 消息、日志内容、安全评估、确认策略或执行结果。
+- 主题背景应覆盖 frame、Block、Line 和 Span 的默认区域，避免局部 `Reset` 露出纯黑宿主背景；弹窗出现时，底层输入框按失焦边框显示。
+- 状态栏只显示应用真实持有的指标。示例中的“上次执行步数”等数据若当前状态模型未提供，应省略而不是显示占位值或推测值。
+- 原始 PTY 输出在进入 ratatui 前仍必须执行既有 ANSI 安全过滤。外部 SGR 可以保留为内容属性时，也不得允许清屏、光标移动或 alternate-screen 序列破坏 TUI。
+- 展开/折叠、换行、窄屏表格降级和 ASCII symbol set 只改变布局或符号，不改变语义 token。
+- 中英文文案必须使用同一语义映射，不能按语言各自选色。
+
+## 7. 验收标准
+
+实现本规范时至少验证：
+
+1. Palette token 的 RGB 值与 ANSI 256 fallback 均有单元测试，组件不再出现散落的业务颜色常量。
+2. 顶栏、历史、Markdown 标题/正文、工具结果、表格、快捷键、输入框、状态栏和确认弹窗均有样式映射测试。
+3. 成功工具结果仅局部为绿色，AI 正文和长 stdout 不为绿色；Root 为黄色；错误和危险为红色；模型名为紫色。
+4. 输入框聚焦/失焦边框分别为 `border_focus`/`border`，且 ASCII 模式仍可辨识焦点。
+5. 在 `TERM=xterm-256color` 下验证 fallback，在支持 TrueColor 的终端验证 RGB 主题；无背景色能力时内容仍清晰。
+6. 在 adb TTY 的窄屏与常用宽度下检查对比度、换行、表格降级、滚动、选择复制和全屏命令返回后的完整重绘。
+7. 运行 `cargo fmt --all -- --check`、`cargo check` 和 `cargo test`；涉及实际渲染时补充或更新 TUI 回归测试，并进行 Android 真机 smoke test。
+
+## 8. 非目标
+
+- 本规范不要求模拟某个现有产品，也不定义品牌插画或复杂动画。
+- 本规范不允许为美观改变风险分类、确认次数、root 策略、日志真实性或 Tool Result 内容。
+- 本规范不要求所有终端显示完全相同，但要求语义、层级和 fallback 行为一致。

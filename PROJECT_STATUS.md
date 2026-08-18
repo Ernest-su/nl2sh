@@ -10,7 +10,7 @@ Phase 10：本地功能与验证基本完成，等待 Android 交叉编译和真
 
 - Product positioning: Android 原生 shell 版的类 Hermes AI Agent；核心程序以单个可执行文件交付，提供多轮 Tool Calling 和丰富 TUI，不声称与 Hermes API 或插件兼容。
 - Build status: `cargo check` 和 `cargo build --release` 已于 2026-08-05 在当前 Linux 主机通过。
-- Test status: `cargo test` 已通过（53 个 unit/integration tests，0 failure）。
+- Test status: `cargo test` 已通过（59 个 unit/integration tests，0 failure）。
 - Android cross-compile status: 已使用 NDK r28c、API 26 成功构建 `aarch64-linux-android` release 产物。
 - Android device validation: 已在 KONKA Android TV（API 34、`armeabi-v7a`）完成部署、Agent/PTY 和 TUI smoke test。
 - CI release workflow: 已添加 `.github/workflows/release.yml`，在推送 `v*` tag 时用 GitHub Actions 并行交叉编译 `aarch64-linux-android` 与 `armv7-linux-androideabi`，把预编译 `nl2sh` 与 Linux/Windows 启动脚本、`config.toml.example`、`使用说明.md` 打包为 `.tar.gz`/`.zip` 并附带 SHA256 校验和发布到 GitHub Release；`workflow_dispatch` 可手动触发草稿发布。
@@ -36,10 +36,10 @@ Phase 10：本地功能与验证基本完成，等待 Android 交叉编译和真
 - 对话历史逐条持久化到默认配置目录下的 `0600` JSON Lines 日志，供异常排查。
 - 只读应用版本查询及其命令替换循环不再误判为修改操作；替换内副作用仍需确认。
 - TUI 捕获滚轮以浏览历史；按住 Shift 拖选时由宿主终端原生高亮选区并通过右键菜单复制，PageUp/PageDown 仍可浏览历史。
-- 输入框使用微信绿色闪烁光标，支持 Left/Right/Home/End/Delete 定位编辑，并可用 Up/Down 调取当前会话已提交的输入历史。
+- 输入框使用统一主题的青蓝色闪烁光标和聚焦边框，支持 Left/Right/Home/End/Delete 定位编辑，并可用 Up/Down 调取当前会话已提交的输入历史。
 - 输入以 `/` 开头时显示垂直命令候选菜单；Up/Down 选择，Enter 补全，当前仅列出实际支持的 `/config`。
 - TUI、初始化向导与安全确认支持中文/英文，默认中文；启动历史区预置常用 Android 任务和操作说明，且不进入模型上下文。
-- 仅用户输入文字所在行使用低亮度淡灰背景；快捷键上分割线、状态行和下分割线保持终端默认背景。
+- 输入行和低权重状态行使用统一主题的 `background_alt`，快捷键分隔线使用 `border`/`border_focus`，其余 frame 使用非纯黑 `background`。
 - `android-run.sh` 会先执行 `adb root`、等待 adbd 并验证 UID 0，再交叉编译、推送和启动；不支持 root adbd 时才回退 `su -c`，私有配置不可读则提前失败。
 - `android-run.ps1` 使用 NDK `windows-x86_64` LLVM 工具链在 Windows PowerShell 原生完成同等的交叉编译、推送、root/su 回退和启动流程，无需 Bash 或 WSL。
 - `android-run-linux.sh` 与 `android-run-windows.ps1` 可将脚本同目录中的预编译 `nl2sh` 直接推送并启动，跳过 Rust/NDK 编译，同时保留 root adbd 优先、`su` 回退和私有配置保护。
@@ -54,6 +54,8 @@ Phase 10：本地功能与验证基本完成，等待 Android 交叉编译和真
 - GitHub Actions release workflow：tag 推送自动构建 AArch64/ARMv7 Android release、打包快速启动脚本并发布 Release。
 - 面向普通用户的中文使用说明，覆盖 ADB 连接、Linux/Windows 启动、32/64 位选择和常见故障，并纳入所有 release 压缩包。
 - 内存查询示例截图嵌入中文使用说明与 README，release 压缩包同步包含 `screenshots/`，保证打包后的说明图文完整。
+- 已建立 `UI_DESIGN.md`，统一定义深色 TUI palette、语义颜色、各界面区域样式、ANSI 256 fallback、实现边界和验收标准；规范明确颜色不得改变或替代安全分类与确认流程。
+- 已在 `src/tui/theme.rs` 实现集中式 Theme/Palette 与 TrueColor/ANSI 256 能力选择，并迁移标题栏、对话、Markdown、工具结果、表格、快捷键、输入区、状态栏、命令菜单和确认弹窗；长正文与 stdout 不再继承成功绿色。
 
 ## In Progress
 
@@ -64,6 +66,7 @@ Phase 10：本地功能与验证基本完成，等待 Android 交叉编译和真
 - PTY 已在 API 34 ARMv7 真机执行只读命令；不同 su/fullscreen 程序仍可能需要兼容调整。
 - `android-run.sh` 与 `android-run.ps1` 默认构建 AArch64；仅支持 `armeabi-v7a` 的设备必须显式设置 `RUST_TARGET=armv7-linux-androideabi`，否则 Android 会因缺少 `/system/bin/linker64` 报 `No such file or directory`。
 - Agent TUI 在 LLM 和捕获式命令执行期间保持同一 ratatui frame；全屏交互命令会临时挂起 TUI，退出后恢复并完整重绘。
+- 新主题已完成本地渲染与样式测试，仍需在不同 adb shell 宿主的 TrueColor/ANSI 256、窄屏和实际电视显示效果下做真机可读性验证。
 
 ## Technical Decisions
 
@@ -76,7 +79,7 @@ Phase 10：本地功能与验证基本完成，等待 Android 交叉编译和真
 ## Verification Performed
 
 - `cargo check`：通过。
-- `cargo test`：通过，测试覆盖配置/CLI、安全、历史日志、root、双 LLM 协议、重试/timeout、Agent 历史/失败/取消、真实 SIGINT、PTY、初始化顺序、TUI 重配置、双行布局和语义配色。
+- `cargo test`：通过，共 59 项测试；覆盖配置/CLI、安全、历史日志、root、双 LLM 协议、重试/timeout、Agent 历史/失败/取消、真实 SIGINT、PTY、初始化顺序、TUI 重配置、双行布局、TrueColor/ANSI 256 palette、Markdown/表格/工具结果/确认界面的语义配色。
 - `android-run.ps1`：PowerShell AST 语法解析与 `git diff --check` 通过；因当前未授权实际部署，未执行 adb/NDK 真机流程。
 - `cargo fmt --all -- --check`：通过。
 - Release 用户说明打包：`release.yml` 已通过 `actionlint`，已在本地模拟 AArch64/ARMv7 目录并确认 `.tar.gz` 和 `.zip` 均包含 `使用说明.md`。

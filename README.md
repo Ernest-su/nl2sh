@@ -150,7 +150,7 @@ nl2sh --endpoint http://127.0.0.1:11434/v1 --model local --api-type chat_complet
 nl2sh --no-pty --ascii
 ```
 
-Command 模式生成、分类后执行单条命令；`--dry-run` 只展示。修改或危险命令在无 TTY 时会拒绝，不能用管道伪造确认。需要多轮执行和结果回传时使用默认 Agent 模式。Agent TUI 在请求和捕获式执行期间保持活跃，并在界面内显示输出与确认弹窗；命令运行时实时展示，完成后工具结果默认折叠，按 F2 可展开或收起，完整结果仍写入日志并回传模型。Agent 总结支持终端 Markdown 渲染。底部输入框使用低亮度淡灰背景和微信绿色闪烁光标，支持 Left/Right/Home/End/Delete 编辑及 Up/Down 调取当前会话输入历史；输入 `/` 时显示垂直命令候选，使用 Up/Down 选择、Enter 补全，当前提供 `/config`。TUI 启用鼠标追踪以稳定接收滚轮；复制屏幕文字时按住 Shift 拖选，由宿主终端高亮选区，再通过右键系统菜单复制。对话区只保留上下边框，避免选取内容混入左右边框。另支持 PageUp/PageDown 浏览历史、Enter 提交、Ctrl+C 取消当前任务（空闲时清空输入）、Ctrl+Q 安全退出。
+Command 模式生成、分类后执行单条命令；`--dry-run` 只展示。修改或危险命令在无 TTY 时会拒绝，不能用管道伪造确认。需要多轮执行和结果回传时使用默认 Agent 模式。Agent TUI 在请求和捕获式执行期间保持活跃，并在界面内显示输出与确认弹窗；命令运行时实时展示，完成后工具结果默认折叠，按 F2 可展开或收起，完整结果仍写入日志并回传模型。Agent 总结支持终端 Markdown 渲染。TUI 使用统一的现代深色语义主题，并按终端能力选择 TrueColor 或 ANSI 256 palette；普通正文保持灰白，青蓝表示交互与焦点，绿色、黄色和红色分别保留给成功、警告和错误。底部输入框使用低对比度深色背景和青蓝色闪烁光标，支持 Left/Right/Home/End/Delete 编辑及 Up/Down 调取当前会话输入历史；输入 `/` 时显示垂直命令候选，使用 Up/Down 选择、Enter 补全，当前提供 `/config`。TUI 启用鼠标追踪以稳定接收滚轮；复制屏幕文字时按住 Shift 拖选，由宿主终端高亮选区，再通过右键系统菜单复制。对话区只保留上下边框，避免选取内容混入左右边框。另支持 PageUp/PageDown 浏览历史、Enter 提交、Ctrl+C 取消当前任务（空闲时清空输入）、Ctrl+Q 安全退出。
 
 风险等级为 `ReadOnly`、`Mutating`、`Dangerous`、`Critical`。内置检测覆盖危险删除、格式化、块设备写入、递归根权限修改、重启/关机、分区擦除和读写 remount；自定义规则使用 `[[security_rules]]` 添加，不能替换内置规则。
 
@@ -183,6 +183,7 @@ Android 真机建议依次验证：启动/退出后终端恢复；`id` 和 `getp
 
 - `使用说明.md`：面向下载预编译压缩包的 Linux/Windows 用户。
 - `ARCHITECTURE.md`：模块、数据流、安全、执行与扩展架构。
+- `UI_DESIGN.md`：TUI 深色主题、语义颜色、组件样式、终端 fallback 与验收标准。
 - `AGENTS.md`：后续 AI 维护约束。
 - `PROJECT_PLAN.md`：阶段计划与实际状态。
 - `PROJECT_STATUS.md`：当前验证和限制。
