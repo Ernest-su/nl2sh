@@ -8,6 +8,7 @@ use crate::{
     shell::CommandExecutor,
 };
 use anyhow::{bail, Context, Result};
+use std::collections::HashSet;
 /// Dependencies for one bounded Agent tool loop.
 pub struct AgentRunner<'a> {
     /// Validated policy and provider configuration.
@@ -49,6 +50,7 @@ impl AgentRunner<'_> {
             Role::User,
             input,
         ))];
+        let mut task_approvals = HashSet::new();
         for step in 1..=self.config.max_agent_steps {
             let mut items = ctx.items();
             items.extend(current.clone());
@@ -94,8 +96,19 @@ impl AgentRunner<'_> {
                     if !assessment.requires_confirmation {
                         break assessment;
                     }
+                    if super::can_remember_approval(&assessment)
+                        && task_approvals.contains(&command)
+                    {
+                        break assessment;
+                    }
                     match self.confirmer.confirm(&command, &assessment).await? {
                         ConfirmationDecision::Approve => break assessment,
+                        ConfirmationDecision::ApproveForTask => {
+                            if super::can_remember_approval(&assessment) {
+                                task_approvals.insert(command.clone());
+                            }
+                            break assessment;
+                        }
                         ConfirmationDecision::ApproveInteractive => {
                             interactive_override = Some(true);
                             break assessment;

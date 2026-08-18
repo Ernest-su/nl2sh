@@ -50,6 +50,7 @@
 - [x] 默认 Tool Calling、多轮、最大 steps、结果回传、上下文 turn 上限。
 - [x] Command Generation 模式及输出清理。
 - [x] 同一轮多个调用逐项确认、编辑后重新分类、Agent cancellation。
+- [x] 编号/快捷键审批列表，以及仅限当前任务、完整命令精确匹配的安全许可。
 
 ## Phase 6 安全分类与确认策略 — 基本完成
 

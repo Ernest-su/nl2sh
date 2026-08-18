@@ -42,6 +42,7 @@
 
 ### Changed
 
+- Reworked command approval into a numbered, keyboard-navigable action list with numeric and `y/n/a/e/i/t` aliases; exact-command task approvals are memory-only and unavailable to root or high-risk commands.
 - Replaced scattered high-saturation TUI colors with a centralized GitHub-Dark-inspired semantic palette, including TrueColor/ANSI 256 selection and field-level styling for Markdown, tool results, tables, status, input, and confirmations.
 - Unified project documentation around nl2sh's positioning as an Android shell-focused Hermes-like AI agent delivered as a single executable with a rich TUI; this describes product shape, not Hermes API or plugin compatibility.
 - Restyled the input row as a Codex-like muted-gray editor strip while keeping the shortcut separator, status row, and bottom separator on the terminal background.
@@ -50,6 +51,8 @@
 
 ### Fixed
 
+- Approval panels are now anchored above the input at the lower left, and fragmented adb arrow-key sequences can no longer trigger rejection or task approval and dismiss the panel.
+- Approval-stage transitions now clear a stable full-panel area, preventing old option characters from remaining behind; the panel also consistently fills its bordered area with the alternate background.
 - Read-only Android package-version queries using command substitution no longer trigger repeated mutation confirmations; mutating substitutions remain protected.
 - Conversation history now accepts mouse-wheel and PageUp/PageDown scrolling instead of being forced to the bottom every frame.
 - Android deployment now runs `adb root`, waits for the restarted daemon, verifies UID 0, and only falls back to `su -c`; unreadable private configuration fails early without weakening permissions.

@@ -305,6 +305,7 @@ async fn run_command(
     while a.requires_confirmation {
         match confirmer.confirm(&command, &a).await? {
             ConfirmationDecision::Approve => break,
+            ConfirmationDecision::ApproveForTask => break,
             ConfirmationDecision::ApproveInteractive => {
                 interactive_override = Some(true);
                 break;

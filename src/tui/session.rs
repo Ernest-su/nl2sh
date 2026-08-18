@@ -6,7 +6,7 @@ use super::{
     ui,
 };
 use crate::{
-    agent::{AgentOutcome, AgentRunner, ConfirmationDecision, Confirmer},
+    agent::{can_remember_approval, AgentOutcome, AgentRunner, ConfirmationDecision, Confirmer},
     config::{Config, UiLanguage},
     history::HistoryLog,
     llm::{ConversationItem, LlmClient},
@@ -372,8 +372,28 @@ struct ConfirmationUi {
     stage: ConfirmationStage,
     text: String,
     approval: ConfirmationDecision,
+    selection: usize,
     language: UiLanguage,
 }
+
+#[derive(Clone, Copy)]
+enum InitialAction {
+    AllowOnce,
+    AllowForTask,
+    Reject,
+    Edit,
+    Interactive,
+    Captured,
+}
+
+const INITIAL_ACTIONS: [InitialAction; 6] = [
+    InitialAction::AllowOnce,
+    InitialAction::AllowForTask,
+    InitialAction::Reject,
+    InitialAction::Edit,
+    InitialAction::Interactive,
+    InitialAction::Captured,
+];
 
 impl ConfirmationUi {
     fn new(request: ConfirmRequest, language: UiLanguage) -> Self {
@@ -382,6 +402,7 @@ impl ConfirmationUi {
             stage: ConfirmationStage::Initial,
             text: String::new(),
             approval: ConfirmationDecision::Approve,
+            selection: 0,
             language,
         }
     }
@@ -430,12 +451,7 @@ impl ConfirmationUi {
             ],
         };
         match self.stage {
-            ConfirmationStage::Initial => lines.push(match self.language {
-                UiLanguage::ZhCn => "Y 默认执行 | I 交互终端 | T 捕获输出 | N 取消 | E 编辑".into(),
-                UiLanguage::En => {
-                    "Y default | I interactive terminal | T captured | N cancel | E edit".into()
-                }
-            }),
+            ConfirmationStage::Initial => lines.extend(self.initial_option_lines(request)),
             ConfirmationStage::Double => {
                 lines.push(match self.language {
                     UiLanguage::ZhCn => "高风险操作：输入 YES 后按 Enter：".into(),
@@ -470,35 +486,21 @@ impl ConfirmationUi {
     fn handle_key(&mut self, key: KeyEvent) -> bool {
         match self.stage {
             ConfirmationStage::Initial => match key.code {
-                KeyCode::Char('y' | 'Y' | 'i' | 'I' | 't' | 'T') => {
-                    self.approval = match key.code {
-                        KeyCode::Char('i' | 'I') => ConfirmationDecision::ApproveInteractive,
-                        KeyCode::Char('t' | 'T') => ConfirmationDecision::ApproveCaptured,
-                        _ => ConfirmationDecision::Approve,
-                    };
-                    if self
-                        .request
-                        .as_ref()
-                        .is_some_and(|r| r.assessment.requires_double_confirmation)
-                    {
-                        self.stage = ConfirmationStage::Double;
-                        false
-                    } else {
-                        self.finish(self.approval.clone())
-                    }
-                }
-                KeyCode::Char('e' | 'E') => {
-                    self.text = self
-                        .request
-                        .as_ref()
-                        .map(|r| r.command.clone())
-                        .unwrap_or_default();
-                    self.stage = ConfirmationStage::Edit;
+                KeyCode::Up => {
+                    self.move_selection(-1);
                     false
                 }
-                KeyCode::Char('n' | 'N') | KeyCode::Esc => {
-                    self.finish(ConfirmationDecision::Reject)
+                KeyCode::Down => {
+                    self.move_selection(1);
+                    false
                 }
+                KeyCode::Enter => self.choose_initial(INITIAL_ACTIONS[self.selection]),
+                KeyCode::Char('1' | 'y') => self.choose_initial(InitialAction::AllowOnce),
+                KeyCode::Char('2' | 'a') => self.choose_initial(InitialAction::AllowForTask),
+                KeyCode::Char('3' | 'n') => self.choose_initial(InitialAction::Reject),
+                KeyCode::Char('4' | 'e') => self.choose_initial(InitialAction::Edit),
+                KeyCode::Char('5' | 'i') => self.choose_initial(InitialAction::Interactive),
+                KeyCode::Char('6' | 't') => self.choose_initial(InitialAction::Captured),
                 _ => false,
             },
             ConfirmationStage::Double => match key.code {
@@ -541,6 +543,104 @@ impl ConfirmationUi {
                 }
                 _ => false,
             },
+        }
+    }
+
+    fn initial_option_lines(&self, request: &ConfirmRequest) -> Vec<String> {
+        INITIAL_ACTIONS
+            .iter()
+            .enumerate()
+            .map(|(index, action)| {
+                let selected = if index == self.selection { ">" } else { " " };
+                let disabled = matches!(action, InitialAction::AllowForTask)
+                    && !can_remember_approval(&request.assessment);
+                let label = match (self.language, action, disabled) {
+                    (UiLanguage::ZhCn, InitialAction::AllowOnce, _) => "仅允许本次 [y]",
+                    (UiLanguage::ZhCn, InitialAction::AllowForTask, false) => {
+                        "本次任务总是允许完全相同的命令 [a]"
+                    }
+                    (UiLanguage::ZhCn, InitialAction::AllowForTask, true) => {
+                        "总是允许（Root 或高风险命令不可用）"
+                    }
+                    (UiLanguage::ZhCn, InitialAction::Reject, _) => "拒绝 [n]",
+                    (UiLanguage::ZhCn, InitialAction::Edit, _) => "编辑并重新分类 [e]",
+                    (UiLanguage::ZhCn, InitialAction::Interactive, _) => "交互终端执行 [i]",
+                    (UiLanguage::ZhCn, InitialAction::Captured, _) => "捕获输出执行 [t]",
+                    (UiLanguage::En, InitialAction::AllowOnce, _) => "Allow once [y]",
+                    (UiLanguage::En, InitialAction::AllowForTask, false) => {
+                        "Always allow the exact command for this task [a]"
+                    }
+                    (UiLanguage::En, InitialAction::AllowForTask, true) => {
+                        "Always allow (unavailable for root or high risk)"
+                    }
+                    (UiLanguage::En, InitialAction::Reject, _) => "Reject [n]",
+                    (UiLanguage::En, InitialAction::Edit, _) => "Edit and reassess [e]",
+                    (UiLanguage::En, InitialAction::Interactive, _) => {
+                        "Run in interactive terminal [i]"
+                    }
+                    (UiLanguage::En, InitialAction::Captured, _) => "Run with captured output [t]",
+                };
+                format!("{selected} {}. {label}", index + 1)
+            })
+            .collect()
+    }
+
+    fn move_selection(&mut self, direction: isize) {
+        for _ in 0..INITIAL_ACTIONS.len() {
+            self.selection = if direction < 0 {
+                self.selection
+                    .checked_sub(1)
+                    .unwrap_or(INITIAL_ACTIONS.len() - 1)
+            } else {
+                (self.selection + 1) % INITIAL_ACTIONS.len()
+            };
+            if self.selection != 1 || self.can_remember_current() {
+                break;
+            }
+        }
+    }
+
+    fn can_remember_current(&self) -> bool {
+        self.request
+            .as_ref()
+            .is_some_and(|request| can_remember_approval(&request.assessment))
+    }
+
+    fn choose_initial(&mut self, action: InitialAction) -> bool {
+        match action {
+            InitialAction::Reject => self.finish(ConfirmationDecision::Reject),
+            InitialAction::Edit => {
+                self.text = self
+                    .request
+                    .as_ref()
+                    .map(|request| request.command.clone())
+                    .unwrap_or_default();
+                self.stage = ConfirmationStage::Edit;
+                false
+            }
+            InitialAction::AllowForTask if !self.can_remember_current() => false,
+            InitialAction::AllowOnce
+            | InitialAction::AllowForTask
+            | InitialAction::Interactive
+            | InitialAction::Captured => {
+                self.approval = match action {
+                    InitialAction::AllowOnce => ConfirmationDecision::Approve,
+                    InitialAction::AllowForTask => ConfirmationDecision::ApproveForTask,
+                    InitialAction::Interactive => ConfirmationDecision::ApproveInteractive,
+                    InitialAction::Captured => ConfirmationDecision::ApproveCaptured,
+                    InitialAction::Reject | InitialAction::Edit => ConfirmationDecision::Reject,
+                };
+                if self
+                    .request
+                    .as_ref()
+                    .is_some_and(|request| request.assessment.requires_double_confirmation)
+                {
+                    self.stage = ConfirmationStage::Double;
+                    false
+                } else {
+                    self.finish(self.approval.clone())
+                }
+            }
         }
     }
 
@@ -731,5 +831,56 @@ mod tests {
             response.try_recv(),
             Ok(ConfirmationDecision::ApproveInteractive)
         );
+    }
+
+    #[test]
+    fn numbered_menu_supports_task_approval_and_reject_aliases() {
+        let (mut ui, mut response) = request("touch /tmp/file");
+        let view = ui.view();
+        assert!(view.lines.iter().any(|line| line.starts_with("> 1.")));
+        assert!(view.lines.iter().any(|line| line.contains("[a]")));
+        assert!(ui.handle_key(KeyEvent::new(KeyCode::Char('2'), KeyModifiers::NONE,)));
+        assert_eq!(
+            response.try_recv(),
+            Ok(ConfirmationDecision::ApproveForTask)
+        );
+
+        let (mut rejected, mut rejected_response) = request("touch /tmp/file");
+        assert!(rejected.handle_key(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE,)));
+        assert_eq!(
+            rejected_response.try_recv(),
+            Ok(ConfirmationDecision::Reject)
+        );
+    }
+
+    #[test]
+    fn high_risk_menu_disables_always_allow() {
+        let (mut ui, mut response) = request("rm -rf /");
+        let view = ui.view();
+        assert!(view.lines.iter().any(|line| line.contains("不可用")));
+        assert!(!ui.handle_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE,)));
+        assert!(matches!(
+            response.try_recv(),
+            Err(oneshot::error::TryRecvError::Empty)
+        ));
+
+        assert!(!ui.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE)));
+        assert_eq!(ui.selection, 2);
+    }
+
+    #[test]
+    fn arrow_navigation_and_fragmented_escape_sequence_keep_approval_open() {
+        let (mut ui, mut response) = request("touch /tmp/file");
+        for code in [KeyCode::Down, KeyCode::Up, KeyCode::Down, KeyCode::Up] {
+            assert!(!ui.handle_key(KeyEvent::new(code, KeyModifiers::NONE)));
+        }
+        for code in [KeyCode::Esc, KeyCode::Char('['), KeyCode::Char('A')] {
+            assert!(!ui.handle_key(KeyEvent::new(code, KeyModifiers::NONE)));
+        }
+        assert!(matches!(
+            response.try_recv(),
+            Err(oneshot::error::TryRecvError::Empty)
+        ));
+        assert!(ui.request.is_some());
     }
 }

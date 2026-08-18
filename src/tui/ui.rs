@@ -190,30 +190,54 @@ fn popup_color(dangerous: bool, theme: Theme) -> Color {
     }
 }
 
+fn popup_style(theme: Theme, color: Color) -> Style {
+    theme.style(color).bg(theme.background_alt)
+}
+
 fn popup_line(line: &str, dangerous: bool, theme: Theme) -> Line<'static> {
+    if line.starts_with("> ") {
+        return Line::styled(
+            line.to_owned(),
+            theme.bold(theme.accent).bg(theme.background_alt),
+        );
+    }
+    if line.starts_with("  ") {
+        let color = if line.contains("不可用") || line.contains("unavailable") {
+            theme.text_muted
+        } else {
+            theme.text_primary
+        };
+        return Line::styled(line.to_owned(), popup_style(theme, color));
+    }
     for label in ["命令：", "Command: "] {
         if let Some(command) = line.strip_prefix(label) {
             return Line::from(vec![
-                Span::styled(label, theme.style(theme.cyan)),
-                Span::styled(command.to_owned(), theme.style(theme.text_primary)),
+                Span::styled(label, popup_style(theme, theme.cyan)),
+                Span::styled(command.to_owned(), popup_style(theme, theme.text_primary)),
             ]);
         }
     }
     for label in ["风险：", "Risk: "] {
         if let Some(value) = line.strip_prefix(label) {
             let mut spans = vec![
-                Span::styled(label, theme.style(theme.text_secondary)),
+                Span::styled(label, popup_style(theme, theme.text_secondary)),
                 Span::styled(
                     value.trim_end_matches(" | ROOT").to_owned(),
-                    theme.style(if dangerous {
-                        theme.error
-                    } else {
-                        theme.warning
-                    }),
+                    popup_style(
+                        theme,
+                        if dangerous {
+                            theme.error
+                        } else {
+                            theme.warning
+                        },
+                    ),
                 ),
             ];
             if value.ends_with(" | ROOT") {
-                spans.push(Span::styled(" | ROOT", theme.bold(theme.warning)));
+                spans.push(Span::styled(
+                    " | ROOT",
+                    theme.bold(theme.warning).bg(theme.background_alt),
+                ));
             }
             return Line::from(spans);
         }
@@ -223,7 +247,7 @@ fn popup_line(line: &str, dangerous: bool, theme: Theme) -> Line<'static> {
     } else {
         theme.text_primary
     };
-    Line::styled(line.to_owned(), theme.style(color))
+    Line::styled(line.to_owned(), popup_style(theme, color))
 }
 
 pub fn draw(f: &mut Frame, app: &App) {
@@ -304,7 +328,12 @@ pub fn draw(f: &mut Frame, app: &App) {
         render_command_menu(f, app, areas[2], theme);
     }
     if let Some(popup) = &app.popup {
-        let area = centered_rect(78, 45, f.area());
+        let popup_height = (popup.lines.len() as u16)
+            .saturating_add(2)
+            .max(11)
+            .min(f.area().height.saturating_sub(2))
+            .max(3);
+        let area = bottom_left_rect(78, popup_height, areas[2].y, f.area());
         f.render_widget(Clear, area);
         f.render_widget(
             Paragraph::new(Text::from(
@@ -314,15 +343,18 @@ pub fn draw(f: &mut Frame, app: &App) {
                     .map(|line| popup_line(line, popup.dangerous, theme))
                     .collect::<Vec<_>>(),
             ))
-            .style(theme.style(theme.text_primary))
+            .style(popup_style(theme, theme.text_primary))
             .wrap(Wrap { trim: false })
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .border_style(theme.style(popup_color(popup.dangerous, theme)))
+                    .style(Style::default().bg(theme.background_alt))
+                    .border_style(popup_style(theme, popup_color(popup.dangerous, theme)))
                     .title(Line::styled(
                         popup.title.as_str(),
-                        theme.bold(popup_color(popup.dangerous, theme)),
+                        theme
+                            .bold(popup_color(popup.dangerous, theme))
+                            .bg(theme.background_alt),
                     )),
             ),
             area,
@@ -629,29 +661,30 @@ fn starts_with_any(value: &str, prefixes: &[&str]) -> bool {
     prefixes.iter().any(|prefix| value.starts_with(prefix))
 }
 
-fn centered_rect(
+fn bottom_left_rect(
     percent_x: u16,
-    percent_y: u16,
+    height: u16,
+    anchor_y: u16,
     area: ratatui::layout::Rect,
 ) -> ratatui::layout::Rect {
-    let vertical = Layout::vertical([
-        Constraint::Percentage((100 - percent_y) / 2),
-        Constraint::Percentage(percent_y),
-        Constraint::Percentage((100 - percent_y) / 2),
-    ])
-    .split(area);
-    Layout::horizontal([
-        Constraint::Percentage((100 - percent_x) / 2),
-        Constraint::Percentage(percent_x),
-        Constraint::Percentage((100 - percent_x) / 2),
-    ])
-    .split(vertical[1])[1]
+    let width = area
+        .width
+        .saturating_mul(percent_x)
+        .saturating_div(100)
+        .max(3);
+    let height = height.min(anchor_y.saturating_sub(area.y)).max(3);
+    ratatui::layout::Rect::new(
+        area.x,
+        anchor_y.saturating_sub(height),
+        width.min(area.width),
+        height,
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::input::Input;
+    use crate::tui::{app::PopupView, input::Input};
     use ratatui::{backend::TestBackend, Terminal};
 
     #[test]
@@ -827,6 +860,83 @@ mod tests {
 
         app.status = "出错后空闲".into();
         assert_eq!(status_color(&app, theme), theme.error);
+    }
+
+    #[test]
+    fn approval_panel_clears_previous_content_and_fills_its_background() -> anyhow::Result<()> {
+        let theme = Theme::detect();
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend)?;
+        let mut app = App {
+            input: Input::default(),
+            input_history: Vec::new(),
+            input_history_index: None,
+            input_history_draft: String::new(),
+            cursor_visible: true,
+            command_selection: 0,
+            history: vec!["background conversation text".into()],
+            conversation_scroll: 0,
+            tool_results_expanded: false,
+            model: "test".into(),
+            root: "Normal".into(),
+            ascii: true,
+            language: UiLanguage::En,
+            api_type: "Responses".into(),
+            mode: "Agent".into(),
+            turn: 0,
+            max_context: 10,
+            status: "waiting for confirmation".into(),
+            popup: Some(PopupView {
+                title: "Security confirmation".into(),
+                lines: vec![
+                    "Command: touch /tmp/file".into(),
+                    "Risk: Mutating".into(),
+                    "Reclassified locally".into(),
+                    "> 1. Allow once [y]".into(),
+                    "  2. Always allow [a]".into(),
+                    "  3. Reject [n/Esc]".into(),
+                    "  4. Edit [e]".into(),
+                    "  5. Interactive [i]".into(),
+                    "  6. UNIQUE_OPTION_RESIDUE".into(),
+                ],
+                dangerous: false,
+            }),
+        };
+        terminal.draw(|frame| draw(frame, &app))?;
+
+        app.popup = Some(PopupView {
+            title: "Security confirmation".into(),
+            lines: vec!["High risk: type YES, then Enter:".into(), "Y".into()],
+            dangerous: true,
+        });
+        terminal.draw(|frame| draw(frame, &app))?;
+
+        let buffer = terminal.backend().buffer();
+        let rendered = buffer
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(!rendered.contains("UNIQUE_OPTION_RESIDUE"));
+        let input_top = buffer.area.height.saturating_sub(4);
+        let area = bottom_left_rect(78, 11, input_top, buffer.area);
+        assert_eq!(area.x, 0);
+        assert_eq!(area.bottom(), input_top);
+        for y in area.y..area.bottom() {
+            for x in area.x..area.right() {
+                assert_eq!(buffer[(x, y)].bg, theme.background_alt);
+            }
+        }
+        assert!(matches!(buffer[(area.x, area.y)].symbol(), "┌" | "+"));
+        assert!(matches!(
+            buffer[(
+                area.right().saturating_sub(1),
+                area.bottom().saturating_sub(1)
+            )]
+                .symbol(),
+            "┘" | "+"
+        ));
+        Ok(())
     }
 
     #[test]

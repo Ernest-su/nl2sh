@@ -83,6 +83,18 @@ impl Confirmer for Confirm {
 struct EditThenReject {
     calls: AtomicUsize,
 }
+
+struct RememberApproval {
+    calls: AtomicUsize,
+}
+
+#[async_trait]
+impl Confirmer for RememberApproval {
+    async fn confirm(&self, _: &str, _: &SecurityAssessment) -> Result<ConfirmationDecision> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Ok(ConfirmationDecision::ApproveForTask)
+    }
+}
 #[async_trait]
 impl Confirmer for EditThenReject {
     async fn confirm(
@@ -252,6 +264,36 @@ async fn context_drops_only_oldest_complete_turns() {
 struct MultiRoundLlm {
     calls: AtomicUsize,
 }
+
+struct RepeatedMutatingLlm {
+    calls: AtomicUsize,
+}
+
+#[async_trait]
+impl LlmClient for RepeatedMutatingLlm {
+    async fn complete(&self, _: LlmRequest) -> Result<LlmResponse> {
+        let call = self.calls.fetch_add(1, Ordering::SeqCst);
+        if call < 2 {
+            Ok(LlmResponse {
+                text: None,
+                tool_calls: vec![ToolCall {
+                    id: format!("mutating-{call}"),
+                    name: "execute_shell_command".into(),
+                    arguments: json!({"command":"touch /tmp/repeated"}),
+                }],
+                usage: Usage::default(),
+                finish_reason: FinishReason::ToolCalls,
+            })
+        } else {
+            Ok(LlmResponse {
+                text: Some("remembered".into()),
+                tool_calls: Vec::new(),
+                usage: Usage::default(),
+                finish_reason: FinishReason::Stop,
+            })
+        }
+    }
+}
 #[async_trait]
 impl LlmClient for MultiRoundLlm {
     async fn complete(&self, req: LlmRequest) -> Result<LlmResponse> {
@@ -305,6 +347,33 @@ async fn multiple_tool_rounds_remain_ordered() {
     .unwrap();
     assert_eq!(outcome.final_text, "multi-done");
     assert_eq!(calls.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn task_approval_remembers_only_the_exact_mutating_command() {
+    let cfg = Config::default();
+    let llm = RepeatedMutatingLlm {
+        calls: AtomicUsize::new(0),
+    };
+    let execution_calls = Arc::new(AtomicUsize::new(0));
+    let exec = Exec {
+        calls: execution_calls.clone(),
+    };
+    let confirmer = RememberApproval {
+        calls: AtomicUsize::new(0),
+    };
+    let outcome = AgentRunner {
+        config: &cfg,
+        llm: &llm,
+        executor: &exec,
+        confirmer: &confirmer,
+    }
+    .run("repeat")
+    .await
+    .unwrap();
+    assert_eq!(outcome.final_text, "remembered");
+    assert_eq!(execution_calls.load(Ordering::SeqCst), 2);
+    assert_eq!(confirmer.calls.load(Ordering::SeqCst), 1);
 }
 
 struct ResultCheckingLlm {

@@ -54,7 +54,7 @@ TUI 的视觉语义统一由 `UI_DESIGN.md` 约束。实现应以集中式 `Them
 
 ## Agent 执行流程
 
-只读操作在 balanced/risk_only 下自动执行；普通修改必须确认；Dangerous/Critical 需要二次确认。root 只是执行属性，不改变分类。拒绝、失败或超时都会生成明确的失败 Tool Result。每轮可能处理模型返回的多个调用，完成后把结果加入下一请求；达到 `max_agent_steps` 立即停止并返回原因。上下文按完整 turn 删除最旧单元，system message 始终保留。
+只读操作在 balanced/risk_only 下自动执行；普通修改必须确认；Dangerous/Critical 需要二次确认。root 只是执行属性，不改变分类。审批界面提供固定编号与快捷键，可仅允许本次、拒绝、编辑或选择执行模式；对非 Root、非强确认且最高为 Mutating 的命令，还可在当前 Agent 任务内记住完整命令的精确许可。该许可不持久化、不按前缀匹配，Runner 会在每次复用前重新检查当前评估仍满足条件。拒绝、失败或超时都会生成明确的失败 Tool Result。每轮可能处理模型返回的多个调用，完成后把结果加入下一请求；达到 `max_agent_steps` 立即停止并返回原因。上下文按完整 turn 删除最旧单元，system message 始终保留。
 
 Command 模式使用严格 system prompt，仅接受第一条清理后的非空命令，处理 code fence 和 `Command:` 前缀，不尝试拼装多条候选。
 
