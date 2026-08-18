@@ -101,6 +101,7 @@ async fn run_inner(
         input_history_index: None,
         input_history_draft: String::new(),
         cursor_visible: true,
+        command_selection: 0,
         history: snapshot(&history)?,
         conversation_scroll: 0,
         tool_results_expanded: false,
@@ -282,6 +283,9 @@ async fn run_inner(
                 (KeyCode::Char('c'), KeyModifiers::CONTROL) => app.input.clear(),
                 (KeyCode::Esc, _) => {}
                 (KeyCode::Enter, _) => {
+                    if app.complete_selected_command() {
+                        continue;
+                    }
                     let input = app.take_input();
                     if input.trim() == "/config" {
                         return Ok(SessionExit::Reconfigure);
@@ -298,6 +302,8 @@ async fn run_inner(
                         ));
                     }
                 }
+                (KeyCode::Up, _) if app.command_menu_visible() => app.select_previous_command(),
+                (KeyCode::Down, _) if app.command_menu_visible() => app.select_next_command(),
                 (KeyCode::Up, _) => app.previous_input(),
                 (KeyCode::Down, _) => app.next_input(),
                 (KeyCode::Left, _) => app.input.move_left(),

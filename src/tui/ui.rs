@@ -84,6 +84,9 @@ pub fn draw(f: &mut Frame, app: &App) {
             }),
     );
     f.render_widget(input, areas[2]);
+    if app.popup.is_none() {
+        render_command_menu(f, app, areas[2]);
+    }
     if let Some(popup) = &app.popup {
         let area = centered_rect(78, 45, f.area());
         f.render_widget(Clear, area);
@@ -98,6 +101,47 @@ pub fn draw(f: &mut Frame, app: &App) {
             area,
         );
     }
+}
+
+fn render_command_menu(f: &mut Frame, app: &App, input_area: ratatui::layout::Rect) {
+    let suggestions = app.command_suggestions();
+    if suggestions.is_empty() || input_area.y < 3 {
+        return;
+    }
+    let height = (suggestions.len() as u16).saturating_add(2);
+    let area = ratatui::layout::Rect::new(
+        input_area.x,
+        input_area.y.saturating_sub(height),
+        input_area.width.min(52),
+        height,
+    );
+    let selected = app.command_selection % suggestions.len();
+    let lines = suggestions
+        .iter()
+        .enumerate()
+        .map(|(index, command)| {
+            let description = match app.language {
+                UiLanguage::ZhCn => "重新配置模型服务",
+                UiLanguage::En => "Reconfigure the model provider",
+            };
+            let style = if index == selected {
+                Style::default().fg(Color::Black).bg(Color::Rgb(7, 193, 96))
+            } else {
+                Style::default().fg(Color::White)
+            };
+            Line::styled(format!(" {command:<12} {description}"), style)
+        })
+        .collect::<Vec<_>>();
+    f.render_widget(Clear, area);
+    f.render_widget(
+        Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title(
+            match app.language {
+                UiLanguage::ZhCn => "命令",
+                UiLanguage::En => "Commands",
+            },
+        )),
+        area,
+    );
 }
 
 fn input_editor_line(app: &App, width: usize, background: Color) -> Line<'static> {
@@ -287,6 +331,7 @@ mod tests {
             input_history_index: None,
             input_history_draft: String::new(),
             cursor_visible: true,
+            command_selection: 0,
             history: Vec::new(),
             conversation_scroll: 0,
             tool_results_expanded: false,
@@ -317,6 +362,25 @@ mod tests {
         assert_eq!(buffer[(10, 29)].bg, Color::Reset);
         assert!(row(26).contains('─'));
         assert!(row(29).contains('─'));
+        assert_eq!(buffer[(0, 10)].symbol(), " ");
+        assert_eq!(buffer[(99, 10)].symbol(), " ");
+
+        app.input.set("/".into());
+        terminal.draw(|frame| draw(frame, &app))?;
+        let menu = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(menu.contains("/config"));
+        assert!(terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .any(|cell| cell.bg == Color::Rgb(7, 193, 96)));
 
         app.history = vec![crate::tui::session::encode_tool_result(
             "[OK]",
@@ -381,6 +445,7 @@ mod tests {
             input_history_index: None,
             input_history_draft: String::new(),
             cursor_visible: true,
+            command_selection: 0,
             history: vec![crate::tui::session::encode_tool_result(
                 "[OK]",
                 &format!("executed_command={}\nLAST_MARKER", "x".repeat(240)),

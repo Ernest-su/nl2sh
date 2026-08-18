@@ -9,6 +9,7 @@ pub struct App {
     pub input_history_index: Option<usize>,
     pub input_history_draft: String,
     pub cursor_visible: bool,
+    pub command_selection: usize,
     pub history: Vec<String>,
     /// Number of conversation rows kept above the automatic bottom position.
     pub conversation_scroll: usize,
@@ -75,6 +76,7 @@ fn run_inner(options: TuiOptions, mut history: Vec<String>) -> Result<Option<Str
         input_history_index: None,
         input_history_draft: String::new(),
         cursor_visible: true,
+        command_selection: 0,
         history,
         conversation_scroll: 0,
         tool_results_expanded: false,
@@ -116,10 +118,19 @@ fn run_inner(options: TuiOptions, mut history: Vec<String>) -> Result<Option<Str
                             app.tool_results_expanded = !app.tool_results_expanded
                         }
                         (KeyCode::Enter, _) => {
+                            if app.complete_selected_command() {
+                                continue;
+                            }
                             let s = app.take_input();
                             if !s.trim().is_empty() {
                                 return Ok(Some(s));
                             }
+                        }
+                        (KeyCode::Up, _) if app.command_menu_visible() => {
+                            app.select_previous_command()
+                        }
+                        (KeyCode::Down, _) if app.command_menu_visible() => {
+                            app.select_next_command()
                         }
                         (KeyCode::Up, _) => app.previous_input(),
                         (KeyCode::Down, _) => app.next_input(),
@@ -140,6 +151,50 @@ fn run_inner(options: TuiOptions, mut history: Vec<String>) -> Result<Option<Str
 }
 
 impl App {
+    pub(crate) fn command_suggestions(&self) -> Vec<&'static str> {
+        const COMMANDS: &[&str] = &["/config"];
+        let query = self.input.text.trim();
+        if !query.starts_with('/') || query.contains(char::is_whitespace) {
+            return Vec::new();
+        }
+        COMMANDS
+            .iter()
+            .copied()
+            .filter(|command| command.starts_with(query))
+            .collect()
+    }
+
+    pub(crate) fn command_menu_visible(&self) -> bool {
+        !self.command_suggestions().is_empty()
+    }
+
+    pub(crate) fn select_previous_command(&mut self) {
+        let count = self.command_suggestions().len();
+        if count > 0 {
+            self.command_selection = self.command_selection.checked_sub(1).unwrap_or(count - 1);
+        }
+    }
+
+    pub(crate) fn select_next_command(&mut self) {
+        let count = self.command_suggestions().len();
+        if count > 0 {
+            self.command_selection = (self.command_selection + 1) % count;
+        }
+    }
+
+    pub(crate) fn complete_selected_command(&mut self) -> bool {
+        let suggestions = self.command_suggestions();
+        let Some(command) = suggestions.get(self.command_selection % suggestions.len().max(1))
+        else {
+            return false;
+        };
+        if self.input.text == *command {
+            return false;
+        }
+        self.input.set((*command).into());
+        true
+    }
+
     pub(crate) fn take_input(&mut self) -> String {
         let input = self.input.take();
         if !input.trim().is_empty()
@@ -205,6 +260,7 @@ mod tests {
             input_history_index: None,
             input_history_draft: String::new(),
             cursor_visible: true,
+            command_selection: 0,
             history: (0..rows).map(|row| row.to_string()).collect(),
             conversation_scroll: 0,
             tool_results_expanded: false,
@@ -246,5 +302,15 @@ mod tests {
         app.next_input();
         app.next_input();
         assert_eq!(app.input.text, "draft");
+    }
+
+    #[test]
+    fn slash_command_can_be_completed_without_hiding_exact_command() {
+        let mut app = app_with_history(0);
+        app.input.set("/c".into());
+        assert_eq!(app.command_suggestions(), vec!["/config"]);
+        assert!(app.complete_selected_command());
+        assert_eq!(app.input.text, "/config");
+        assert!(!app.complete_selected_command());
     }
 }
