@@ -1,6 +1,6 @@
 # Project Status
 
-Last Updated: 2026-08-18
+Last Updated: 2026-08-20
 
 ## Current Phase
 
@@ -9,8 +9,8 @@ Phase 10：本地功能与验证基本完成，等待 Android 交叉编译和真
 ## Overall Status
 
 - Product positioning: Android 原生 shell 版的类 Hermes AI Agent；核心程序以单个可执行文件交付，提供多轮 Tool Calling 和丰富 TUI，不声称与 Hermes API 或插件兼容。
-- Build status: `cargo check` 和 `cargo build --release` 已于 2026-08-05 在当前 Linux 主机通过。
-- Test status: `cargo test` 已通过（64 个 unit/integration tests，0 failure）。
+- Build status: `cargo check --all-targets` 已于 2026-08-20 在 WSL Arch Linux 通过；既有 Linux release 构建基线保持有效。
+- Test status: `cargo test --all-targets` 已于 2026-08-20 在 WSL Arch Linux 通过（68 个 unit/integration tests，0 failure）。
 - Android cross-compile status: 已使用 NDK r28c、API 26 成功构建 `aarch64-linux-android` release 产物。
 - Android device validation: 已在 KONKA Android TV（API 34、`armeabi-v7a`）完成部署、Agent/PTY 和 TUI smoke test。
 - CI release workflow: 已添加 `.github/workflows/release.yml`，在推送 `v*` tag 时用 GitHub Actions 并行交叉编译 `aarch64-linux-android` 与 `armv7-linux-androideabi`，把预编译 `nl2sh` 与 Linux/Windows 启动脚本、`config.toml.example`、`使用说明.md` 打包为 `.tar.gz`/`.zip` 并附带 SHA256 校验和发布到 GitHub Release；`workflow_dispatch` 可手动触发草稿发布。
@@ -46,7 +46,7 @@ Phase 10：本地功能与验证基本完成，等待 Android 交叉编译和真
 - 部署文档说明了文件存在却由 ABI/ELF interpreter 不匹配引发 `No such file or directory` 的情况，并给出 AArch64/ARMv7 识别、重建和验证步骤。
 - adb TTY 将鼠标 SGR 序列拆成按键字符时，输入边界会过滤 `[<数字;数字;数字M/m`，且空闲 Esc 不再误清已有输入；确认弹窗 Esc 行为不变。
 - `/dev/null` 重定向与 fd 复制不再把只读诊断误判为修改或连带要求 root；真实文件写入和命令副作用仍受确认保护，strict 仍按定义确认全部命令。
-- 工具执行期间保留实时输出，完成后结果默认折叠并可用 F2 展开/收起；模型仍接收完整结果，最终答复被要求使用用户语言及可读表格或文本总结。
+- 工具执行期间保留有界实时输出，完成后结果默认折叠并可用 F2 展开/收起；模型接收带显式截断标记的有界结果，最终答复被要求使用用户语言及可读表格或文本总结。
 - Agent Markdown 原生映射为 ratatui 行与样式，支持标题、行内样式、列表、引用、代码块、链接和分隔线；表格按 Unicode 宽度对齐、换行，并在窄屏降级为键值列表。
 - F2 展开工具结果后按 ratatui 实际换行高度定位和滚动，不再用逻辑历史条目数限制大结果，长命令与输出可完整浏览。
 - 交互命令退出后恢复备用屏幕与鼠标捕获，并使 ratatui 强制完整重绘，避免第二轮对话只显示结果而框架消失。
@@ -59,6 +59,9 @@ Phase 10：本地功能与验证基本完成，等待 Android 交叉编译和真
 - 命令审批改为固定 `1-6` 列表，支持方向键/Enter 与 `y/n/a/e/i/t` 别名；可在当前 Agent 任务内记住完全相同的普通命令，但 Root、Dangerous、Critical 和强确认命令始终禁用该选项，且许可不持久化、不做前缀匹配。
 - 审批区域使用完整风险色边框和统一 `background_alt` 面板背景；阶段切换保持稳定最小高度并清空整个面板，避免列表字符残留到强确认或编辑画面。
 - 审批面板锚定在输入区正上方的左下角；初始审批忽略孤立 Esc 和大写 CSI 尾字符，避免 adb 将方向键拆分后误触拒绝或 always 导致弹窗消失。
+- MIT `LICENSE` 已纳入仓库；Cargo 开发版本进入 0.1.1。
+- 实时 TUI、捕获式工具结果、发给模型的 Tool Result、JSONL 单事件和单文件均有可配置上限；截断会插入明确标记。
+- TUI 输出与历史生命周期已从 session 控制器拆为独立模块，同时保留新的审批菜单和任务级精确命令许可。
 
 ## In Progress
 
@@ -82,7 +85,7 @@ Phase 10：本地功能与验证基本完成，等待 Android 交叉编译和真
 ## Verification Performed
 
 - `cargo check`：通过。
-- `cargo test`：通过，共 64 项测试；覆盖配置/CLI、安全、历史日志、root、双 LLM 协议、重试/timeout、Agent 历史/失败/取消、真实 SIGINT、PTY、初始化顺序、TUI 重配置、编号审批与任务级精确许可、审批面板定位/跨帧清理/方向键拆分、双行布局、TrueColor/ANSI 256 palette、Markdown/表格/工具结果/确认界面的语义配色。
+- `cargo test --all-targets`：通过，共 68 项测试；覆盖配置/CLI、安全、历史日志及限额、root、双 LLM 协议、重试/timeout、Agent 历史/失败/取消与模型 Tool Result 截断、真实 SIGINT、PTY、初始化顺序、TUI 重配置、编号审批与任务级精确许可、审批面板定位/跨帧清理/方向键拆分、双行布局、TrueColor/ANSI 256 palette、Markdown/表格/工具结果/确认界面的语义配色。
 - `android-run.ps1`：PowerShell AST 语法解析与 `git diff --check` 通过；因当前未授权实际部署，未执行 adb/NDK 真机流程。
 - `cargo fmt --all -- --check`：通过。
 - Release 用户说明打包：`release.yml` 已通过 `actionlint`，已在本地模拟 AArch64/ARMv7 目录并确认 `.tar.gz` 和 `.zip` 均包含 `使用说明.md`。
@@ -96,4 +99,4 @@ Phase 10：本地功能与验证基本完成，等待 Android 交叉编译和真
 
 1. 在 root 与非 root 设备补测确认、提权、超时和全屏程序。
 2. 根据真机结果优化窄屏布局和全屏交互程序切换。
-3. 在真实 GitHub Actions 上验证 release workflow（`workflow_dispatch` 草稿）并发布首个版本。
+3. 在真实 GitHub Actions 上验证 release workflow（`workflow_dispatch` 草稿）并发布 0.1.1。

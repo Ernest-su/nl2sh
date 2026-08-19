@@ -1,4 +1,5 @@
 use super::{filter_unsafe_ansi, ExecutionRequest, ExecutionResult};
+use crate::limits::BoundedText;
 use anyhow::{Context, Result};
 use nix::{
     fcntl::{fcntl, FcntlArg, OFlag},
@@ -73,7 +74,7 @@ fn execute_blocking(req: ExecutionRequest, cancelled: Arc<AtomicBool>) -> Result
     let mut child = command.spawn().context("spawn command on PTY")?;
     let pid = child.id();
     let started = Instant::now();
-    let mut bytes = Vec::new();
+    let mut bytes = BoundedText::new(req.capture_max_bytes);
     let mut buffer = [0_u8; 8192];
     let mut timed_out = false;
     let mut interrupted = false;
@@ -82,7 +83,7 @@ fn execute_blocking(req: ExecutionRequest, cancelled: Arc<AtomicBool>) -> Result
         match master.read(&mut buffer) {
             Ok(0) => {}
             Ok(n) => {
-                bytes.extend_from_slice(&buffer[..n]);
+                bytes.push(&buffer[..n]);
                 if req.interactive {
                     std::io::stdout().write_all(&buffer[..n])?;
                     std::io::stdout().flush()?;
@@ -135,7 +136,7 @@ fn execute_blocking(req: ExecutionRequest, cancelled: Arc<AtomicBool>) -> Result
     loop {
         match master.read(&mut buffer) {
             Ok(0) => break,
-            Ok(n) => bytes.extend_from_slice(&buffer[..n]),
+            Ok(n) => bytes.push(&buffer[..n]),
             Err(error)
                 if error.kind() == ErrorKind::WouldBlock
                     || error.raw_os_error() == Some(libc::EIO) =>
@@ -145,7 +146,7 @@ fn execute_blocking(req: ExecutionRequest, cancelled: Arc<AtomicBool>) -> Result
             Err(error) => return Err(error).context("drain PTY master"),
         }
     }
-    let merged = String::from_utf8_lossy(&bytes);
+    let merged = bytes.finish();
     Ok(ExecutionResult {
         stdout: filter_unsafe_ansi(&merged),
         stderr: String::new(),

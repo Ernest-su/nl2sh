@@ -6,6 +6,8 @@
 
 ### Added
 
+- Bounded live TUI output, captured tool results, model tool context, and JSONL history with explicit truncation markers.
+- MIT license file.
 - A project-wide TUI visual specification covering the dark palette, semantic colors, component styling, ANSI 256 fallback, safety boundaries, and acceptance criteria.
 - Mouse-wheel conversation scrolling together with native Shift+drag highlighting and right-click context-menu copy.
 - A blinking accent-colored input caret, Unicode-safe cursor editing, and Up/Down input-history recall.
@@ -42,6 +44,8 @@
 
 ### Changed
 
+- Split TUI output/history lifecycle handling from the main session controller.
+- Treat 0.1.0 as the published baseline and continue development toward 0.1.1.
 - Reworked command approval into a numbered, keyboard-navigable action list with numeric and `y/n/a/e/i/t` aliases; exact-command task approvals are memory-only and unavailable to root or high-risk commands.
 - Replaced scattered high-saturation TUI colors with a centralized GitHub-Dark-inspired semantic palette, including TrueColor/ANSI 256 selection and field-level styling for Markdown, tool results, tables, status, input, and confirmations.
 - Unified project documentation around nl2sh's positioning as an Android shell-focused Hermes-like AI agent delivered as a single executable with a rich TUI; this describes product shape, not Hermes API or plugin compatibility.

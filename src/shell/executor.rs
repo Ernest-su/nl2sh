@@ -20,6 +20,8 @@ pub struct ExecutionRequest {
     pub interactive: bool,
     /// Receives safe incremental output.
     pub output: Arc<dyn OutputSink>,
+    /// Maximum bytes retained in each captured output stream.
+    pub capture_max_bytes: usize,
     /// True when an interactive child must temporarily suspend a live TUI.
     pub tui_active: bool,
     /// Shared flag telling the TUI not to draw while a fullscreen child owns the terminal.
@@ -148,6 +150,7 @@ impl CommandExecutor for ShellExecutor {
             use_pty: self.config.enable_pty,
             interactive,
             output: self.output.clone(),
+            capture_max_bytes: self.config.tool_output_max_bytes,
             tui_active: self.tui_active,
             tui_suspended: self.tui_suspended.clone(),
         };

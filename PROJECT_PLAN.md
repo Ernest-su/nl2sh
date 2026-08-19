@@ -1,6 +1,6 @@
 # Project Plan
 
-状态以 2026-08-05 的工作区和实际验证为准；未完成项不会机械勾选。
+状态以 2026-08-20 的工作区和实际验证为准；0.1.0 作为已发布基线，当前迭代目标为 0.1.1；未完成项不会机械勾选。
 
 ## Phase 0 项目初始化与工程基线 — 完成
 
@@ -92,7 +92,15 @@
 - [x] API 34 ARMv7 Android device 基础 smoke。
 - [ ] 多设备 root/交互完整 smoke。
 
-## Phase 11 发布准备 — 进行中
+## Phase 11 0.1.0 发布基线 — 完成
 
 - [x] CI release matrix：tag 触发并行构建 AArch64/ARMv7 Android release，打包快速启动脚本与校验和，发布 GitHub Release。
-- [ ] license、安全审计和 0.1.0 发布说明。
+- [x] MIT license、0.1.0 changelog 基线和 Android 双 ABI 发布工作流。
+
+## Phase 12 0.1.1 稳定性迭代 — 进行中
+
+- [x] 为实时 UI、工具结果、模型 Tool Result、日志事件和日志文件增加显式截断的资源上限。
+- [x] 拆出 TUI 输出与历史生命周期模块，降低 session 控制器职责。
+- [ ] 增加普通 PR CI 质量门禁。
+- [ ] 完成 root/非 root 真机安全矩阵。
+- [ ] 验证真实 GitHub Actions 发布流程并发布 0.1.1。

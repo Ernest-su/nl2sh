@@ -17,6 +17,23 @@ fn history_log_is_json_lines_and_resolves_beside_config() -> anyhow::Result<()> 
     Ok(())
 }
 
+#[test]
+fn history_limits_are_explicit_and_bounded() -> anyhow::Result<()> {
+    let directory = tempfile::tempdir()?;
+    let config = directory.path().join("config.toml");
+    let log =
+        HistoryLog::open_with_limits(&config, std::path::Path::new("bounded.jsonl"), 160, 700)?;
+    log.record("large", &"界".repeat(200))?;
+    for _ in 0..20 {
+        log.record("repeat", &"x".repeat(100))?;
+    }
+    let contents = fs::read_to_string(directory.path().join("bounded.jsonl"))?;
+    assert!(contents.len() <= 700);
+    assert!(contents.contains("NL2SH OUTPUT TRUNCATED"));
+    assert!(contents.contains("log_limit"));
+    Ok(())
+}
+
 #[cfg(unix)]
 #[test]
 fn new_history_log_is_private() -> anyhow::Result<()> {

@@ -2,6 +2,7 @@ use super::{
     app::{App, PopupView},
     i18n,
     input::Input,
+    output::{append_transcript, finalize_live_output, push_history, snapshot, SessionOutput},
     terminal::TerminalGuard,
     ui,
 };
@@ -80,6 +81,7 @@ async fn run_inner(
         history: history.clone(),
         ascii: config.ascii_symbols,
         log: log.clone(),
+        max_bytes: config.ui_live_output_max_bytes,
     });
     let suspended = Arc::new(AtomicBool::new(false));
     let executor = ShellExecutor::new(config.clone())
@@ -650,133 +652,6 @@ impl ConfirmationUi {
         }
         true
     }
-}
-
-struct SessionOutput {
-    history: Arc<Mutex<Vec<String>>>,
-    ascii: bool,
-    log: HistoryLog,
-}
-
-impl OutputSink for SessionOutput {
-    fn stdout(&self, text: &str) {
-        self.push(if self.ascii { "[OUT]" } else { "✅" }, "stdout", text);
-    }
-    fn stderr(&self, text: &str) {
-        self.push(if self.ascii { "[ERR]" } else { "❌" }, "stderr", text);
-    }
-}
-
-impl SessionOutput {
-    fn push(&self, prefix: &str, event: &str, text: &str) {
-        let _ = self.log.record(event, text);
-        if let Ok(mut history) = self.history.lock() {
-            for line in text.lines() {
-                history.push(format!("{LIVE_OUTPUT_PREFIX}{prefix} {line}"));
-            }
-        }
-    }
-}
-
-fn append_transcript(
-    history: &Arc<Mutex<Vec<String>>>,
-    outcome: &AgentOutcome,
-    ascii: bool,
-    log: &HistoryLog,
-) -> Result<()> {
-    let mut visible = history
-        .lock()
-        .map_err(|_| anyhow::anyhow!("TUI history lock is poisoned"))?;
-    visible.retain(|entry| !entry.starts_with(LIVE_OUTPUT_PREFIX));
-    for item in &outcome.transcript {
-        if let ConversationItem::Tools(round) = item {
-            for call in &round.calls {
-                log.record("tool_call", &call.name)?;
-                visible.push(format!(
-                    "{} {}",
-                    if ascii { "[TOOL]" } else { "🔧" },
-                    call.name
-                ));
-                if let Some(command) = call
-                    .arguments
-                    .get("command")
-                    .and_then(serde_json::Value::as_str)
-                {
-                    log.record("command", command)?;
-                    visible.push(format!("{} {command}", if ascii { "[CMD]" } else { "💻" }));
-                }
-            }
-            for result in &round.results {
-                log.record(
-                    if result.success {
-                        "tool_result"
-                    } else {
-                        "tool_error"
-                    },
-                    &result.output,
-                )?;
-                let prefix = if result.success {
-                    if ascii {
-                        "[OK]"
-                    } else {
-                        "✅"
-                    }
-                } else if ascii {
-                    "[ERROR]"
-                } else {
-                    "❌"
-                };
-                visible.push(encode_tool_result(prefix, &result.output));
-            }
-        }
-    }
-    visible.push(format!(
-        "{} {}",
-        if ascii { "[AGENT]" } else { "🤖" },
-        outcome.final_text
-    ));
-    log.record("agent", &outcome.final_text)?;
-    Ok(())
-}
-
-pub(super) const LIVE_OUTPUT_PREFIX: &str = "\u{1e}LIVE:";
-pub(super) const TOOL_RESULT_PREFIX: &str = "\u{1e}RESULT:";
-
-pub(super) fn encode_tool_result(prefix: &str, output: &str) -> String {
-    format!("{TOOL_RESULT_PREFIX}{prefix}\n{output}")
-}
-
-fn finalize_live_output(history: &Arc<Mutex<Vec<String>>>) -> Result<()> {
-    let mut history = history
-        .lock()
-        .map_err(|_| anyhow::anyhow!("TUI history lock is poisoned"))?;
-    for entry in history.iter_mut() {
-        if let Some(visible) = entry.strip_prefix(LIVE_OUTPUT_PREFIX) {
-            *entry = visible.to_owned();
-        }
-    }
-    Ok(())
-}
-
-fn push_history(
-    history: &Arc<Mutex<Vec<String>>>,
-    value: String,
-    log: &HistoryLog,
-    event: &str,
-) -> Result<()> {
-    log.record(event, &value)?;
-    history
-        .lock()
-        .map_err(|_| anyhow::anyhow!("TUI history lock is poisoned"))?
-        .push(value);
-    Ok(())
-}
-
-fn snapshot(history: &Arc<Mutex<Vec<String>>>) -> Result<Vec<String>> {
-    Ok(history
-        .lock()
-        .map_err(|_| anyhow::anyhow!("TUI history lock is poisoned"))?
-        .clone())
 }
 
 #[cfg(test)]

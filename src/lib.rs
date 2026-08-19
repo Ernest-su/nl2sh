@@ -5,6 +5,8 @@ pub mod agent;
 pub mod config;
 /// Persistent structured interaction history for diagnostics.
 pub mod history;
+/// Shared bounded-text utilities for execution, UI, logs, and model context.
+pub mod limits;
 /// Provider-neutral LLM types and OpenAI-compatible HTTP clients.
 pub mod llm;
 /// Local shell command classification and confirmation requirements.

@@ -1,6 +1,7 @@
 use super::{command_tool, ConfirmationDecision, Confirmer, ConversationContext, ShellToolArgs};
 use crate::{
     config::Config,
+    limits::truncate_text,
     llm::{
         ConversationItem, ConversationMessage, LlmClient, LlmRequest, Role, ToolResult, ToolRound,
     },
@@ -44,12 +45,14 @@ impl AgentRunner<'_> {
     ) -> Result<AgentOutcome> {
         let mut ctx=ConversationContext::new("You are an Android shell agent. Use execute_shell_command for evidence. Never claim unexecuted results. Write the final answer in the user's language for a human reader. Summarize conclusions instead of dumping raw tool protocol output. Use a concise Markdown table when comparing multiple items or presenting repeated structured fields; otherwise use clear concise text.",self.config.max_context_turns.saturating_sub(1));
         for turn in history {
-            ctx.push_turn(turn.clone());
+            ctx.push_turn(truncate_tool_results(
+                turn,
+                self.config.model_tool_output_max_bytes,
+            ));
         }
-        let mut current = vec![ConversationItem::Message(ConversationMessage::new(
-            Role::User,
-            input,
-        ))];
+        let user_item = ConversationItem::Message(ConversationMessage::new(Role::User, input));
+        let mut current = vec![user_item.clone()];
+        let mut transcript = vec![user_item];
         let mut task_approvals = HashSet::new();
         for step in 1..=self.config.max_agent_steps {
             let mut items = ctx.items();
@@ -70,10 +73,14 @@ impl AgentRunner<'_> {
                     Role::Assistant,
                     final_text.clone(),
                 )));
+                transcript.push(ConversationItem::Message(ConversationMessage::new(
+                    Role::Assistant,
+                    final_text.clone(),
+                )));
                 return Ok(AgentOutcome {
                     final_text,
                     steps: step,
-                    transcript: current,
+                    transcript,
                 });
             }
             let calls = response.tool_calls;
@@ -143,7 +150,7 @@ impl AgentRunner<'_> {
                         }),
                     )
                     .await;
-                let result = match execution {
+                let mut result = match execution {
                     Ok(x) if x.interrupted => {
                         bail!("agent interrupted during command execution")
                     }
@@ -168,9 +175,25 @@ impl AgentRunner<'_> {
                         success: false,
                     },
                 };
+                result.output = truncate_text(&result.output, self.config.tool_output_max_bytes);
                 results.push(result)
             }
-            current.push(ConversationItem::Tools(ToolRound { calls, results }));
+            transcript.push(ConversationItem::Tools(ToolRound {
+                calls: calls.clone(),
+                results: results.clone(),
+            }));
+            let model_results = results
+                .into_iter()
+                .map(|mut result| {
+                    result.output =
+                        truncate_text(&result.output, self.config.model_tool_output_max_bytes);
+                    result
+                })
+                .collect();
+            current.push(ConversationItem::Tools(ToolRound {
+                calls,
+                results: model_results,
+            }));
         }
         let final_text = format!(
             "Agent stopped after reaching the maximum of {} steps; the last tool results were retained.",
@@ -180,10 +203,14 @@ impl AgentRunner<'_> {
             Role::Assistant,
             final_text.clone(),
         )));
+        transcript.push(ConversationItem::Message(ConversationMessage::new(
+            Role::Assistant,
+            final_text.clone(),
+        )));
         Ok(AgentOutcome {
             final_text,
             steps: self.config.max_agent_steps,
-            transcript: current,
+            transcript,
         })
     }
 
@@ -194,5 +221,44 @@ impl AgentRunner<'_> {
         history: Vec<Vec<ConversationItem>>,
     ) -> Result<AgentOutcome> {
         self.run_with_history(&input, &history).await
+    }
+}
+
+fn truncate_tool_results(items: &[ConversationItem], limit: usize) -> Vec<ConversationItem> {
+    items
+        .iter()
+        .cloned()
+        .map(|item| match item {
+            ConversationItem::Tools(mut round) => {
+                for result in &mut round.results {
+                    result.output = truncate_text(&result.output, limit);
+                }
+                ConversationItem::Tools(round)
+            }
+            other => other,
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn model_tool_results_are_bounded_and_marked() {
+        let items = vec![ConversationItem::Tools(ToolRound {
+            calls: Vec::new(),
+            results: vec![ToolResult {
+                call_id: "call".into(),
+                output: "x".repeat(1000),
+                success: true,
+            }],
+        })];
+        let bounded = truncate_tool_results(&items, 200);
+        let ConversationItem::Tools(round) = &bounded[0] else {
+            unreachable!("test constructs a tool round")
+        };
+        assert!(round.results[0].output.len() <= 200);
+        assert!(round.results[0].output.contains("NL2SH OUTPUT TRUNCATED"));
     }
 }

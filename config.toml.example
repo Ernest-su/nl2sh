@@ -18,6 +18,11 @@ enable_pty = true
 ascii_symbols = false
 ui_language = "zh_cn" # zh_cn or en
 history_log_file = "nl2sh.log"
+ui_live_output_max_bytes = 262144
+tool_output_max_bytes = 1048576
+model_tool_output_max_bytes = 131072
+history_log_event_max_bytes = 262144
+history_log_max_bytes = 10485760
 
 # [[security_rules]]
 # id = "organization-policy"

@@ -1,10 +1,10 @@
 use super::{process, ExecutionRequest, ExecutionResult};
+use crate::limits::BoundedText;
 use anyhow::{Context, Result};
 use std::process::Stdio;
 use tokio::{
     io::{AsyncReadExt, BufReader},
     process::Command,
-    sync::mpsc,
     time::Duration,
 };
 pub async fn execute(req: ExecutionRequest) -> Result<ExecutionResult> {
@@ -29,10 +29,8 @@ pub async fn execute(req: ExecutionRequest) -> Result<ExecutionResult> {
     let pid = child.id().context("child has no pid")?;
     let out = child.stdout.take().context("missing stdout")?;
     let err = child.stderr.take().context("missing stderr")?;
-    let (tx, mut rx) = mpsc::unbounded_channel();
-    let tx2 = tx.clone();
-    tokio::spawn(read(out, false, tx, req.output.clone()));
-    tokio::spawn(read(err, true, tx2, req.output.clone()));
+    let stdout_task = tokio::spawn(read(out, false, req.capture_max_bytes, req.output.clone()));
+    let stderr_task = tokio::spawn(read(err, true, req.capture_max_bytes, req.output.clone()));
     enum End {
         Status(std::process::ExitStatus),
         Timeout,
@@ -72,15 +70,8 @@ pub async fn execute(req: ExecutionRequest) -> Result<ExecutionResult> {
             (!interrupted, interrupted, status)
         }
     };
-    let mut stdout = String::new();
-    let mut stderr = String::new();
-    while let Some((is_err, b)) = rx.recv().await {
-        if is_err {
-            stderr.push_str(&b)
-        } else {
-            stdout.push_str(&b)
-        }
-    }
+    let stdout = stdout_task.await.context("stdout reader task failed")?;
+    let stderr = stderr_task.await.context("stderr reader task failed")?;
     Ok(ExecutionResult {
         stdout,
         stderr,
@@ -92,11 +83,12 @@ pub async fn execute(req: ExecutionRequest) -> Result<ExecutionResult> {
 async fn read<R: tokio::io::AsyncRead + Unpin>(
     r: R,
     e: bool,
-    tx: mpsc::UnboundedSender<(bool, String)>,
+    max_bytes: usize,
     output: std::sync::Arc<dyn super::OutputSink>,
-) {
+) -> String {
     let mut r = BufReader::new(r);
     let mut b = [0; 4096];
+    let mut captured = BoundedText::new(max_bytes);
     loop {
         match r.read(&mut b).await {
             Ok(0) | Err(_) => break,
@@ -107,8 +99,9 @@ async fn read<R: tokio::io::AsyncRead + Unpin>(
                 } else {
                     output.stdout(&text)
                 }
-                let _ = tx.send((e, text));
+                captured.push(text.as_bytes());
             }
         }
     }
+    captured.finish()
 }

@@ -104,6 +104,16 @@ pub struct Config {
     pub ui_language: UiLanguage,
     /// JSON Lines interaction log, relative to the configuration directory by default.
     pub history_log_file: PathBuf,
+    /// Maximum bytes retained from live command output in the TUI.
+    pub ui_live_output_max_bytes: usize,
+    /// Maximum bytes captured for one command result.
+    pub tool_output_max_bytes: usize,
+    /// Maximum bytes from one tool result sent back to the model.
+    pub model_tool_output_max_bytes: usize,
+    /// Maximum unencoded message bytes in one history event.
+    pub history_log_event_max_bytes: usize,
+    /// Maximum bytes written to one history log file per process run.
+    pub history_log_max_bytes: u64,
     /// Additional rules that can only raise risk.
     pub security_rules: Vec<SecurityRuleConfig>,
     #[serde(skip)]
@@ -146,6 +156,11 @@ impl Default for Config {
             ascii_symbols: false,
             ui_language: UiLanguage::ZhCn,
             history_log_file: PathBuf::from("nl2sh.log"),
+            ui_live_output_max_bytes: 256 * 1024,
+            tool_output_max_bytes: 1024 * 1024,
+            model_tool_output_max_bytes: 128 * 1024,
+            history_log_event_max_bytes: 256 * 1024,
+            history_log_max_bytes: 10 * 1024 * 1024,
             security_rules: Vec::new(),
             source: None,
         }
@@ -173,6 +188,14 @@ impl Config {
         }
         if self.history_log_file.as_os_str().is_empty() {
             bail!("history_log_file must not be empty")
+        }
+        if self.ui_live_output_max_bytes < 256
+            || self.tool_output_max_bytes < 256
+            || self.model_tool_output_max_bytes < 256
+            || self.history_log_event_max_bytes < 256
+            || self.history_log_max_bytes < 512
+        {
+            bail!("output limits must be at least 256 bytes and history_log_max_bytes at least 512 bytes")
         }
         for rule in &self.security_rules {
             if rule.id.trim().is_empty() || rule.message.trim().is_empty() {

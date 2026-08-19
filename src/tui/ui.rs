@@ -490,7 +490,7 @@ fn wrap_rendered_lines(lines: Vec<Line<'_>>, width: usize) -> Vec<Line<'static>>
 fn conversation_lines(app: &App, width: usize, theme: Theme) -> Vec<Line<'_>> {
     let mut lines = Vec::new();
     for entry in &app.history {
-        if let Some(encoded) = entry.strip_prefix(super::session::TOOL_RESULT_PREFIX) {
+        if let Some(encoded) = entry.strip_prefix(super::output::TOOL_RESULT_PREFIX) {
             let (prefix, details) = encoded.split_once('\n').unwrap_or((encoded, ""));
             if app.tool_results_expanded {
                 let label = match app.language {
@@ -506,7 +506,7 @@ fn conversation_lines(app: &App, width: usize, theme: Theme) -> Vec<Line<'_>> {
                 };
                 lines.push(tool_result_heading(prefix, label, theme));
             }
-        } else if let Some(visible) = entry.strip_prefix(super::session::LIVE_OUTPUT_PREFIX) {
+        } else if let Some(visible) = entry.strip_prefix(super::output::LIVE_OUTPUT_PREFIX) {
             lines.push(conversation_line(visible, theme));
         } else if starts_with_any(entry, &["[AGENT]", "🤖"]) {
             lines.extend(markdown::render(entry, width, theme, app.ascii));
@@ -749,7 +749,7 @@ mod tests {
             .iter()
             .any(|cell| cell.bg == theme.background_alt && cell.fg == theme.cyan));
 
-        app.history = vec![crate::tui::session::encode_tool_result(
+        app.history = vec![crate::tui::output::encode_tool_result(
             "[OK]",
             "executed_command=id\nrisk=ReadOnly root=false matched_rules=[]\nexit=Some(0) timed_out=false\nstdout:\nuid=0",
         )];
@@ -950,7 +950,7 @@ mod tests {
             input_history_draft: String::new(),
             cursor_visible: true,
             command_selection: 0,
-            history: vec![crate::tui::session::encode_tool_result(
+            history: vec![crate::tui::output::encode_tool_result(
                 "[OK]",
                 &format!("executed_command={}\nLAST_MARKER", "x".repeat(240)),
             )],

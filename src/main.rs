@@ -33,7 +33,12 @@ async fn main() -> Result<()> {
         }
     }
     let mut cfg = load_runtime_config(&path, &cli)?;
-    let history_log = HistoryLog::open(&path, &cfg.history_log_file)?;
+    let history_log = HistoryLog::open_with_limits(
+        &path,
+        &cfg.history_log_file,
+        cfg.history_log_event_max_bytes,
+        cfg.history_log_max_bytes,
+    )?;
     let mut llm = build_client(&cfg)?;
     let probe = SystemRootProbe;
     let root = format!("{:?}", probe.status());
@@ -109,6 +114,9 @@ async fn main() -> Result<()> {
         let output = std::sync::Arc::new(UiOutput {
             history: ui_history.clone(),
             ascii: cfg.ascii_symbols,
+            max_bytes: cfg.ui_live_output_max_bytes,
+            bytes: std::sync::Mutex::new(0),
+            truncated: std::sync::atomic::AtomicBool::new(false),
         });
         match run_once(
             &cfg,
@@ -207,6 +215,9 @@ async fn run_once(
 struct UiOutput {
     history: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
     ascii: bool,
+    max_bytes: usize,
+    bytes: std::sync::Mutex<usize>,
+    truncated: std::sync::atomic::AtomicBool,
 }
 
 impl OutputSink for UiOutput {
@@ -222,6 +233,25 @@ impl OutputSink for UiOutput {
 
 impl UiOutput {
     fn push(&self, prefix: &str, text: &str) {
+        let Ok(mut used) = self.bytes.lock() else {
+            return;
+        };
+        if *used >= self.max_bytes {
+            if !self
+                .truncated
+                .swap(true, std::sync::atomic::Ordering::AcqRel)
+            {
+                if let Ok(mut history) = self.history.lock() {
+                    history.push(format!(
+                        "{prefix} [... NL2SH OUTPUT TRUNCATED: live UI limit {} bytes reached; later live output omitted ...]",
+                        self.max_bytes
+                    ));
+                }
+            }
+            return;
+        }
+        let text = nl2sh::limits::truncate_text(text, self.max_bytes - *used);
+        *used = used.saturating_add(text.len());
         if let Ok(mut history) = self.history.lock() {
             for line in text.lines() {
                 history.push(format!("{prefix} {line}"));

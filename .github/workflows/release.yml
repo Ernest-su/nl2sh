@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag for the draft release (e.g. v0.1.0)"
+        description: "Tag for the draft release (e.g. v0.1.1)"
         required: false
-        default: "v0.1.0-draft"
+        default: "v0.1.1-draft"
 
 permissions:
   contents: write

@@ -3,6 +3,7 @@ mod events;
 mod i18n;
 mod input;
 mod markdown;
+mod output;
 mod session;
 mod terminal;
 mod theme;
