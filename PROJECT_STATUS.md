@@ -2,6 +2,10 @@
 
 Last Updated: 2026-08-20
 
+## Recent Changes
+
+- 默认 `max_agent_steps` 由 8 提升到 24、`max_context_turns` 由 10 提升到 16，以支持安装后验证、多阶段诊断等更长任务；`config.toml.example` 与默认值测试同步更新。
+
 ## Current Phase
 
 Phase 10：本地功能与验证基本完成，等待 Android 交叉编译和真机验证。

@@ -13,7 +13,8 @@ fn normal_toml_and_defaults() -> anyhow::Result<()> {
     let cfg = load_from(&path)?;
     assert_eq!(cfg.model, "local");
     assert_eq!(cfg.api_type, ApiType::Responses);
-    assert_eq!(cfg.max_agent_steps, 8);
+    assert_eq!(cfg.max_agent_steps, 24);
+    assert_eq!(cfg.max_context_turns, 16);
     assert_eq!(cfg.model_tool_output_max_bytes, 128 * 1024);
     assert_eq!(cfg.history_log_max_bytes, 10 * 1024 * 1024);
     assert_eq!(cfg.ui_language, UiLanguage::ZhCn);

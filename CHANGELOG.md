@@ -44,6 +44,7 @@
 
 ### Changed
 
+- Raised default `max_agent_steps` from 8 to 24 and `max_context_turns` from 10 to 16 so multi-stage Android tasks (install-and-verify, multi-step diagnostics) can complete before hitting the step limit.
 - Split TUI output/history lifecycle handling from the main session controller.
 - Treat 0.1.0 as the published baseline and continue development toward 0.1.1.
 - Reworked command approval into a numbered, keyboard-navigable action list with numeric and `y/n/a/e/i/t` aliases; exact-command task approvals are memory-only and unavailable to root or high-risk commands.

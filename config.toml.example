@@ -3,8 +3,8 @@ model = "gpt-4o-mini"
 endpoint = "https://api.openai.com/v1"
 api_type = "responses"
 
-max_context_turns = 10
-max_agent_steps = 8
+max_context_turns = 16
+max_agent_steps = 24
 llm_retry_count = 3
 llm_retry_base_delay_ms = 500
 llm_request_timeout_secs = 60
