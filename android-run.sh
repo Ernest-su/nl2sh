@@ -7,6 +7,22 @@ ANDROID_DIR="${ANDROID_DIR:-/data/local/tmp}"
 REMOTE_BINARY="${ANDROID_DIR}/nl2sh"
 LOCAL_BINARY="${PROJECT_DIR}/target/${TARGET}/release/nl2sh"
 
+restore_host_terminal() {
+  # adb transports the remote TUI's control sequences to this terminal.  If
+  # the remote process or adb dies before its RAII guard runs, disable every
+  # mouse tracking mode here so SGR mouse reports do not leak into the shell.
+  if [[ -w /dev/tty ]]; then
+    printf '\033[?1000l\033[?1002l\033[?1003l\033[?1015l\033[?1006l\033[?1049l\033[?25h' > /dev/tty
+  else
+    printf '\033[?1000l\033[?1002l\033[?1003l\033[?1015l\033[?1006l\033[?1049l\033[?25h'
+  fi
+}
+
+run_remote() {
+  trap restore_host_terminal EXIT
+  "${ADB[@]}" shell -t "$@"
+}
+
 if ! command -v adb >/dev/null 2>&1; then
   echo "error: adb was not found in PATH" >&2
   exit 1
@@ -57,14 +73,16 @@ echo "Pushing: ${LOCAL_BINARY} -> ${REMOTE_BINARY}"
 if [[ "${ADB_IS_ROOT}" == true ]]; then
   echo "Starting ${REMOTE_BINARY} through root adbd."
   echo "Press Ctrl+Q in nl2sh to exit."
-  exec "${ADB[@]}" shell -t "${REMOTE_BINARY}"
+  run_remote "${REMOTE_BINARY}"
+  exit $?
 fi
 
 echo "Trying Android su as a fallback..."
 if "${ADB[@]}" shell su -c id >/dev/null 2>&1; then
   echo "su access granted; starting ${REMOTE_BINARY} as root."
   echo "Press Ctrl+Q in nl2sh to exit."
-  exec "${ADB[@]}" shell -t su -c "${REMOTE_BINARY}"
+  run_remote su -c "${REMOTE_BINARY}"
+  exit $?
 fi
 
 REMOTE_CONFIG="${ANDROID_DIR}/config.toml"
@@ -77,4 +95,4 @@ fi
 
 echo "warning: adb root and su are unavailable; starting as adb shell user." >&2
 echo "Press Ctrl+Q in nl2sh to exit."
-exec "${ADB[@]}" shell -t "${REMOTE_BINARY}"
+run_remote "${REMOTE_BINARY}"

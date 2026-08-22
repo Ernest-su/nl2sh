@@ -145,19 +145,22 @@ pub fn run_wizard(path: &Path) -> Result<()> {
         ui_language,
         ..Config::default()
     };
-    cfg.validate()?;
+    validate_with_environment_key(&cfg)?;
     write_new(path, &cfg)
 }
 
-/// Reconfigures provider credentials while preserving execution and safety settings.
-pub fn run_reconfigure(path: &Path) -> Result<()> {
+/// Creates or reconfigures all provider and model settings.
+pub fn run_configure(path: &Path) -> Result<()> {
+    if !path.exists() {
+        return run_wizard(path);
+    }
     // Read the stored value directly: an NL2SH_API_KEY environment override
     // must never be copied into config.toml merely by opening `/config`.
     let stored = fs::read_to_string(path)
         .with_context(|| format!("cannot read config {}", path.display()))?;
     let mut cfg: Config =
         toml::from_str(&stored).with_context(|| format!("invalid config {}", path.display()))?;
-    cfg.validate()?;
+    cfg.validate_runtime()?;
     let default_language = match cfg.ui_language {
         UiLanguage::ZhCn => "zh_cn",
         UiLanguage::En => "en",
@@ -205,8 +208,92 @@ pub fn run_reconfigure(path: &Path) -> Result<()> {
             ("chat_completions", ApiType::ChatCompletions),
         ],
     )?;
-    cfg.validate()?;
+    validate_with_environment_key(&cfg)?;
     write_replace(path, &cfg)
+}
+
+/// Creates or updates endpoint, API key, and API protocol settings.
+pub fn run_provider_configure(path: &Path) -> Result<()> {
+    let mut cfg = load_stored_or_default(path)?;
+    println!(
+        "{} {}",
+        label(cfg.ui_language, "正在配置 API：", "Configuring API at"),
+        path.display()
+    );
+    cfg.endpoint = select_endpoint(cfg.ui_language, &cfg.endpoint)?;
+    let api_key = prompt(
+        label(
+            cfg.ui_language,
+            "API Key（可见输入，留空保持当前值）",
+            "API Key (visible input; empty keeps current)",
+        ),
+        "",
+    )?;
+    if !api_key.is_empty() {
+        cfg.api_key = api_key;
+    }
+    let default_api = match cfg.api_type {
+        ApiType::Responses => "responses",
+        ApiType::ChatCompletions => "chat_completions",
+    };
+    let api = prompt(
+        label(
+            cfg.ui_language,
+            "API 类型 (responses/chat_completions)",
+            "API type (responses/chat_completions)",
+        ),
+        default_api,
+    )?;
+    cfg.api_type = parse(
+        &api,
+        &[
+            ("responses", ApiType::Responses),
+            ("chat_completions", ApiType::ChatCompletions),
+        ],
+    )?;
+    validate_with_environment_key(&cfg)?;
+    write_upsert(path, &cfg)
+}
+
+/// Creates or updates only the model identifier.
+pub fn run_model_configure(path: &Path) -> Result<()> {
+    let mut cfg = load_stored_or_default(path)?;
+    cfg.model = prompt(label(cfg.ui_language, "模型", "Model"), &cfg.model)?;
+    cfg.validate_runtime()?;
+    write_upsert(path, &cfg)
+}
+
+fn load_stored_or_default(path: &Path) -> Result<Config> {
+    if !path.exists() {
+        return Ok(Config {
+            source: Some(path.to_path_buf()),
+            ..Config::default()
+        });
+    }
+    let stored = fs::read_to_string(path)
+        .with_context(|| format!("cannot read config {}", path.display()))?;
+    let cfg: Config =
+        toml::from_str(&stored).with_context(|| format!("invalid config {}", path.display()))?;
+    cfg.validate_runtime()?;
+    Ok(cfg)
+}
+
+fn validate_with_environment_key(cfg: &Config) -> Result<()> {
+    let mut effective = cfg.clone();
+    if effective.api_key.trim().is_empty() {
+        if let Ok(key) = std::env::var("NL2SH_API_KEY") {
+            effective.api_key = key;
+        }
+    }
+    effective.validate()
+}
+
+fn write_upsert(path: &Path, cfg: &Config) -> Result<()> {
+    if path.exists() {
+        write_replace(path, cfg)
+    } else {
+        write_new(path, cfg)
+    }
 }
 
 fn parse_language(value: &str) -> Result<UiLanguage> {

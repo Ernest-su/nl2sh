@@ -41,6 +41,7 @@ pub(crate) struct Theme {
     pub(crate) cyan: Color,
     pub(crate) success: Color,
     pub(crate) warning: Color,
+    pub(crate) decorative_gold: Color,
     pub(crate) error: Color,
     pub(crate) special: Color,
 }
@@ -64,6 +65,7 @@ impl Theme {
                 cyan: Color::Rgb(0x56, 0xd4, 0xdd),
                 success: Color::Rgb(0x3f, 0xb9, 0x50),
                 warning: Color::Rgb(0xd2, 0x99, 0x22),
+                decorative_gold: Color::Rgb(0xf2, 0xcc, 0x60),
                 error: Color::Rgb(0xf8, 0x51, 0x49),
                 special: Color::Rgb(0xbc, 0x8c, 0xff),
             },
@@ -79,6 +81,7 @@ impl Theme {
                 cyan: Color::Indexed(80),
                 success: Color::Indexed(71),
                 warning: Color::Indexed(178),
+                decorative_gold: Color::Indexed(220),
                 error: Color::Indexed(203),
                 special: Color::Indexed(141),
             },
@@ -106,6 +109,7 @@ mod tests {
         assert_eq!(rgb.accent, Color::Rgb(0x58, 0xa6, 0xff));
         assert_eq!(rgb.success, Color::Rgb(0x3f, 0xb9, 0x50));
         assert_eq!(rgb.warning, Color::Rgb(0xd2, 0x99, 0x22));
+        assert_eq!(rgb.decorative_gold, Color::Rgb(0xf2, 0xcc, 0x60));
         assert_eq!(rgb.error, Color::Rgb(0xf8, 0x51, 0x49));
 
         let ansi = Theme::for_mode(ColorMode::Ansi256);
@@ -114,6 +118,7 @@ mod tests {
         assert_eq!(ansi.accent, Color::Indexed(75));
         assert_eq!(ansi.success, Color::Indexed(71));
         assert_eq!(ansi.warning, Color::Indexed(178));
+        assert_eq!(ansi.decorative_gold, Color::Indexed(220));
         assert_eq!(ansi.error, Color::Indexed(203));
     }
 }

@@ -3,7 +3,7 @@ use super::{
     i18n,
     input::Input,
     output::{append_transcript, finalize_live_output, push_history, snapshot, SessionOutput},
-    terminal::TerminalGuard,
+    terminal::{best_effort_restore, TerminalGuard},
     ui,
 };
 use crate::{
@@ -39,8 +39,19 @@ use tokio::sync::{mpsc, oneshot};
 pub enum SessionExit {
     /// The user requested a normal exit.
     Quit,
-    /// The user entered `/config` and requested provider reconfiguration.
-    Reconfigure,
+    /// The user requested a configuration flow.
+    Configure(ConfigTarget),
+}
+
+/// Configuration section selected by a local slash command.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfigTarget {
+    /// Provider, model, interface, and execution defaults.
+    All,
+    /// API endpoint, credential, and wire protocol.
+    Provider,
+    /// Model identifier only.
+    Model,
 }
 
 /// Runs the default Agent as a live single-frame TUI session.
@@ -49,19 +60,14 @@ pub async fn run_agent_session(
     llm: &dyn LlmClient,
     root: String,
     log: HistoryLog,
+    provider_configured: bool,
 ) -> Result<SessionExit> {
     let old_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(|info| {
-        let _ = crossterm::terminal::disable_raw_mode();
-        let _ = crossterm::execute!(
-            std::io::stdout(),
-            crossterm::event::DisableMouseCapture,
-            crossterm::terminal::LeaveAlternateScreen,
-            crossterm::cursor::Show
-        );
+        best_effort_restore();
         eprintln!("{info}");
     }));
-    let result = run_inner(config, llm, root, log).await;
+    let result = run_inner(config, llm, root, log, provider_configured).await;
     std::panic::set_hook(old_hook);
     result
 }
@@ -71,6 +77,7 @@ async fn run_inner(
     llm: &dyn LlmClient,
     root: String,
     log: HistoryLog,
+    provider_configured: bool,
 ) -> Result<SessionExit> {
     log.record("session_start", "Agent TUI started")?;
     let history = Arc::new(Mutex::new(i18n::startup_history(
@@ -115,7 +122,15 @@ async fn run_inner(
         mode: i18n::mode_agent(config.ui_language).into(),
         turn: 0,
         max_context: config.max_context_turns,
-        status: i18n::idle(config.ui_language).into(),
+        status: if provider_configured {
+            i18n::idle(config.ui_language).into()
+        } else {
+            localized_status(
+                config.ui_language,
+                "尚未配置模型服务；使用 /config、/provider 或 /model",
+                "provider not configured; use /config, /provider, or /model",
+            )
+        },
         popup: None,
     };
     let mut model_history: Vec<Vec<ConversationItem>> = Vec::new();
@@ -289,10 +304,58 @@ async fn run_inner(
                         continue;
                     }
                     let input = app.take_input();
-                    if input.trim() == "/config" {
-                        return Ok(SessionExit::Reconfigure);
+                    match input.trim() {
+                        "/config" => return Ok(SessionExit::Configure(ConfigTarget::All)),
+                        "/provider" => {
+                            return Ok(SessionExit::Configure(ConfigTarget::Provider))
+                        }
+                        "/model" => return Ok(SessionExit::Configure(ConfigTarget::Model)),
+                        "/help" => {
+                            log.record("local_command", "/help")?;
+                            history
+                                .lock()
+                                .map_err(|_| anyhow::anyhow!("TUI history lock is poisoned"))?
+                                .extend(i18n::help_history(
+                                    config.ui_language,
+                                    config.ascii_symbols,
+                                ));
+                            app.conversation_scroll = 0;
+                            continue;
+                        }
+                        "/clear" => {
+                            log.record("local_command", "/clear")?;
+                            history
+                                .lock()
+                                .map_err(|_| anyhow::anyhow!("TUI history lock is poisoned"))?
+                                .clear();
+                            model_history.clear();
+                            app.clear_session_state();
+                            app.status = localized_status(
+                                config.ui_language,
+                                "当前会话历史已清空",
+                                "current session history cleared",
+                            );
+                            continue;
+                        }
+                        _ => {}
                     }
                     if !input.trim().is_empty() {
+                        if !provider_configured {
+                            log.record("local_rejection", "provider is not configured")?;
+                            history
+                                .lock()
+                                .map_err(|_| anyhow::anyhow!("TUI history lock is poisoned"))?
+                                .push(match config.ui_language {
+                                    UiLanguage::ZhCn => "⚠️ 尚未配置模型服务，请先使用 /config 或 /provider；可用 /model 单独修改模型。".into(),
+                                    UiLanguage::En => "[WARN] Provider is not configured. Use /config or /provider first; /model changes only the model.".into(),
+                                });
+                            app.status = localized_status(
+                                config.ui_language,
+                                "等待配置模型服务",
+                                "waiting for provider configuration",
+                            );
+                            continue;
+                        }
                         push_history(&history, format!("> {input}"), &log, "user")?;
                         app.status = localized_status(
                             config.ui_language,

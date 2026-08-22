@@ -4,7 +4,7 @@
 
 本文定义 nl2sh 在 `adb shell` 深色终端中的统一视觉语言，是 TUI 主题、Widget、日志展示、Markdown 渲染、工具调用、确认界面、输入框和状态栏的实现依据。目标风格为 GitHub Dark、Lazygit 与现代 Coding Agent TUI 所共有的克制、清晰和高信息密度，但不照搬任何产品。
 
-颜色只表达语义，不用于装饰整段内容。普通正文保持灰白；高饱和度颜色只标记标题、焦点、状态和风险。任何组件不得自行定义与本文冲突的 RGB 或 ANSI 色值。
+颜色原则上只表达语义，不用于装饰整段内容。唯一例外是欢迎页与帮助页中的佛祖字符画，可使用专用 `decorative_gold` 表现外围金光；该颜色不携带任何状态或风险含义。普通正文保持灰白；高饱和度颜色只标记标题、焦点、状态、风险及这一处明确限定的插图。任何组件不得自行定义与本文冲突的 RGB 或 ANSI 色值。
 
 本规范不改变安全边界。Root、风险等级、确认要求和执行结果仍以真实状态为准；颜色只是附加提示，不能成为唯一提示，也不能代替文字、图标或强确认流程。
 
@@ -35,6 +35,7 @@
 | `cyan` | `#56D4DD` | `80` | 二级标题、工具名、键名 |
 | `success` | `#3FB950` | `71` | 成功、正常、退出码 0 |
 | `warning` | `#D29922` | `178` | 警告、Root、风险、stderr 标签 |
+| `decorative_gold` | `#F2CC60` | `220` | 佛祖字符画外围光芒与轮廓；仅限装饰 |
 | `error` | `#F85149` | `203` | 错误、失败、危险 |
 | `special` | `#BC8CFF` | `141` | 模型名、特殊对象或类型 |
 
@@ -55,6 +56,7 @@ ANSI 256 fallback 是近似值而非另一套语义。终端不支持 TrueColor 
 | 普通内容 | `text_primary` | 用户输入、AI 正文、命令和 stdout |
 | 标签和辅助内容 | `text_secondary` | 字段名、协议、普通状态标签 |
 | 最低权重信息 | `text_muted` | 分隔符、快捷键说明、状态栏说明 |
+| 佛祖字符画光芒与轮廓 | `decorative_gold` | `\\`、`/`、`|`、`=`、`^` |
 
 风险枚举的显示必须继续保留 `ReadOnly`、`Mutating`、`Dangerous`、`Critical` 等文字。建议 `ReadOnly` 使用 `success`，`Mutating` 使用 `warning`，`Dangerous` 和 `Critical` 使用 `error`；确认强度不能因颜色或主题改变。
 
@@ -84,6 +86,7 @@ Root 表示高权限环境，不能与成功或普通状态共用绿色。标题
 - `stdout` 标签使用 `text_secondary`，`stderr` 标签使用 `warning`；其后长输出使用 `text_primary` 或 `text_secondary`。
 - 代码块、引用、列表和链接可通过字重、缩进、边框或 `text_secondary` 建立层级，不得整块套用绿色。
 - 无法识别的 Markdown 行按普通正文处理，不根据内容猜测成功或失败。
+- 佛祖字符画仅将 `\\`、`/`、`|`、`=`、`^` 使用 `decorative_gold` + bold，形成外围金光；祝福文字、面部和其余细节保持 `text_primary`。该 token 不得用于警告、风险、安全状态或其他普通内容。
 
 AI 分析中的语义标记采用局部着色：`✔ 优点` 使用 `success`，`⚠ 短板` 使用 `warning`，`✘ 问题` 使用 `error`，随后的解释恢复 `text_primary`。结论标题使用 `accent` + bold，结论正文使用 `text_primary`。
 

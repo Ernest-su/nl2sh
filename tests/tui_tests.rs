@@ -81,6 +81,15 @@ async fn agent_reply_remains_in_live_tui_until_ctrl_q() -> anyhow::Result<()> {
         .spawn()?;
 
     wait_for_text(&mut master, "Ctrl+Q", Duration::from_secs(3)).await?;
+    master.write_all(b"/help\r")?;
+    wait_for_text(&mut master, "审计日志保留", Duration::from_secs(3)).await?;
+    master.write_all(b"/clear\r")?;
+    wait_for_text(
+        &mut master,
+        "当前会话历史已清空",
+        Duration::from_secs(3),
+    )
+    .await?;
     master.write_all(b"show status\r")?;
     wait_for_text(&mut master, "tui-e2e-done", Duration::from_secs(5)).await?;
     assert!(
@@ -94,18 +103,30 @@ async fn agent_reply_remains_in_live_tui_until_ctrl_q() -> anyhow::Result<()> {
     let log = std::fs::read_to_string(directory.path().join("nl2sh.log"))?;
     assert!(log.contains("show status"));
     assert!(log.contains("tui-e2e-done"));
+    assert!(log.contains("local_command"));
+    assert!(log.contains("/help"));
+    assert!(log.contains("/clear"));
     Ok(())
 }
 
 #[tokio::test]
-async fn missing_config_selects_provider_before_visible_key_and_continues() -> anyhow::Result<()> {
+async fn missing_config_enters_tui_and_config_command_runs_setup() -> anyhow::Result<()> {
     let directory = tempdir()?;
     let config = directory.path().join("missing.toml");
     let mut process = spawn_tui(&config)?;
 
-    let initial =
-        wait_for_text_capture(&mut process.master, "界面语言", Duration::from_secs(3)).await?;
+    let initial = wait_for_text_capture(&mut process.master, "Ctrl+Q", Duration::from_secs(3)).await?;
+    assert!(!initial.contains("界面语言"));
     assert!(!initial.contains("API Key"));
+    process.master.write_all(b"diagnose device\r")?;
+    wait_for_text(
+        &mut process.master,
+        "尚未配置模型服务",
+        Duration::from_secs(3),
+    )
+    .await?;
+    process.master.write_all(b"/config\r")?;
+    wait_for_text(&mut process.master, "界面语言", Duration::from_secs(3)).await?;
     process.master.write_all(b"\r")?;
     wait_for_text(
         &mut process.master,
@@ -132,6 +153,33 @@ async fn missing_config_selects_provider_before_visible_key_and_continues() -> a
     assert_eq!(loaded.endpoint, "http://127.0.0.1:11434/v1");
     assert_eq!(loaded.api_key, "visible-test-key");
     assert!(process.child.try_wait()?.is_none());
+    process.master.write_all(&[0x11])?;
+    assert!(timeout(Duration::from_secs(3), process.child.wait())
+        .await??
+        .success());
+    Ok(())
+}
+
+#[tokio::test]
+async fn model_command_can_create_partial_config_without_startup_wizard() -> anyhow::Result<()> {
+    let directory = tempdir()?;
+    let config = directory.path().join("model-only.toml");
+    let mut process = spawn_tui(&config)?;
+
+    wait_for_text(&mut process.master, "Ctrl+Q", Duration::from_secs(3)).await?;
+    process.master.write_all(b"/model\r")?;
+    wait_for_text(&mut process.master, "模型", Duration::from_secs(3)).await?;
+    process.master.write_all(b"model-from-tui\r")?;
+    wait_for_text(
+        &mut process.master,
+        "model-from-tui",
+        Duration::from_secs(3),
+    )
+    .await?;
+
+    let loaded = nl2sh::config::load_unvalidated(Some(&config))?;
+    assert_eq!(loaded.model, "model-from-tui");
+    assert!(std::fs::read_to_string(&config)?.contains("api_key = \"\""));
     process.master.write_all(&[0x11])?;
     assert!(timeout(Duration::from_secs(3), process.child.wait())
         .await??
@@ -213,6 +261,7 @@ fn spawn_tui(config: &std::path::Path) -> anyhow::Result<PtyChild> {
         .arg("--config")
         .arg(config)
         .env("TERM", "xterm-256color")
+        .env_remove("NL2SH_API_KEY")
         .stdin(Stdio::from(stdin))
         .stdout(Stdio::from(stdout))
         .stderr(Stdio::from(slave));

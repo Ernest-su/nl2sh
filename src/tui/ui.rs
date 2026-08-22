@@ -379,9 +379,18 @@ fn render_command_menu(f: &mut Frame, app: &App, input_area: ratatui::layout::Re
         .iter()
         .enumerate()
         .map(|(index, command)| {
-            let description = match app.language {
-                UiLanguage::ZhCn => "重新配置模型服务",
-                UiLanguage::En => "Reconfigure the model provider",
+            let description = match (app.language, *command) {
+                (UiLanguage::ZhCn, "/clear") => "清空当前会话",
+                (UiLanguage::ZhCn, "/config") => "重新配置模型服务",
+                (UiLanguage::ZhCn, "/help") => "显示帮助",
+                (UiLanguage::ZhCn, "/model") => "配置模型",
+                (UiLanguage::ZhCn, "/provider") => "配置 API 服务",
+                (UiLanguage::En, "/clear") => "Clear the current session",
+                (UiLanguage::En, "/config") => "Reconfigure the model provider",
+                (UiLanguage::En, "/help") => "Show help",
+                (UiLanguage::En, "/model") => "Configure the model",
+                (UiLanguage::En, "/provider") => "Configure the API provider",
+                _ => "",
             };
             let style = if index == selected {
                 theme.bold(theme.text_primary).bg(theme.background_alt)
@@ -490,7 +499,9 @@ fn wrap_rendered_lines(lines: Vec<Line<'_>>, width: usize) -> Vec<Line<'static>>
 fn conversation_lines(app: &App, width: usize, theme: Theme) -> Vec<Line<'_>> {
     let mut lines = Vec::new();
     for entry in &app.history {
-        if let Some(encoded) = entry.strip_prefix(super::output::TOOL_RESULT_PREFIX) {
+        if let Some(art) = entry.strip_prefix(super::i18n::BUDDHA_ART_PREFIX) {
+            lines.extend(buddha_art_lines(art, theme));
+        } else if let Some(encoded) = entry.strip_prefix(super::output::TOOL_RESULT_PREFIX) {
             let (prefix, details) = encoded.split_once('\n').unwrap_or((encoded, ""));
             if app.tool_results_expanded {
                 let label = match app.language {
@@ -515,6 +526,43 @@ fn conversation_lines(app: &App, width: usize, theme: Theme) -> Vec<Line<'_>> {
         }
     }
     lines
+}
+
+fn buddha_art_lines(art: &str, theme: Theme) -> Vec<Line<'static>> {
+    art.lines()
+        .map(|line| {
+            let mut spans = Vec::new();
+            let mut segment = String::new();
+            let mut segment_is_golden = None;
+            for character in line.chars() {
+                let is_golden = matches!(character, '\\' | '/' | '|' | '=' | '^');
+                if segment_is_golden.is_some_and(|current| current != is_golden) {
+                    let golden = segment_is_golden.unwrap_or(false);
+                    spans.push(Span::styled(
+                        std::mem::take(&mut segment),
+                        if golden {
+                            theme.bold(theme.decorative_gold)
+                        } else {
+                            theme.style(theme.text_primary)
+                        },
+                    ));
+                }
+                segment_is_golden = Some(is_golden);
+                segment.push(character);
+            }
+            if !segment.is_empty() {
+                spans.push(Span::styled(
+                    segment,
+                    if segment_is_golden.unwrap_or(false) {
+                        theme.bold(theme.decorative_gold)
+                    } else {
+                        theme.style(theme.text_primary)
+                    },
+                ));
+            }
+            Line::from(spans)
+        })
+        .collect()
 }
 
 fn append_multiline_entry<'a>(lines: &mut Vec<Line<'a>>, entry: &'a str, theme: Theme) {
@@ -742,6 +790,10 @@ mod tests {
             .map(|cell| cell.symbol())
             .collect::<String>();
         assert!(menu.contains("/config"));
+        assert!(menu.contains("/clear"));
+        assert!(menu.contains("/help"));
+        assert!(menu.contains("/model"));
+        assert!(menu.contains("/provider"));
         assert!(terminal
             .backend()
             .buffer()
@@ -989,4 +1041,23 @@ mod tests {
         assert!(rendered_top.contains("Tool result"));
         Ok(())
     }
+
+    #[test]
+    fn buddha_linework_uses_bold_gold_without_styling_plain_details() {
+        let theme = Theme::for_mode(crate::tui::theme::ColorMode::Ansi256);
+        let lines = buddha_art_lines("\\ halo //", theme);
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].spans.iter().any(|span| {
+            span.content.contains('\\')
+                && span.style.fg == Some(theme.decorative_gold)
+                && span
+                    .style
+                    .add_modifier
+                    .contains(ratatui::style::Modifier::BOLD)
+        }));
+        assert!(lines[0].spans.iter().any(|span| {
+            span.content.contains("halo") && span.style.fg == Some(theme.text_primary)
+        }));
+    }
+
 }

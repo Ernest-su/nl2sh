@@ -1,4 +1,6 @@
-use nl2sh::config::{load_from, load_unvalidated, ApiType, Config, UiLanguage};
+use nl2sh::config::{
+    load_from, load_or_default_unvalidated, load_unvalidated, ApiType, Config, UiLanguage,
+};
 use std::fs;
 use tempfile::tempdir;
 
@@ -37,6 +39,19 @@ fn missing_file_and_invalid_values_fail() -> anyhow::Result<()> {
 }
 
 #[test]
+fn missing_file_can_supply_unconfigured_tui_defaults_without_writing() -> anyhow::Result<()> {
+    let dir = tempdir()?;
+    let path = dir.path().join("missing.toml");
+    let cfg = load_or_default_unvalidated(&path)?;
+    assert!(cfg.validate_runtime().is_ok());
+    let key_configured = std::env::var("NL2SH_API_KEY").is_ok_and(|key| !key.trim().is_empty());
+    assert_eq!(cfg.provider_is_configured(), key_configured);
+    assert!(!path.exists());
+    assert_eq!(cfg.source.as_deref(), Some(path.as_path()));
+    Ok(())
+}
+
+#[test]
 fn empty_key_is_valid_for_local_endpoint() {
     let cfg = Config {
         endpoint: "http://127.0.0.1:8080/v1".into(),
@@ -44,6 +59,14 @@ fn empty_key_is_valid_for_local_endpoint() {
         ..Config::default()
     };
     assert!(cfg.validate().is_ok());
+}
+
+#[test]
+fn runtime_validation_allows_tui_before_openai_credentials_exist() {
+    let cfg = Config::default();
+    assert!(cfg.validate_runtime().is_ok());
+    assert!(!cfg.provider_is_configured());
+    assert!(cfg.validate().is_err());
 }
 
 #[test]

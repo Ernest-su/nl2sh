@@ -1,4 +1,9 @@
-use super::{events, i18n, input::Input, terminal::TerminalGuard, ui};
+use super::{
+    events, i18n,
+    input::Input,
+    terminal::{best_effort_restore, TerminalGuard},
+    ui,
+};
 use crate::config::UiLanguage;
 use anyhow::Result;
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers, MouseEventKind};
@@ -55,12 +60,7 @@ pub struct TuiOptions {
 pub fn run(options: TuiOptions, history: Vec<String>) -> Result<Option<String>> {
     let old = std::panic::take_hook();
     std::panic::set_hook(Box::new(|info| {
-        let _ = crossterm::terminal::disable_raw_mode();
-        let _ = crossterm::execute!(
-            std::io::stdout(),
-            crossterm::terminal::LeaveAlternateScreen,
-            crossterm::cursor::Show
-        );
+        best_effort_restore();
         eprintln!("{info}");
     }));
     let result = run_inner(options, history);
@@ -154,7 +154,7 @@ fn run_inner(options: TuiOptions, mut history: Vec<String>) -> Result<Option<Str
 
 impl App {
     pub(crate) fn command_suggestions(&self) -> Vec<&'static str> {
-        const COMMANDS: &[&str] = &["/config"];
+        const COMMANDS: &[&str] = &["/clear", "/config", "/help", "/model", "/provider"];
         let query = self.input.text.trim();
         if !query.starts_with('/') || query.contains(char::is_whitespace) {
             return Vec::new();
@@ -207,6 +207,16 @@ impl App {
         self.input_history_index = None;
         self.input_history_draft.clear();
         input
+    }
+
+    pub(crate) fn clear_session_state(&mut self) {
+        self.input.clear();
+        self.input_history.clear();
+        self.input_history_index = None;
+        self.input_history_draft.clear();
+        self.conversation_scroll = 0;
+        self.tool_results_expanded = false;
+        self.command_selection = 0;
     }
 
     pub(crate) fn previous_input(&mut self) {
@@ -310,9 +320,28 @@ mod tests {
     fn slash_command_can_be_completed_without_hiding_exact_command() {
         let mut app = app_with_history(0);
         app.input.set("/c".into());
-        assert_eq!(app.command_suggestions(), vec!["/config"]);
+        assert_eq!(app.command_suggestions(), vec!["/clear", "/config"]);
         assert!(app.complete_selected_command());
-        assert_eq!(app.input.text, "/config");
+        assert_eq!(app.input.text, "/clear");
         assert!(!app.complete_selected_command());
+
+        app.input.set("/p".into());
+        assert_eq!(app.command_suggestions(), vec!["/provider"]);
+        app.input.set("/m".into());
+        assert_eq!(app.command_suggestions(), vec!["/model"]);
+    }
+
+    #[test]
+    fn clear_session_state_removes_input_recall_and_view_state() {
+        let mut app = app_with_history(2);
+        app.input.set("draft".into());
+        app.input_history.push("previous".into());
+        app.conversation_scroll = 5;
+        app.tool_results_expanded = true;
+        app.clear_session_state();
+        assert!(app.input.text.is_empty());
+        assert!(app.input_history.is_empty());
+        assert_eq!(app.conversation_scroll, 0);
+        assert!(!app.tool_results_expanded);
     }
 }

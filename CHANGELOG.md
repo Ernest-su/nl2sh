@@ -6,6 +6,9 @@
 
 ### Added
 
+- A README support section with project contribution copy and a linked remote WeChat donation code.
+- Project support and donation links plus a terminal-safe text illustration in both the startup welcome page and `/help`, without embedded image or QR rendering.
+- Local `/help` and `/clear` TUI commands; clearing removes the current conversation, model context, and input recall while preserving the audit log.
 - Bounded live TUI output, captured tool results, model tool context, and JSONL history with explicit truncation markers.
 - MIT license file.
 - A project-wide TUI visual specification covering the dark palette, semantic colors, component styling, ANSI 256 fallback, safety boundaries, and acceptance criteria.
@@ -26,7 +29,7 @@
 - Live single-frame Agent TUI with in-frame confirmations, execution-mode overrides, cancellation, and pseudo-terminal lifecycle coverage.
 - Android NDK build-script support for cc-rs native dependencies and a verified r28c/API 26 AArch64 release build.
 - Selectable ARMv7 cross-build and API 34 device smoke coverage for Agent networking, PTY execution, result feedback, and TUI restoration.
-- First-run Base-URL-first configuration that continues into the app, secure `0600` config writes, and TUI `/config` provider hot reload.
+- TUI-triggered Base-URL-first configuration, secure `0600` config writes, and provider hot reload.
 - Separate TUI rows for user input and runtime status/context information.
 - Semantic conversation colors for user input, tool calls, Agent responses, commands, successes, and errors.
 - Append-only `0600` JSON Lines history logging for user requests, commands, outputs, results, and errors.
@@ -37,13 +40,16 @@
 - One-command Android build/deploy/run script with configurable target directory, Rust target, and adb serial.
 - Native Windows PowerShell Android build/deploy/run script using the NDK Windows LLVM toolchain without Bash or WSL.
 - Linux and Windows PowerShell deploy/run scripts that push a prebuilt adjacent `nl2sh` binary without compiling it.
-- Arrow-key provider selection for common OpenAI-compatible API base URLs, custom endpoints, and visible API-key entry in initial setup and `/config`.
+- Arrow-key provider selection for common OpenAI-compatible API base URLs, custom endpoints, and visible API-key entry through `/config`, `/provider`, or explicit `--init` setup.
 - GitHub Actions release workflow that builds `aarch64-linux-android` and `armv7-linux-androideabi` release binaries with NDK r28c on tag push, packages each with `android-run-linux.sh`, `android-run-windows.ps1` and `config.toml.example` as `.tar.gz`/`.zip` with SHA256 checksums, and publishes them to a GitHub Release.
 - A plain-language Chinese user guide covering ADB setup, Linux and Windows launch steps, ABI package selection, first-run configuration, and common troubleshooting; every 32-bit and 64-bit release archive includes it.
 - Screenshot of the memory-query TUI conversation embedded in the Chinese user guide and README, and included in release archives so the packaged guide keeps its image.
 
 ### Changed
 
+- Restored the project logo at `assets/logo.png` and centered it above the README title; terminal image rendering remains disabled.
+- Buddha illustration rays and linework now use a dedicated bold decorative-gold theme token while text and facial details remain in the normal foreground color; copied history remains free of ANSI bytes and warning colors retain their security meaning.
+- Missing configuration now opens the TUI without an automatic startup wizard; model tasks remain locally blocked until `/config` or `/provider` completes setup, while `/model` can update the model independently.
 - Raised default `max_agent_steps` from 8 to 24 and `max_context_turns` from 10 to 16 so multi-stage Android tasks (install-and-verify, multi-step diagnostics) can complete before hitting the step limit.
 - Split TUI output/history lifecycle handling from the main session controller.
 - Treat 0.1.0 as the published baseline and continue development toward 0.1.1.
@@ -56,6 +62,8 @@
 
 ### Fixed
 
+- The Buddha terminal illustration now measures its Chinese blessing row at the same 65-column display width as the surrounding ASCII frame, preventing right-edge protrusion.
+- Android launch cleanup now disables host mouse tracking after `adb shell -t` exits, including interrupted/error exits, and every Rust panic path uses the same complete terminal restoration routine.
 - Approval panels are now anchored above the input at the lower left, and fragmented adb arrow-key sequences can no longer trigger rejection or task approval and dismiss the panel.
 - Approval-stage transitions now clear a stable full-panel area, preventing old option characters from remaining behind; the panel also consistently fills its bordered area with the alternate background.
 - Read-only Android package-version queries using command substitution no longer trigger repeated mutation confirmations; mutating substitutions remain protected.

@@ -32,6 +32,22 @@ pub fn load_unvalidated(explicit: Option<&Path>) -> Result<Config> {
     load_from_unvalidated(&path)
 }
 
+/// Loads a configuration when present, or returns defaults associated with
+/// the requested path so the TUI can start before provider setup.
+pub fn load_or_default_unvalidated(path: &Path) -> Result<Config> {
+    if path.exists() {
+        return load_from_unvalidated(path);
+    }
+    let mut config = Config {
+        source: Some(path.to_path_buf()),
+        ..Config::default()
+    };
+    if let Ok(key) = env::var("NL2SH_API_KEY") {
+        config.api_key = key;
+    }
+    Ok(config)
+}
+
 /// Loads, overlays the API-key environment variable, and validates TOML.
 pub fn load_from(path: &Path) -> Result<Config> {
     let config = load_from_unvalidated(path)?;

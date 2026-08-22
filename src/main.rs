@@ -21,18 +21,13 @@ async fn main() -> Result<()> {
     if cli.init {
         return config::run_wizard(&path);
     }
-    if !path.exists() {
-        if std::io::IsTerminal::is_terminal(&std::io::stdin()) {
-            config::run_wizard(&path)?;
-            println!("Configuration saved; starting nl2sh.");
-        } else {
-            anyhow::bail!(
-                "configuration not found at {}; run nl2sh --init",
-                path.display()
-            )
-        }
-    }
     let mut cfg = load_runtime_config(&path, &cli)?;
+    let mut provider_configured = cfg.provider_is_configured();
+    if cli.instruction.is_some() && !provider_configured {
+        anyhow::bail!(
+            "model provider is not configured; start nl2sh without an instruction and use /config or /provider"
+        )
+    }
     let history_log = HistoryLog::open_with_limits(
         &path,
         &cfg.history_log_file,
@@ -57,11 +52,20 @@ async fn main() -> Result<()> {
     }
     if matches!(cli.mode, Mode::Agent) {
         loop {
-            match tui::run_agent_session(&cfg, &llm, root.clone(), history_log.clone()).await? {
+            match tui::run_agent_session(
+                &cfg,
+                &llm,
+                root.clone(),
+                history_log.clone(),
+                provider_configured,
+            )
+            .await?
+            {
                 tui::SessionExit::Quit => return Ok(()),
-                tui::SessionExit::Reconfigure => {
-                    config::run_reconfigure(&path)?;
+                tui::SessionExit::Configure(target) => {
+                    run_configure_target(&path, target)?;
                     cfg = load_runtime_config(&path, &cli)?;
+                    provider_configured = cfg.provider_is_configured();
                     llm = build_client(&cfg)?;
                 }
             }
@@ -94,9 +98,10 @@ async fn main() -> Result<()> {
             Some(value) => value,
             None => return Ok(()),
         };
-        if instruction.trim() == "/config" {
-            config::run_reconfigure(&path)?;
+        if let Some(target) = config_target(instruction.trim()) {
+            run_configure_target(&path, target)?;
             cfg = load_runtime_config(&path, &cli)?;
+            provider_configured = cfg.provider_is_configured();
             llm = build_client(&cfg)?;
             ui_history
                 .lock()
@@ -104,6 +109,31 @@ async fn main() -> Result<()> {
                 .push(match cfg.ui_language {
                     config::UiLanguage::ZhCn => "[CONFIG] 模型服务配置已重新加载。".into(),
                     config::UiLanguage::En => "[CONFIG] Provider configuration reloaded.".into(),
+                });
+            continue;
+        }
+        if instruction.trim() == "/help" {
+            ui_history
+                .lock()
+                .map_err(|_| anyhow::anyhow!("TUI history lock is poisoned"))?
+                .extend(tui::help_history(cfg.ui_language, cfg.ascii_symbols));
+            continue;
+        }
+        if instruction.trim() == "/clear" {
+            ui_history
+                .lock()
+                .map_err(|_| anyhow::anyhow!("TUI history lock is poisoned"))?
+                .clear();
+            model_history.clear();
+            continue;
+        }
+        if !provider_configured {
+            ui_history
+                .lock()
+                .map_err(|_| anyhow::anyhow!("TUI history lock is poisoned"))?
+                .push(match cfg.ui_language {
+                    config::UiLanguage::ZhCn => "⚠️ 尚未配置模型服务，请先使用 /config 或 /provider；可用 /model 单独修改模型。".into(),
+                    config::UiLanguage::En => "[WARN] Provider is not configured. Use /config or /provider first; /model changes only the model.".into(),
                 });
             continue;
         }
@@ -162,7 +192,7 @@ async fn main() -> Result<()> {
 }
 
 fn load_runtime_config(path: &std::path::Path, cli: &Cli) -> Result<config::Config> {
-    let mut cfg = config::load_unvalidated(Some(path))?;
+    let mut cfg = config::load_or_default_unvalidated(path)?;
     if let Some(endpoint) = cli.endpoint.clone() {
         cfg.endpoint = endpoint;
     }
@@ -178,8 +208,25 @@ fn load_runtime_config(path: &std::path::Path, cli: &Cli) -> Result<config::Conf
     if cli.ascii {
         cfg.ascii_symbols = true
     }
-    cfg.validate()?;
+    cfg.validate_runtime()?;
     Ok(cfg)
+}
+
+fn config_target(input: &str) -> Option<tui::ConfigTarget> {
+    match input {
+        "/config" => Some(tui::ConfigTarget::All),
+        "/provider" => Some(tui::ConfigTarget::Provider),
+        "/model" => Some(tui::ConfigTarget::Model),
+        _ => None,
+    }
+}
+
+fn run_configure_target(path: &std::path::Path, target: tui::ConfigTarget) -> Result<()> {
+    match target {
+        tui::ConfigTarget::All => config::run_configure(path),
+        tui::ConfigTarget::Provider => config::run_provider_configure(path),
+        tui::ConfigTarget::Model => config::run_model_configure(path),
+    }
 }
 
 async fn run_once(

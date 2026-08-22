@@ -170,15 +170,22 @@ impl Default for Config {
 impl Config {
     /// Validates URLs, bounds, enum-like rule values, and provider key needs.
     pub fn validate(&self) -> Result<()> {
+        self.validate_runtime()?;
+        if !self.provider_is_configured() {
+            bail!("api_key is required for api.openai.com")
+        }
+        Ok(())
+    }
+
+    /// Validates runtime settings while allowing provider credentials to be
+    /// completed later from the TUI.
+    pub fn validate_runtime(&self) -> Result<()> {
         let url = Url::parse(&self.endpoint).context("endpoint is not a valid URL")?;
         if !matches!(url.scheme(), "http" | "https") {
             bail!("endpoint must use http or https")
         }
         if self.model.trim().is_empty() {
             bail!("model must not be empty")
-        }
-        if url.host_str() == Some("api.openai.com") && self.api_key.trim().is_empty() {
-            bail!("api_key is required for api.openai.com")
         }
         if self.max_context_turns == 0 || self.max_agent_steps == 0 {
             bail!("context turns and agent steps must be positive")
@@ -211,5 +218,13 @@ impl Config {
                 .with_context(|| format!("invalid security rule {}", rule.id))?;
         }
         Ok(())
+    }
+
+    /// Reports whether the current endpoint has the credentials required by
+    /// its built-in provider policy.
+    pub fn provider_is_configured(&self) -> bool {
+        Url::parse(&self.endpoint).is_ok_and(|url| {
+            url.host_str() != Some("api.openai.com") || !self.api_key.trim().is_empty()
+        }) && !self.model.trim().is_empty()
     }
 }

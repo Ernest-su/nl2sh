@@ -10,6 +10,8 @@ nl2sh 定位为 Android 原生 shell 版的类 Hermes AI Agent：使用 stable R
 
 修改前明确目标、涉及模块、公共接口变化、Android 影响、安全模型影响、PTY/终端恢复影响，以及需增加或更新的测试。修改后运行或明确说明应运行 `cargo fmt --all -- --check`、`cargo check`、`cargo test`；更新 `PROJECT_STATUS.md`，必要时更新计划、架构、changelog、配置示例和 README。
 
+项目文档只记录与项目本身相关、可供所有开发环境复用的信息。`CHANGELOG.md` 和 `PROJECT_STATUS.md` 禁止记录个人或本地机器信息，包括用户名、本地绝对路径、特定工作站/容器/WSL 环境、工具在当前机器上的安装状态，以及仅对单次本地会话成立的授权或执行限制。验证记录应描述可复现的命令、目标平台和结果；未运行的检查只在当前任务交付说明中告知用户，不写入项目文档。
+
 ## Rust 规范
 
 - 只用 stable Rust；业务代码不得使用 `unwrap`、`expect`、`panic!`、`todo!`、`unimplemented!`。

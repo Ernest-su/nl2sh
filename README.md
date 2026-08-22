@@ -1,4 +1,8 @@
-# nl2sh
+<p align="center">
+  <img src="assets/logo.png" alt="nl2sh logo" width="220">
+</p>
+
+<h1 align="center">nl2sh</h1>
 
 Natural Language to Shell 是面向 Android 原生 `adb shell` 的类 Hermes AI Agent。核心程序以单个 Android 可执行文件交付，无需 Termux 或设备端运行时依赖；同时提供丰富的 TUI，用于多轮对话、实时命令输出、安全确认、历史浏览和配置。它把自然语言交给 OpenAI 兼容模型，通过 Tool Calling 生成命令，在本地安全分类和确认之后执行，并把真实结果返回模型。
 
@@ -121,7 +125,7 @@ RUST_TARGET=armv7-linux-androideabi ./android-run.sh
 
 ## 配置
 
-默认配置位于解析符号链接后的可执行文件目录，名称为 `config.toml`。在 TTY 中启动且配置不存在时，可用 ↑/↓（或 j/k）从 OpenAI、DeepSeek、Moonshot/Kimi、SiliconFlow、Ollama 和自定义 Base URL 中选择，再以普通可见输入填写 API Key，保存后直接继续启动；`nl2sh --init` 也可显式创建配置且不会覆盖已有文件。配置仍以 `0600` 权限创建，请注意终端屏幕和录屏中可能保留输入的 Key。也可传入 `--config /path/config.toml`。
+默认配置位于解析符号链接后的可执行文件目录，名称为 `config.toml`。配置不存在时，直接运行 `nl2sh` 会先进入 TUI，不再自动启动向导；使用 `/config` 完成全部配置，或分别用 `/provider` 配置 Endpoint、API Key、API 类型并用 `/model` 配置模型。配置完成前普通任务不会发送给模型。`nl2sh --init` 仍可显式创建配置且不会覆盖已有文件。配置以 `0600` 权限创建，请注意终端屏幕和录屏中可能保留输入的 Key。也可传入 `--config /path/config.toml`。
 
 ```bash
 cp config.toml.example config.toml
@@ -139,7 +143,7 @@ cp config.toml.example config.toml
 
 `history_log_file` 默认为 `nl2sh.log`，相对路径按 `config.toml` 所在目录解析。日志采用逐行 JSON，记录用户输入、命令、输出、结果和错误并在每条记录后刷新；新文件权限为 `0600`。日志可能包含命令输出中的设备信息，排查完成后应按实际保密要求保管或清理，但不会写入 API Key。\n\n输出资源默认受限：实时 TUI 为 256 KiB、单个捕获流为 1 MiB、单个发给模型的 Tool Result 为 128 KiB、单条日志事件为 256 KiB、单个日志文件为 10 MiB。对应配置项为 `ui_live_output_max_bytes`、`tool_output_max_bytes`、`model_tool_output_max_bytes`、`history_log_event_max_bytes` 和 `history_log_max_bytes`。所有内容截断都会插入 `NL2SH ... TRUNCATED` 标记；日志达到文件上限后停止追加，不会静默形成不完整记录。
 
-`ui_language` 控制终端界面语言，可选 `zh_cn` 或 `en`，默认 `zh_cn`。首次初始化及 `/config` 重配置会先询问界面语言，之后的向导、状态栏、确认弹窗和快捷键说明使用所选语言。`/config` 会优先选中当前 URL 对应的内置服务商，未知 URL 则进入自定义项；API Key 留空会保留当前配置。每次启动时，对话历史区会展示常用任务示例以及 `/config`、Enter、滚轮/PageUp/PageDown、Shift+拖选与右键复制、Ctrl+C、Ctrl+Q 的操作说明；这些提示不会发送给模型。
+`ui_language` 控制终端界面语言，可选 `zh_cn` 或 `en`，默认 `zh_cn`。显式初始化及 `/config` 完整配置会询问界面语言，之后的向导、状态栏、确认弹窗和快捷键说明使用所选语言。`/config` 配置全部模型服务字段，`/provider` 只配置 API Endpoint、API Key 和 API 类型，`/model` 只配置模型名称；服务商选择会优先定位当前 URL 对应的内置项，未知 URL 则进入自定义项。API Key 留空会保留当前配置。`/help` 显示本地帮助，`/clear` 清空当前会话的可见对话、模型上下文和输入历史，但保留 JSONL 审计日志。启动欢迎页与 `/help` 还会显示项目支持、在线赞赏链接和纯文本终端祝福图；TUI 不内嵌或渲染 Logo、二维码等图片。这些启动内容不会发送给模型。
 
 ## 使用
 
@@ -152,7 +156,7 @@ nl2sh --endpoint http://127.0.0.1:11434/v1 --model local --api-type chat_complet
 nl2sh --no-pty --ascii
 ```
 
-Command 模式生成、分类后执行单条命令；`--dry-run` 只展示。修改或危险命令在无 TTY 时会拒绝，不能用管道伪造确认。需要多轮执行和结果回传时使用默认 Agent 模式。Agent TUI 在请求和捕获式执行期间保持活跃，并在界面内显示输出与确认弹窗；审批弹窗支持方向键与 Enter，也可直接使用 `1-6` 或 `y/n/a/e/i/t` 选择允许一次、当前任务允许完全相同命令、拒绝、编辑、交互执行或捕获执行。任务级允许不适用于 Root 或危险命令，不持久化且不做命令前缀匹配。命令运行时实时展示有界输出，完成后工具结果默认折叠，按 F2 可展开或收起；超出各层配置上限时，日志和模型上下文会携带明确截断标记。Agent 总结支持终端 Markdown 渲染。TUI 使用统一的现代深色语义主题，并按终端能力选择 TrueColor 或 ANSI 256 palette；普通正文保持灰白，青蓝表示交互与焦点，绿色、黄色和红色分别保留给成功、警告和错误。底部输入框使用低对比度深色背景和青蓝色闪烁光标，支持 Left/Right/Home/End/Delete 编辑及 Up/Down 调取当前会话输入历史；输入 `/` 时显示垂直命令候选，使用 Up/Down 选择、Enter 补全，当前提供 `/config`。TUI 启用鼠标追踪以稳定接收滚轮；复制屏幕文字时按住 Shift 拖选，由宿主终端高亮选区，再通过右键系统菜单复制。对话区只保留上下边框，避免选取内容混入左右边框。另支持 PageUp/PageDown 浏览历史、Enter 提交、Ctrl+C 取消当前任务（空闲时清空输入）、Ctrl+Q 安全退出。
+Command 模式生成、分类后执行单条命令；`--dry-run` 只展示。修改或危险命令在无 TTY 时会拒绝，不能用管道伪造确认。需要多轮执行和结果回传时使用默认 Agent 模式。Agent TUI 在请求和捕获式执行期间保持活跃，并在界面内显示输出与确认弹窗；审批弹窗支持方向键与 Enter，也可直接使用 `1-6` 或 `y/n/a/e/i/t` 选择允许一次、当前任务允许完全相同命令、拒绝、编辑、交互执行或捕获执行。任务级允许不适用于 Root 或危险命令，不持久化且不做命令前缀匹配。命令运行时实时展示有界输出，完成后工具结果默认折叠，按 F2 可展开或收起；超出各层配置上限时，日志和模型上下文会携带明确截断标记。Agent 总结支持终端 Markdown 渲染。TUI 使用统一的现代深色语义主题，并按终端能力选择 TrueColor 或 ANSI 256 palette；普通正文保持灰白，青蓝表示交互与焦点，绿色、黄色和红色分别保留给成功、警告和错误。底部输入框使用低对比度深色背景和青蓝色闪烁光标，支持 Left/Right/Home/End/Delete 编辑及 Up/Down 调取当前会话输入历史；输入 `/` 时显示垂直命令候选，使用 Up/Down 选择、Enter 补全，当前提供 `/help`、`/clear`、`/config`、`/provider` 和 `/model`。TUI 启用鼠标追踪以稳定接收滚轮；复制屏幕文字时按住 Shift 拖选，由宿主终端高亮选区，再通过右键系统菜单复制。对话区只保留上下边框，避免选取内容混入左右边框。另支持 PageUp/PageDown 浏览历史、Enter 提交、Ctrl+C 取消当前任务（空闲时清空输入）、Ctrl+Q 安全退出。
 
 风险等级为 `ReadOnly`、`Mutating`、`Dangerous`、`Critical`。内置检测覆盖危险删除、格式化、块设备写入、递归根权限修改、重启/关机、分区擦除和读写 remount；自定义规则使用 `[[security_rules]]` 添加，不能替换内置规则。
 
@@ -180,6 +184,20 @@ Android 真机建议依次验证：启动/退出后终端恢复；`id` 和 `getp
 - Agent TUI 在 LLM 和捕获式命令期间保持同一 frame；全屏交互程序需要临时挂起 TUI，结束后自动恢复。
 - 交互 PTY 已支持双向桥接和 resize，但尚未在 Android 真机的各类全屏应用上验证。
 - Responses 对话适配覆盖常见 function call 结构，不保证所有兼容厂商的扩展字段。
+
+## 支持项目
+
+⭐ 这个项目完全开源、单二进制、本地执行。点个 Star 或提个 Issue 已经是莫大支持。[点击支持 →](https://github.com/Ernest-su/nl2sh)
+
+❤️ 如果 nl2sh 帮你少敲了几条 adb 命令、省下了调试 Android 设备的时间，欢迎请我喝杯咖啡 ☕
+
+<p align="center">
+  <a href="https://suqishuo.cn/uploads/wechatpay.png">
+    <img src="https://suqishuo.cn/uploads/wechatpay.png" alt="微信赞赏码" width="320">
+  </a>
+</p>
+
+<p align="center"><a href="https://suqishuo.cn/uploads/wechatpay.png">点击查看微信赞赏码</a></p>
 
 ## 文档
 

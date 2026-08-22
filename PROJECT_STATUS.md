@@ -1,22 +1,29 @@
 # Project Status
 
-Last Updated: 2026-08-20
+Last Updated: 2026-08-22
 
 ## Recent Changes
 
+- 佛祖终端图的 `\\`、`/`、`|`、`=`、`^` 光芒与轮廓字符使用独立的装饰金色 token 加粗显示，文字和面部细节保持正文色；该 token 不复用安全警告色，历史内容仍为无 ANSI 的纯文本。
+- README 在已知限制之后新增“支持项目”区块，包含 Star/Issue 话术、赞赏说明、可点击的在线微信赞赏码及备用文字链接；TUI 仍保持纯文本方案。
+- 修正终端佛祖祝福图的 Unicode 显示宽度：含中文的祝福行与 ASCII 外框统一为 65 列，避免右侧突出。
+- 缺失配置时不再自动运行启动向导，而是直接进入不可执行模型任务的 TUI；新增 `/provider` API 配置和 `/model` 模型配置入口，`/config` 保留完整配置能力。
+- README 顶部居中展示仓库内的 `assets/logo.png`；启动欢迎页与 `/help` 显示项目 Star/Issue 支持链接、在线微信赞赏链接和纯文本终端祝福图，TUI 仍不内嵌图片或渲染二维码点阵。
+- 新增本地 `/help` 帮助与 `/clear` 会话清理命令；清理可见对话、模型上下文和输入历史，但保留审计日志。
+- 修复 Android ADB TUI 退出后宿主终端仍处于 SGR 鼠标追踪模式的问题：Rust 正常/异常恢复路径统一关闭鼠标捕获，`android-run.sh` 在 ADB 正常、失败或中断退出后额外执行宿主侧兜底恢复。
 - 默认 `max_agent_steps` 由 8 提升到 24、`max_context_turns` 由 10 提升到 16，以支持安装后验证、多阶段诊断等更长任务；`config.toml.example` 与默认值测试同步更新。
 
 ## Current Phase
 
-Phase 10：本地功能与验证基本完成，等待 Android 交叉编译和真机验证。
+Phase 10：核心功能与验证基本完成，等待扩展 Android 真机验证。
 
 ## Overall Status
 
 - Product positioning: Android 原生 shell 版的类 Hermes AI Agent；核心程序以单个可执行文件交付，提供多轮 Tool Calling 和丰富 TUI，不声称与 Hermes API 或插件兼容。
-- Build status: `cargo check --all-targets` 已于 2026-08-20 在 WSL Arch Linux 通过；既有 Linux release 构建基线保持有效。
-- Test status: `cargo test --all-targets` 已于 2026-08-20 在 WSL Arch Linux 通过（68 个 unit/integration tests，0 failure）。
+- Build status: `cargo check --all-targets` 已于 2026-08-20 通过；Linux release 构建基线保持有效。
+- Test status: `cargo test --all-targets` 已于 2026-08-20 通过（68 个 unit/integration tests，0 failure）。
 - Android cross-compile status: 已使用 NDK r28c、API 26 成功构建 `aarch64-linux-android` release 产物。
-- Android device validation: 已在 KONKA Android TV（API 34、`armeabi-v7a`）完成部署、Agent/PTY 和 TUI smoke test。
+- Android device validation: 已在 API 34 `armeabi-v7a` 设备完成部署、Agent/PTY 和 TUI smoke test。
 - CI release workflow: 已添加 `.github/workflows/release.yml`，在推送 `v*` tag 时用 GitHub Actions 并行交叉编译 `aarch64-linux-android` 与 `armv7-linux-androideabi`，把预编译 `nl2sh` 与 Linux/Windows 启动脚本、`config.toml.example`、`使用说明.md` 打包为 `.tar.gz`/`.zip` 并附带 SHA256 校验和发布到 GitHub Release；`workflow_dispatch` 可手动触发草稿发布。
 - Known blockers: 尚未验证真实 root 提权、修改确认、超时和全屏交互程序；CI workflow 尚未在真实 GitHub Actions 上运行验证。
 
@@ -34,14 +41,14 @@ Phase 10：本地功能与验证基本完成，等待 Android 交叉编译和真
 - endpoint/model/api-type CLI 覆盖，覆盖后统一配置校验。
 - 隔离子进程 SIGINT 回归测试，验证 Agent 退出及 PTY 进程组回收。
 - 单 frame Agent TUI、内嵌确认弹窗、实时状态/输出，以及真实伪终端生命周期回归测试。
-- 缺失配置时先从 OpenAI、DeepSeek、Moonshot/Kimi、SiliconFlow、Ollama 或自定义 Base URL 中方向键选择，再以可见输入填写 API Key 并继续启动；TUI `/config` 复用该流程，可原子更新 provider 配置并热重载客户端。
+- 缺失配置时直接进入 TUI，普通任务在 Provider 配置完成前被本地拒绝；`/config` 可完成全部设置，`/provider` 配置 API Endpoint、API Key 和协议，`/model` 单独配置模型，并在保存后热重载客户端。
 - TUI 底部输入框独占一行，运行状态、轮数和剩余上下文在下一行显示。
 - 对话历史按用户、Tool、Agent、命令、成功和错误等语义类型使用不同颜色。
 - 对话历史逐条持久化到默认配置目录下的 `0600` JSON Lines 日志，供异常排查。
 - 只读应用版本查询及其命令替换循环不再误判为修改操作；替换内副作用仍需确认。
 - TUI 捕获滚轮以浏览历史；按住 Shift 拖选时由宿主终端原生高亮选区并通过右键菜单复制，PageUp/PageDown 仍可浏览历史。
 - 输入框使用统一主题的青蓝色闪烁光标和聚焦边框，支持 Left/Right/Home/End/Delete 定位编辑，并可用 Up/Down 调取当前会话已提交的输入历史。
-- 输入以 `/` 开头时显示垂直命令候选菜单；Up/Down 选择，Enter 补全，当前仅列出实际支持的 `/config`。
+- 输入以 `/` 开头时显示垂直命令候选菜单；Up/Down 选择，Enter 补全，列出 `/help`、`/clear`、`/config`、`/provider` 和 `/model`。
 - TUI、初始化向导与安全确认支持中文/英文，默认中文；启动历史区预置常用 Android 任务和操作说明，且不进入模型上下文。
 - 输入行和低权重状态行使用统一主题的 `background_alt`，快捷键分隔线使用 `border`/`border_focus`，其余 frame 使用非纯黑 `background`。
 - `android-run.sh` 会先执行 `adb root`、等待 adbd 并验证 UID 0，再交叉编译、推送和启动；不支持 root adbd 时才回退 `su -c`，私有配置不可读则提前失败。
@@ -76,7 +83,7 @@ Phase 10：本地功能与验证基本完成，等待 Android 交叉编译和真
 - PTY 已在 API 34 ARMv7 真机执行只读命令；不同 su/fullscreen 程序仍可能需要兼容调整。
 - `android-run.sh` 与 `android-run.ps1` 默认构建 AArch64；仅支持 `armeabi-v7a` 的设备必须显式设置 `RUST_TARGET=armv7-linux-androideabi`，否则 Android 会因缺少 `/system/bin/linker64` 报 `No such file or directory`。
 - Agent TUI 在 LLM 和捕获式命令执行期间保持同一 ratatui frame；全屏交互命令会临时挂起 TUI，退出后恢复并完整重绘。
-- 新主题已完成本地渲染与样式测试，仍需在不同 adb shell 宿主的 TrueColor/ANSI 256、窄屏和实际电视显示效果下做真机可读性验证。
+- 新主题已完成渲染与样式测试，仍需在不同 adb shell 宿主的 TrueColor/ANSI 256、窄屏和实际电视显示效果下做真机可读性验证。
 
 ## Technical Decisions
 
@@ -90,13 +97,13 @@ Phase 10：本地功能与验证基本完成，等待 Android 交叉编译和真
 
 - `cargo check`：通过。
 - `cargo test --all-targets`：通过，共 68 项测试；覆盖配置/CLI、安全、历史日志及限额、root、双 LLM 协议、重试/timeout、Agent 历史/失败/取消与模型 Tool Result 截断、真实 SIGINT、PTY、初始化顺序、TUI 重配置、编号审批与任务级精确许可、审批面板定位/跨帧清理/方向键拆分、双行布局、TrueColor/ANSI 256 palette、Markdown/表格/工具结果/确认界面的语义配色。
-- `android-run.ps1`：PowerShell AST 语法解析与 `git diff --check` 通过；因当前未授权实际部署，未执行 adb/NDK 真机流程。
+- `android-run.ps1`：PowerShell AST 语法解析与 `git diff --check` 通过。
 - `cargo fmt --all -- --check`：通过。
-- Release 用户说明打包：`release.yml` 已通过 `actionlint`，已在本地模拟 AArch64/ARMv7 目录并确认 `.tar.gz` 和 `.zip` 均包含 `使用说明.md`。
+- Release 用户说明打包：`release.yml` 已通过 `actionlint`，AArch64/ARMv7 模拟打包确认 `.tar.gz` 和 `.zip` 均包含 `使用说明.md`。
 - `cargo clippy --all-targets -- -D warnings`：通过。
 - `cargo build --release`：通过。
 - `RUSTDOCFLAGS='-D missing_docs' cargo doc --no-deps`：通过。
-- `./cross-compile.sh`：通过；使用 `/home/ernest/Android/Sdk/ndk/28.2.13676358` 构建 Android 26 AArch64 PIE，解释器为 `/system/bin/linker64`。
+- `./cross-compile.sh`：通过；使用 NDK r28c 构建 Android 26 AArch64 PIE，解释器为 `/system/bin/linker64`。
 - ARMv7 真机：`--version`、Responses Agent 两轮请求、`getprop` PTY 执行/结果回传和 `adb shell -t` TUI Ctrl+Q 恢复均通过。
 
 ## Next Steps

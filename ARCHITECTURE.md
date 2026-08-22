@@ -42,7 +42,7 @@ TUI 的视觉语义统一由 `UI_DESIGN.md` 约束。实现应以集中式 `Them
 
 | 模块 | 职责与主要类型 | 输入 / 输出 | 依赖与禁止事项 |
 |---|---|---|---|
-| `src/config` | `Config`、枚举、loader、wizard、校验 | 文件/环境 → 已校验配置 | 不执行命令，不持有 UI 状态 |
+| `src/config` | `Config`、枚举、loader、wizard、分层校验 | 文件/缺省值/环境 → 可进入 TUI 的运行配置；完整 Provider 配置 → LLM 可用 | 不执行命令，不持有 UI 状态 |
 | `src/history` | `HistoryLog`、JSON Lines 事件与安全创建 | 交互事件 → 可刷新诊断日志 | 不记录 provider 凭据，不参与安全决策 |
 | `src/llm` | `LlmClient`、统一消息/工具类型、两个 HTTP adapter、retry | `LlmRequest` → `LlmResponse` | 不进行安全判断或执行工具 |
 | `src/agent` | `AgentRunner`、上下文完整交互单元、工具 schema、`Confirmer` | 用户任务 → Tool Loop / 最终文本 | 不得绕过 security 和 confirmer |
