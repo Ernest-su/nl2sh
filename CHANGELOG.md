@@ -72,6 +72,7 @@
 
 ### Fixed
 
+- Fragmented CSI/SS3 arrow sequences from ADB terminals are reconstructed while the slash-command menu is open, so wrapping past the first or last item no longer closes the menu or inserts `A`/`B` characters after `/`.
 - Completing or cancelling a streamed LLM response now invalidates ratatui's retained frame and performs one full redraw, preventing stale gradient characters after the final Markdown layout replaces the streaming layout.
 - `android-run.sh` now applies the host terminal's current rows and columns to the allocated Android PTY before starting nl2sh, preventing an adb default width from truncating full-width TUI animations and layouts.
 - The startup train now advances by terminal columns across the actual conversation viewport, so its final visible engine reaches the right border before the animation ends on wide terminals.

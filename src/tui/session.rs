@@ -152,6 +152,7 @@ async fn run_inner(
     let mut last_cursor_blink = Instant::now();
     let mut last_train_frame = Instant::now();
     let mut last_gradient_frame = Instant::now();
+    let mut fragmented_arrow = super::events::FragmentedArrowFilter::default();
 
     loop {
         if last_cursor_blink.elapsed() >= Duration::from_millis(500) {
@@ -321,6 +322,14 @@ async fn run_inner(
             if active.is_some() {
                 continue;
             }
+            let Some(key) = (if app.command_menu_visible() {
+                fragmented_arrow.normalize(key)
+            } else {
+                fragmented_arrow.reset();
+                Some(key)
+            }) else {
+                continue;
+            };
             app.welcome_train_frame = None;
             match (key.code, key.modifiers) {
                 (KeyCode::PageUp, _) => app.scroll_conversation_up(10),

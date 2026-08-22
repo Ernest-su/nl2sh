@@ -101,6 +101,7 @@ fn run_inner(options: TuiOptions, mut history: Vec<String>) -> Result<Option<Str
     };
     let mut last_cursor_blink = Instant::now();
     let mut last_train_frame = Instant::now();
+    let mut fragmented_arrow = events::FragmentedArrowFilter::default();
     loop {
         if last_cursor_blink.elapsed() >= Duration::from_millis(500) {
             app.cursor_visible = !app.cursor_visible;
@@ -120,6 +121,14 @@ fn run_inner(options: TuiOptions, mut history: Vec<String>) -> Result<Option<Str
                     _ => {}
                 },
                 Event::Key(k) if k.kind == KeyEventKind::Press => {
+                    let Some(k) = (if app.command_menu_visible() {
+                        fragmented_arrow.normalize(k)
+                    } else {
+                        fragmented_arrow.reset();
+                        Some(k)
+                    }) else {
+                        continue;
+                    };
                     app.cursor_visible = true;
                     last_cursor_blink = Instant::now();
                     app.welcome_train_frame = None;
