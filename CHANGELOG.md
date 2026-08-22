@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Chat Completions and Responses now stream model text into the Agent TUI over SSE, with an animated semantic gradient while generation is active and normal Markdown styling immediately after completion.
+
 ## [0.2.0] - 2026-08-22
 
 ### Added
@@ -68,6 +72,7 @@
 
 ### Fixed
 
+- Completing or cancelling a streamed LLM response now invalidates ratatui's retained frame and performs one full redraw, preventing stale gradient characters after the final Markdown layout replaces the streaming layout.
 - `android-run.sh` now applies the host terminal's current rows and columns to the allocated Android PTY before starting nl2sh, preventing an adb default width from truncating full-width TUI animations and layouts.
 - The startup train now advances by terminal columns across the actual conversation viewport, so its final visible engine reaches the right border before the animation ends on wide terminals.
 - The Buddha terminal illustration now measures its Chinese blessing row at the same 65-column display width as the surrounding ASCII frame, preventing right-edge protrusion.

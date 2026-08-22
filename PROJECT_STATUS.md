@@ -4,6 +4,8 @@ Last Updated: 2026-08-22
 
 ## Recent Changes
 
+- 修复部分 ADB 宿主终端在 LLM 流式临时文本切换为最终 Markdown 时留下旧渐变字符的问题；流结束后由 TUI 主线程执行一次完整重绘，不改变终端模式、PTY 或安全流程。
+- Chat Completions 与 Responses 的模型文本现在通过 SSE 增量显示到 Agent TUI；生成中的尾部使用 TrueColor/ANSI 256 语义渐变动画，完成后立即恢复普通 Markdown 样式。流式工具参数仍完整聚合后才进入安全与确认链。
 - 每个 Android Agent 任务会向 system prompt 动态附加一次低敏感环境摘要（API level、ABI、shell、UID、root/su 能力）；失败时安全降级，不采集设备标识或网络信息，也不影响安全与确认链。
 - 新增本地 `/exit` 命令，可从命令候选菜单或直接输入安全退出 TUI，行为与 Ctrl+Q 一致且不会进入模型上下文。
 - 修复启动小火车以每帧两列移动时可能跨过右边缘贴边帧的问题；奇数和偶数宽度下车头都会抵达内容区最右列后再完整驶出。
@@ -99,6 +101,8 @@ Last Updated: 2026-08-22
 
 ## Verification Performed
 
+- LLM 流结束重绘：在 API 28 ARMv7 设备部署 release 二进制，通过 Responses 模型生成不同长度的三行中文；生成期间增量渐变正常，完成时执行一次完整重绘，最终 Markdown 无旧字符残留，Ctrl+Q 后终端正常恢复。
+- LLM 流式输出：`cargo fmt --all -- --check`、`cargo check --target aarch64-linux-android` 与 `cargo test --target aarch64-linux-android --no-run` 通过；新增流式文本/工具参数聚合和 TUI 渐变样式测试，其 Android 测试二进制编译通过。
 - 0.2.0 发布门禁：`cargo fmt --all -- --check`、`cargo check --all-targets`、`cargo clippy --all-targets -- -D warnings`、`cargo build --release`、`RUSTDOCFLAGS='-D missing_docs' cargo doc --no-deps` 与 `actionlint .github/workflows/release.yml` 通过。
 - 0.2.0 Android 交叉编译：NDK r28c/API 26 的 AArch64 与 ARMv7 release 均通过，分别验证为使用 `/system/bin/linker64` 的 64 位 PIE 和使用 `/system/bin/linker` 的 32 位 PIE。
 - 0.2.0 测试：34 项库测试和 10 项 Agent loop 测试通过；`cargo test --all-targets` 中两个旧伪终端测试因启动动画的 ANSI 差分输出不再形成连续原始文本而超时，其余测试通过。

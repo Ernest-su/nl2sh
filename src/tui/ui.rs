@@ -528,6 +528,14 @@ fn conversation_lines(app: &App, width: usize, theme: Theme) -> Vec<Line<'_>> {
             }
         } else if let Some(visible) = entry.strip_prefix(super::output::LIVE_OUTPUT_PREFIX) {
             lines.push(conversation_line(visible, theme));
+        } else if let Some(stream) = entry.strip_prefix(super::output::LLM_STREAM_PREFIX) {
+            let (phase, text) = stream.split_once(':').unwrap_or(("0", stream));
+            lines.extend(streaming_agent_lines(
+                text,
+                phase.parse().unwrap_or(0),
+                theme,
+                app.ascii,
+            ));
         } else if starts_with_any(entry, &["[AGENT]", "🤖"]) {
             lines.extend(markdown::render(entry, width, theme, app.ascii));
         } else {
@@ -535,6 +543,58 @@ fn conversation_lines(app: &App, width: usize, theme: Theme) -> Vec<Line<'_>> {
         }
     }
     lines
+}
+
+fn streaming_agent_lines(
+    text: &str,
+    phase: usize,
+    theme: Theme,
+    ascii: bool,
+) -> Vec<Line<'static>> {
+    let prefix = if ascii { "[AGENT] " } else { "🤖 " };
+    let characters = text.chars().collect::<Vec<_>>();
+    let gradient_start = characters.len().saturating_sub(32);
+    let mut lines = vec![Line::from(Span::styled(prefix, theme.bold(theme.special)))];
+    for (index, character) in characters.into_iter().enumerate() {
+        if character == '\n' {
+            lines.push(Line::default());
+            continue;
+        }
+        let tail_index = index.saturating_sub(gradient_start);
+        let color = if index < gradient_start {
+            theme.text_primary
+        } else {
+            animated_gradient_color(theme, tail_index, phase)
+        };
+        let span = Span::styled(character.to_string(), theme.style(color));
+        if let Some(line) = lines.last_mut() {
+            line.spans.push(span);
+        }
+    }
+    lines
+}
+
+fn animated_gradient_color(theme: Theme, index: usize, phase: usize) -> Color {
+    let wave = (index + phase) % 24;
+    let amount = if wave <= 12 { wave } else { 24 - wave };
+    match (theme.text_primary, theme.accent) {
+        (Color::Rgb(r1, g1, b1), Color::Rgb(r2, g2, b2)) => Color::Rgb(
+            blend_channel(r1, r2, amount),
+            blend_channel(g1, g2, amount),
+            blend_channel(b1, b2, amount),
+        ),
+        _ => match amount {
+            0..=3 => theme.text_primary,
+            4..=7 => theme.text_secondary,
+            _ => theme.accent,
+        },
+    }
+}
+
+fn blend_channel(from: u8, to: u8, amount: usize) -> u8 {
+    let from = usize::from(from);
+    let to = usize::from(to);
+    ((from * (12 - amount) + to * amount) / 12) as u8
 }
 
 fn buddha_art_lines(art: &str, theme: Theme) -> Vec<Line<'static>> {
@@ -937,6 +997,30 @@ mod tests {
         assert_eq!(agent.style.fg, Some(theme.text_primary));
         assert_eq!(tool.spans[1].style.fg, Some(theme.text_primary));
         assert_ne!(tool.spans[0].style.fg, tool.spans[1].style.fg);
+    }
+
+    #[test]
+    fn streaming_agent_tail_has_animated_gradient_and_completed_text_is_plain() {
+        let theme = Theme::for_mode(super::super::theme::ColorMode::TrueColor);
+        let first = streaming_agent_lines("streaming response", 0, theme, true);
+        let next = streaming_agent_lines("streaming response", 5, theme, true);
+        assert_eq!(first[0].spans[0].content, "[AGENT] ");
+        assert!(first[0]
+            .spans
+            .iter()
+            .skip(1)
+            .any(|span| span.style.fg != Some(theme.text_primary)));
+        assert!(first[0]
+            .spans
+            .iter()
+            .zip(&next[0].spans)
+            .any(|(left, right)| left.style.fg != right.style.fg));
+
+        let completed = markdown::render("[AGENT] streaming response", 80, theme, true);
+        assert!(completed
+            .iter()
+            .flat_map(|line| &line.spans)
+            .all(|span| span.style.fg != Some(theme.accent)));
     }
 
     #[test]

@@ -12,7 +12,7 @@ Natural Language to Shell 是面向 Android 原生 `adb shell` 的类 Hermes AI 
 
 - 默认使用多轮 Agent Tool Calling；也支持只生成单条命令的 Command 模式。
 - 核心程序是单文件 Android 可执行程序，可直接推送到设备运行。
-- 丰富 TUI 支持实时状态与输出、内嵌确认、历史滚动、工具结果折叠、Markdown 渲染、中英文界面和热重配置。
+- 丰富 TUI 支持 LLM 文本流式渐变输出、实时状态与命令输出、内嵌确认、历史滚动、工具结果折叠、Markdown 渲染、中英文界面和热重配置。
 - 支持 Chat Completions 与 Responses API、自定义 OpenAI 兼容 endpoint。
 - `balanced` 默认策略自动执行只读查询、确认修改操作、二次确认危险操作。
 - LLM 不能决定确认、风险等级、root 提升或超时；用户编辑后的命令必须重新分类。

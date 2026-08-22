@@ -3,7 +3,8 @@ use crate::{
     config::Config,
     limits::truncate_text,
     llm::{
-        ConversationItem, ConversationMessage, LlmClient, LlmRequest, Role, ToolResult, ToolRound,
+        ConversationItem, ConversationMessage, LlmClient, LlmRequest, Role, TextDeltaSink,
+        ToolResult, ToolRound,
     },
     security::assess,
     shell::CommandExecutor,
@@ -43,6 +44,15 @@ impl AgentRunner<'_> {
         input: &str,
         history: &[Vec<ConversationItem>],
     ) -> Result<AgentOutcome> {
+        self.run_inner(input, history, None).await
+    }
+
+    async fn run_inner(
+        &self,
+        input: &str,
+        history: &[Vec<ConversationItem>],
+        text_sink: Option<&dyn TextDeltaSink>,
+    ) -> Result<AgentOutcome> {
         let system = system_prompt(
             self.executor
                 .runtime_context()
@@ -66,14 +76,16 @@ impl AgentRunner<'_> {
         for step in 1..=self.config.max_agent_steps {
             let mut items = ctx.items();
             items.extend(current.clone());
-            let response = self
-                .llm
-                .complete(LlmRequest {
-                    model: self.config.model.clone(),
-                    items,
-                    tools: vec![command_tool()],
-                })
-                .await?;
+            let request = LlmRequest {
+                model: self.config.model.clone(),
+                items,
+                tools: vec![command_tool()],
+            };
+            let response = if let Some(sink) = text_sink {
+                self.llm.complete_stream(request, sink).await?
+            } else {
+                self.llm.complete(request).await?
+            };
             if response.tool_calls.is_empty() {
                 let final_text = response
                     .text
@@ -230,6 +242,16 @@ impl AgentRunner<'_> {
         history: Vec<Vec<ConversationItem>>,
     ) -> Result<AgentOutcome> {
         self.run_with_history(&input, &history).await
+    }
+
+    /// Owned-history variant that forwards provider text deltas to a UI sink.
+    pub async fn run_with_history_streaming_owned(
+        &self,
+        input: String,
+        history: Vec<Vec<ConversationItem>>,
+        text_sink: &dyn TextDeltaSink,
+    ) -> Result<AgentOutcome> {
+        self.run_inner(&input, &history, Some(text_sink)).await
     }
 }
 

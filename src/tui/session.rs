@@ -2,7 +2,10 @@ use super::{
     app::{App, PopupView},
     i18n,
     input::Input,
-    output::{append_transcript, finalize_live_output, push_history, snapshot, SessionOutput},
+    output::{
+        advance_llm_gradient, append_llm_delta, append_transcript, begin_llm_stream,
+        discard_llm_stream, finalize_live_output, push_history, snapshot, SessionOutput,
+    },
     terminal::{best_effort_restore, TerminalGuard},
     ui,
 };
@@ -10,7 +13,7 @@ use crate::{
     agent::{can_remember_approval, AgentOutcome, AgentRunner, ConfirmationDecision, Confirmer},
     config::{Config, UiLanguage},
     history::HistoryLog,
-    llm::{ConversationItem, LlmClient},
+    llm::{ConversationItem, LlmClient, TextDeltaSink},
     security::{RiskLevel, SecurityAssessment},
     shell::{OutputSink, ShellExecutor},
 };
@@ -103,6 +106,12 @@ async fn run_inner(
         executor: &executor,
         confirmer: &confirmer,
     };
+    let stream_sink = SessionTextSink {
+        history: history.clone(),
+        max_bytes: config.ui_live_output_max_bytes,
+        needs_full_redraw: Arc::new(AtomicBool::new(false)),
+    };
+    let stream_redraw = stream_sink.needs_full_redraw.clone();
     let mut terminal = TerminalGuard::enter()?;
     let mut app = App {
         input: Input::default(),
@@ -142,6 +151,7 @@ async fn run_inner(
     let mut was_suspended = false;
     let mut last_cursor_blink = Instant::now();
     let mut last_train_frame = Instant::now();
+    let mut last_gradient_frame = Instant::now();
 
     loop {
         if last_cursor_blink.elapsed() >= Duration::from_millis(500) {
@@ -153,7 +163,17 @@ async fn run_inner(
             app.advance_welcome_train(viewport_width);
             last_train_frame = Instant::now();
         }
+        if active.is_some() && last_gradient_frame.elapsed() >= Duration::from_millis(70) {
+            advance_llm_gradient(&history)?;
+            last_gradient_frame = Instant::now();
+        }
         let is_suspended = suspended.load(Ordering::Acquire);
+        if !is_suspended && stream_redraw.swap(false, Ordering::AcqRel) {
+            terminal
+                .terminal()
+                .clear()
+                .context("clear terminal after LLM stream")?;
+        }
         if was_suspended && !is_suspended {
             // The interactive child returned to a fresh alternate screen.
             // Invalidate ratatui's retained buffer so unchanged frame regions
@@ -207,6 +227,7 @@ async fn run_inner(
                     };
                 }
                 Err(error) => {
+                    discard_llm_stream(&history)?;
                     finalize_live_output(&history)?;
                     push_history(
                         &history,
@@ -372,9 +393,11 @@ async fn run_inner(
                             "正在请求模型 / 执行工具",
                             "requesting LLM / executing tools",
                         );
-                        active = Some(Box::pin(
-                            runner.run_with_history_owned(input, model_history.clone()),
-                        ));
+                        active = Some(Box::pin(runner.run_with_history_streaming_owned(
+                            input,
+                            model_history.clone(),
+                            &stream_sink,
+                        )));
                     }
                 }
                 (KeyCode::Up, _) if app.command_menu_visible() => app.select_previous_command(),
@@ -391,6 +414,29 @@ async fn run_inner(
                 _ => {}
             }
         }
+    }
+}
+
+struct SessionTextSink {
+    history: Arc<Mutex<Vec<String>>>,
+    max_bytes: usize,
+    needs_full_redraw: Arc<AtomicBool>,
+}
+
+impl TextDeltaSink for SessionTextSink {
+    fn begin(&self) {
+        let _ = begin_llm_stream(&self.history);
+    }
+
+    fn delta(&self, text: &str) {
+        let _ = append_llm_delta(&self.history, text, self.max_bytes);
+    }
+
+    fn end(&self, completed: bool) {
+        if !completed {
+            let _ = discard_llm_stream(&self.history);
+        }
+        self.needs_full_redraw.store(true, Ordering::Release);
     }
 }
 
