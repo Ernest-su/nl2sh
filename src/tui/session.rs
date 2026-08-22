@@ -313,6 +313,10 @@ async fn run_inner(
                     }
                     let input = app.take_input();
                     match input.trim() {
+                        "/exit" => {
+                            log.record("local_command", "/exit")?;
+                            return Ok(SessionExit::Quit);
+                        }
                         "/config" => return Ok(SessionExit::Configure(ConfigTarget::All)),
                         "/provider" => return Ok(SessionExit::Configure(ConfigTarget::Provider)),
                         "/model" => return Ok(SessionExit::Configure(ConfigTarget::Model)),

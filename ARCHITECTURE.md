@@ -28,6 +28,8 @@ Android Runtime
 
 用户输入先成为内部对话消息。Provider 把统一请求映射为 Chat Completions 或 Responses JSON；Tool Call 被转换回内部类型。Agent 只能把 shell tool 交给安全引擎，确认完成后才能调用执行器。stdout、stderr、退出码、超时和错误被编码为 Tool Result，下一轮模型只能依据这些真实结果回答。
 
+每个 Agent 任务开始时，Android 执行器会向 system prompt 附加一次低敏感运行环境摘要，仅包含 API level、ABI、`/system/bin/sh`、当前 UID 与 root/su 能力；探测失败时省略对应字段且不阻断任务。摘要只用于命令兼容性提示，不包含型号、序列号、Android ID、IP、账号或应用列表，也不参与安全分类、确认或提权决策。易变的内存、存储和网络状态仍必须通过工具按需查询。
+
 TUI 在命令运行期间展示有界实时输出，工具轮完成后移除对应临时行并以默认折叠项保存有界结果，F2 只改变显示展开状态。执行捕获、实时 UI、日志事件/文件和模型 Tool Result 分别应用配置上限；截断保留头尾并插入显式标记，模型不会把不完整结果误认为完整。最终回答提示要求按用户语言总结，多项结构化对比优先使用 Markdown 表格。
 
 Agent 最终文本由独立 Markdown 显示层转换成 ratatui `Line`/`Span`；工具、命令和原始输出绕过该层。表格使用 Unicode 显示宽度计算列宽，在内容区域内压缩并换行，窗口过窄时降级为键值列表。解析无法识别的行保持原文，显示转换不回写对话或日志。

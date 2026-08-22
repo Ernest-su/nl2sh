@@ -386,11 +386,13 @@ fn render_command_menu(f: &mut Frame, app: &App, input_area: ratatui::layout::Re
             let description = match (app.language, *command) {
                 (UiLanguage::ZhCn, "/clear") => "清空当前会话",
                 (UiLanguage::ZhCn, "/config") => "重新配置模型服务",
+                (UiLanguage::ZhCn, "/exit") => "安全退出",
                 (UiLanguage::ZhCn, "/help") => "显示帮助",
                 (UiLanguage::ZhCn, "/model") => "配置模型",
                 (UiLanguage::ZhCn, "/provider") => "配置 API 服务",
                 (UiLanguage::En, "/clear") => "Clear the current session",
                 (UiLanguage::En, "/config") => "Reconfigure the model provider",
+                (UiLanguage::En, "/exit") => "Quit safely",
                 (UiLanguage::En, "/help") => "Show help",
                 (UiLanguage::En, "/model") => "Configure the model",
                 (UiLanguage::En, "/provider") => "Configure the API provider",
@@ -858,6 +860,7 @@ mod tests {
             .collect::<String>();
         assert!(menu.contains("/config"));
         assert!(menu.contains("/clear"));
+        assert!(menu.contains("/exit"));
         assert!(menu.contains("/help"));
         assert!(menu.contains("/model"));
         assert!(menu.contains("/provider"));

@@ -149,10 +149,11 @@ async fn missing_config_enters_tui_and_config_command_runs_setup() -> anyhow::Re
     assert_eq!(loaded.endpoint, "http://127.0.0.1:11434/v1");
     assert_eq!(loaded.api_key, "visible-test-key");
     assert!(process.child.try_wait()?.is_none());
-    process.master.write_all(&[0x11])?;
+    process.master.write_all(b"/exit\r")?;
     assert!(timeout(Duration::from_secs(3), process.child.wait())
         .await??
         .success());
+    assert!(std::fs::read_to_string(directory.path().join("nl2sh.log"))?.contains("/exit"));
     Ok(())
 }
 

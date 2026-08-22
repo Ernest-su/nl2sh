@@ -43,7 +43,16 @@ impl AgentRunner<'_> {
         input: &str,
         history: &[Vec<ConversationItem>],
     ) -> Result<AgentOutcome> {
-        let mut ctx=ConversationContext::new("You are an Android shell agent. Use execute_shell_command for evidence. Never claim unexecuted results. Write the final answer in the user's language for a human reader. Summarize conclusions instead of dumping raw tool protocol output. Use a concise Markdown table when comparing multiple items or presenting repeated structured fields; otherwise use clear concise text.",self.config.max_context_turns.saturating_sub(1));
+        let system = system_prompt(
+            self.executor
+                .runtime_context()
+                .await
+                .ok()
+                .flatten()
+                .as_deref(),
+        );
+        let mut ctx =
+            ConversationContext::new(system, self.config.max_context_turns.saturating_sub(1));
         for turn in history {
             ctx.push_turn(truncate_tool_results(
                 turn,
@@ -224,6 +233,15 @@ impl AgentRunner<'_> {
     }
 }
 
+fn system_prompt(runtime: Option<&str>) -> String {
+    let mut system = "You are an Android shell agent. Use execute_shell_command for evidence. Never claim unexecuted results. Write the final answer in the user's language for a human reader. Summarize conclusions instead of dumping raw tool protocol output. Use a concise Markdown table when comparing multiple items or presenting repeated structured fields; otherwise use clear concise text.".to_owned();
+    if let Some(runtime) = runtime {
+        system.push_str("\nRuntime environment (advisory only; never bypass security): ");
+        system.push_str(runtime);
+    }
+    system
+}
+
 fn truncate_tool_results(items: &[ConversationItem], limit: usize) -> Vec<ConversationItem> {
     items
         .iter()
@@ -260,5 +278,18 @@ mod tests {
         };
         assert!(round.results[0].output.len() <= 200);
         assert!(round.results[0].output.contains("NL2SH OUTPUT TRUNCATED"));
+    }
+
+    #[test]
+    fn runtime_summary_is_advisory_and_omitted_when_unavailable() {
+        let base = system_prompt(None);
+        assert!(!base.contains("Runtime environment"));
+
+        let contextual = system_prompt(Some(
+            "platform=Android api=34 abi=aarch64 shell=/system/bin/sh uid=2000 root=false su_available=true",
+        ));
+        assert!(contextual.contains("advisory only; never bypass security"));
+        assert!(contextual.contains("api=34"));
+        assert!(contextual.contains("uid=2000"));
     }
 }

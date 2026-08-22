@@ -44,6 +44,12 @@ pub struct ExecutionResult {
 #[async_trait]
 /// Security-agnostic command execution boundary used by the Agent.
 pub trait CommandExecutor: Send + Sync {
+    /// Returns a low-sensitivity runtime summary for model compatibility hints.
+    /// The summary is advisory and must never affect security or confirmation.
+    async fn runtime_context(&self) -> Result<Option<String>> {
+        Ok(None)
+    }
+
     /// Executes an already assessed and approved command.
     async fn execute(
         &self,
@@ -126,6 +132,31 @@ impl ShellExecutor {
 }
 #[async_trait]
 impl CommandExecutor for ShellExecutor {
+    async fn runtime_context(&self) -> Result<Option<String>> {
+        #[cfg(target_os = "android")]
+        {
+            let uid = self.probe.uid();
+            let su_available = self.probe.su_available();
+            let api_level = android_api_level().await;
+            let mut fields = vec![
+                "platform=Android".to_owned(),
+                format!("abi={}", std::env::consts::ARCH),
+                "shell=/system/bin/sh".to_owned(),
+                format!("uid={uid}"),
+                format!("root={}", uid == 0),
+                format!("su_available={su_available}"),
+            ];
+            if let Some(api_level) = api_level {
+                fields.insert(1, format!("api={api_level}"));
+            }
+            Ok(Some(fields.join(" ")))
+        }
+        #[cfg(not(target_os = "android"))]
+        {
+            Ok(None)
+        }
+    }
+
     async fn execute(
         &self,
         command: &str,
@@ -161,6 +192,26 @@ impl CommandExecutor for ShellExecutor {
             pipeline::execute(req).await
         }
     }
+}
+
+#[cfg(target_os = "android")]
+async fn android_api_level() -> Option<String> {
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(1),
+        tokio::process::Command::new("/system/bin/getprop")
+            .arg("ro.build.version.sdk")
+            .output(),
+    )
+    .await
+    .ok()?
+    .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let value = String::from_utf8(output.stdout).ok()?;
+    let value = value.trim();
+    (!value.is_empty() && value.chars().all(|character| character.is_ascii_digit()))
+        .then(|| value.to_owned())
 }
 
 struct TuiActivityGuard(Option<Arc<AtomicBool>>);

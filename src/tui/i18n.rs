@@ -44,7 +44,7 @@ pub(crate) fn startup_history(language: UiLanguage, ascii: bool) -> Vec<String> 
             format!("{hint} 常用示例：查看系统版本、CPU、内存和存储空间"),
             format!("{hint} 常用示例：查找占用空间最大的十个文件"),
             format!("{hint} 常用示例：查看正在运行的进程和网络连接"),
-            format!("{hint} 常用命令：/help 帮助；/clear 清空；/config 完整配置"),
+            format!("{hint} 常用命令：/help 帮助；/clear 清空；/exit 退出；/config 完整配置"),
             format!("{hint} 配置命令：/provider 配置 API；/model 配置模型"),
             format!("{hint} 操作说明：滚轮浏览历史；Shift+拖选文字后用右键菜单复制"),
             format!("{hint} 操作说明：Ctrl+C 取消任务或清空输入；Ctrl+Q 安全退出"),
@@ -55,7 +55,7 @@ pub(crate) fn startup_history(language: UiLanguage, ascii: bool) -> Vec<String> 
             format!("{hint} Example: show Android version, CPU, memory, and storage"),
             format!("{hint} Example: find the ten largest files"),
             format!("{hint} Example: show running processes and network connections"),
-            format!("{hint} Commands: /help help; /clear clear; /config configure all"),
+            format!("{hint} Commands: /help help; /clear clear; /exit quit; /config configure all"),
             format!("{hint} Setup: /provider configures the API; /model configures the model"),
             format!("{hint} Controls: wheel browses history; Shift+drag selects text for context-menu copy"),
             format!("{hint} Controls: Ctrl+C cancels or clears input; Ctrl+Q quits safely"),
@@ -71,6 +71,7 @@ pub(crate) fn help_history(language: UiLanguage, ascii: bool) -> Vec<String> {
         UiLanguage::ZhCn => vec![
             format!("{hint} /help 显示此帮助"),
             format!("{hint} /clear 清空当前会话的对话、模型上下文和输入历史；审计日志保留"),
+            format!("{hint} /exit 安全退出"),
             format!("{hint} /config 重新配置模型服务"),
             format!("{hint} /provider 配置 API Endpoint、API Key 和 API 类型"),
             format!("{hint} /model 配置模型名称"),
@@ -81,6 +82,7 @@ pub(crate) fn help_history(language: UiLanguage, ascii: bool) -> Vec<String> {
         UiLanguage::En => vec![
             format!("{hint} /help show this help"),
             format!("{hint} /clear clear this session's conversation, model context, and input history; keep the audit log"),
+            format!("{hint} /exit quit safely"),
             format!("{hint} /config reconfigure the model provider"),
             format!("{hint} /provider configure API endpoint, key, and protocol"),
             format!("{hint} /model configure the model identifier"),
@@ -144,6 +146,7 @@ mod tests {
 
         let help = help_history(UiLanguage::ZhCn, true);
         assert!(help.iter().any(|line| line.contains("/help")));
+        assert!(help.iter().any(|line| line.contains("/exit")));
         assert!(help.iter().any(|line| line.contains("审计日志保留")));
         assert!(help.iter().any(|line| line.contains("suqishuo.cn")));
         assert!(help.iter().any(|line| line.contains("adb 万事如意")));

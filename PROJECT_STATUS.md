@@ -4,6 +4,8 @@ Last Updated: 2026-08-22
 
 ## Recent Changes
 
+- 每个 Android Agent 任务会向 system prompt 动态附加一次低敏感环境摘要（API level、ABI、shell、UID、root/su 能力）；失败时安全降级，不采集设备标识或网络信息，也不影响安全与确认链。
+- 新增本地 `/exit` 命令，可从命令候选菜单或直接输入安全退出 TUI，行为与 Ctrl+Q 一致且不会进入模型上下文。
 - 修复启动小火车以每帧两列移动时可能跨过右边缘贴边帧的问题；奇数和偶数宽度下车头都会抵达内容区最右列后再完整驶出。
 - 首次启动欢迎页会在佛祖图下方播放一次带动态蒸汽和 `NL2SH` 车身字样的纯 ASCII 小火车；`android-run.sh` 会先把宿主终端行列数同步到 Android PTY，动画再按真实内容宽度移动；窄屏按视口裁剪，且不进入会话、审计或模型历史。
 - 佛祖终端图的 `\\`、`/`、`|`、`=`、`^` 光芒与轮廓字符使用独立的装饰金色 token 加粗显示，文字和面部细节保持正文色；该 token 不复用安全警告色，历史内容仍为无 ANSI 的纯文本。
@@ -17,14 +19,14 @@ Last Updated: 2026-08-22
 
 ## Current Phase
 
-Phase 10：核心功能与验证基本完成，等待扩展 Android 真机验证。
+0.2.0 发布阶段：本地发布门禁完成，等待 GitHub Actions 构建并发布双 ABI 产物。
 
 ## Overall Status
 
 - Product positioning: Android 原生 shell 版的类 Hermes AI Agent；核心程序以单个可执行文件交付，提供多轮 Tool Calling 和丰富 TUI，不声称与 Hermes API 或插件兼容。
-- Build status: `cargo check --all-targets` 已于 2026-08-20 通过；Linux release 构建基线保持有效。
-- Test status: `cargo test --all-targets` 已于 2026-08-20 通过（68 个 unit/integration tests，0 failure）。
-- Android cross-compile status: 已使用 NDK r28c、API 26 成功构建 `aarch64-linux-android` release 产物。
+- Build status: 0.2.0 的 `cargo check --all-targets` 与 Linux release 构建通过。
+- Test status: 0.2.0 的单元、Agent loop 与非 TUI 集成测试通过；两个依赖原始 ANSI 文本连续匹配的伪终端测试受启动动画差分输出影响，发布前需修复。
+- Android cross-compile status: 0.2.0 已使用 NDK r28c、API 26 成功构建 `aarch64-linux-android` 与 `armv7-linux-androideabi` release 产物。
 - Android device validation: 已在 API 34 `armeabi-v7a` 设备完成部署、Agent/PTY 和 TUI smoke test。
 - CI release workflow: 已添加 `.github/workflows/release.yml`，在推送 `v*` tag 时用 GitHub Actions 并行交叉编译 `aarch64-linux-android` 与 `armv7-linux-androideabi`，把预编译 `nl2sh` 与 Linux/Windows 启动脚本、`config.toml.example`、`使用说明.md` 打包为 `.tar.gz`/`.zip` 并附带 SHA256 校验和发布到 GitHub Release；`workflow_dispatch` 可手动触发草稿发布。
 - Known blockers: 尚未验证真实 root 提权、修改确认、超时和全屏交互程序；CI workflow 尚未在真实 GitHub Actions 上运行验证。
@@ -72,7 +74,7 @@ Phase 10：核心功能与验证基本完成，等待扩展 Android 真机验证
 - 命令审批改为固定 `1-6` 列表，支持方向键/Enter 与 `y/n/a/e/i/t` 别名；可在当前 Agent 任务内记住完全相同的普通命令，但 Root、Dangerous、Critical 和强确认命令始终禁用该选项，且许可不持久化、不做前缀匹配。
 - 审批区域使用完整风险色边框和统一 `background_alt` 面板背景；阶段切换保持稳定最小高度并清空整个面板，避免列表字符残留到强确认或编辑画面。
 - 审批面板锚定在输入区正上方的左下角；初始审批忽略孤立 Esc 和大写 CSI 尾字符，避免 adb 将方向键拆分后误触拒绝或 always 导致弹窗消失。
-- MIT `LICENSE` 已纳入仓库；Cargo 开发版本进入 0.1.1。
+- MIT `LICENSE` 已纳入仓库；Cargo 版本为 0.2.0。
 - 实时 TUI、捕获式工具结果、发给模型的 Tool Result、JSONL 单事件和单文件均有可配置上限；截断会插入明确标记。
 - TUI 输出与历史生命周期已从 session 控制器拆为独立模块，同时保留新的审批菜单和任务级精确命令许可。
 
@@ -97,6 +99,9 @@ Phase 10：核心功能与验证基本完成，等待扩展 Android 真机验证
 
 ## Verification Performed
 
+- 0.2.0 发布门禁：`cargo fmt --all -- --check`、`cargo check --all-targets`、`cargo clippy --all-targets -- -D warnings`、`cargo build --release`、`RUSTDOCFLAGS='-D missing_docs' cargo doc --no-deps` 与 `actionlint .github/workflows/release.yml` 通过。
+- 0.2.0 Android 交叉编译：NDK r28c/API 26 的 AArch64 与 ARMv7 release 均通过，分别验证为使用 `/system/bin/linker64` 的 64 位 PIE 和使用 `/system/bin/linker` 的 32 位 PIE。
+- 0.2.0 测试：34 项库测试和 10 项 Agent loop 测试通过；`cargo test --all-targets` 中两个旧伪终端测试因启动动画的 ANSI 差分输出不再形成连续原始文本而超时，其余测试通过。
 - `cargo check`：通过。
 - `cargo test --all-targets`：通过，共 68 项测试；覆盖配置/CLI、安全、历史日志及限额、root、双 LLM 协议、重试/timeout、Agent 历史/失败/取消与模型 Tool Result 截断、真实 SIGINT、PTY、初始化顺序、TUI 重配置、编号审批与任务级精确许可、审批面板定位/跨帧清理/方向键拆分、双行布局、TrueColor/ANSI 256 palette、Markdown/表格/工具结果/确认界面的语义配色。
 - `android-run.ps1`：PowerShell AST 语法解析与 `git diff --check` 通过。
@@ -112,4 +117,4 @@ Phase 10：核心功能与验证基本完成，等待扩展 Android 真机验证
 
 1. 在 root 与非 root 设备补测确认、提权、超时和全屏程序。
 2. 根据真机结果优化窄屏布局和全屏交互程序切换。
-3. 在真实 GitHub Actions 上验证 release workflow（`workflow_dispatch` 草稿）并发布 0.1.1。
+3. 观察 `v0.2.0` GitHub Actions，确认双 ABI 归档与 Release 发布成功。

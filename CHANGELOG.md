@@ -4,8 +4,12 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-22
+
 ### Added
 
+- Agent prompts now receive a once-per-task, low-sensitivity Android runtime summary containing API level, ABI, shell, UID, and root/su capability hints; probe failures are omitted and security policy remains authoritative.
+- A local `/exit` command now safely quits the TUI without entering model context.
 - A non-blocking, one-shot ASCII steam train now crosses beneath the Buddha illustration on the startup welcome screen, with animated smoke and `NL2SH` branding; it is clipped to the conversation viewport and excluded from session/model history.
 - The startup train now snaps to the conversation viewport's right edge before exiting when its two-column animation step would otherwise skip the exact edge position.
 - A README support section with project contribution copy and a linked remote WeChat donation code.
