@@ -114,6 +114,7 @@ async fn run_inner(
         history: snapshot(&history)?,
         conversation_scroll: 0,
         tool_results_expanded: false,
+        welcome_train_frame: Some(0),
         model: config.model.clone(),
         root,
         ascii: config.ascii_symbols,
@@ -140,11 +141,17 @@ async fn run_inner(
     let mut cancel_signal_pending = false;
     let mut was_suspended = false;
     let mut last_cursor_blink = Instant::now();
+    let mut last_train_frame = Instant::now();
 
     loop {
         if last_cursor_blink.elapsed() >= Duration::from_millis(500) {
             app.cursor_visible = !app.cursor_visible;
             last_cursor_blink = Instant::now();
+        }
+        if last_train_frame.elapsed() >= Duration::from_millis(100) {
+            let viewport_width = terminal.terminal().size()?.width.saturating_sub(2) as usize;
+            app.advance_welcome_train(viewport_width);
+            last_train_frame = Instant::now();
         }
         let is_suspended = suspended.load(Ordering::Acquire);
         if was_suspended && !is_suspended {
@@ -293,6 +300,7 @@ async fn run_inner(
             if active.is_some() {
                 continue;
             }
+            app.welcome_train_frame = None;
             match (key.code, key.modifiers) {
                 (KeyCode::PageUp, _) => app.scroll_conversation_up(10),
                 (KeyCode::PageDown, _) => app.scroll_conversation_down(10),
@@ -306,9 +314,7 @@ async fn run_inner(
                     let input = app.take_input();
                     match input.trim() {
                         "/config" => return Ok(SessionExit::Configure(ConfigTarget::All)),
-                        "/provider" => {
-                            return Ok(SessionExit::Configure(ConfigTarget::Provider))
-                        }
+                        "/provider" => return Ok(SessionExit::Configure(ConfigTarget::Provider)),
                         "/model" => return Ok(SessionExit::Configure(ConfigTarget::Model)),
                         "/help" => {
                             log.record("local_command", "/help")?;

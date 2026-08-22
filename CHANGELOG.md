@@ -6,6 +6,8 @@
 
 ### Added
 
+- A non-blocking, one-shot ASCII steam train now crosses beneath the Buddha illustration on the startup welcome screen, with animated smoke and `NL2SH` branding; it is clipped to the conversation viewport and excluded from session/model history.
+- The startup train now snaps to the conversation viewport's right edge before exiting when its two-column animation step would otherwise skip the exact edge position.
 - A README support section with project contribution copy and a linked remote WeChat donation code.
 - Project support and donation links plus a terminal-safe text illustration in both the startup welcome page and `/help`, without embedded image or QR rendering.
 - Local `/help` and `/clear` TUI commands; clearing removes the current conversation, model context, and input recall while preserving the audit log.
@@ -62,6 +64,8 @@
 
 ### Fixed
 
+- `android-run.sh` now applies the host terminal's current rows and columns to the allocated Android PTY before starting nl2sh, preventing an adb default width from truncating full-width TUI animations and layouts.
+- The startup train now advances by terminal columns across the actual conversation viewport, so its final visible engine reaches the right border before the animation ends on wide terminals.
 - The Buddha terminal illustration now measures its Chinese blessing row at the same 65-column display width as the surrounding ASCII frame, preventing right-edge protrusion.
 - Android launch cleanup now disables host mouse tracking after `adb shell -t` exits, including interrupted/error exits, and every Rust panic path uses the same complete terminal restoration routine.
 - Approval panels are now anchored above the input at the lower left, and fragmented adb arrow-key sequences can no longer trigger rejection or task approval and dismiss the panel.

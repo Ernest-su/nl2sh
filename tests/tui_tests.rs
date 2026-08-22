@@ -84,12 +84,7 @@ async fn agent_reply_remains_in_live_tui_until_ctrl_q() -> anyhow::Result<()> {
     master.write_all(b"/help\r")?;
     wait_for_text(&mut master, "审计日志保留", Duration::from_secs(3)).await?;
     master.write_all(b"/clear\r")?;
-    wait_for_text(
-        &mut master,
-        "当前会话历史已清空",
-        Duration::from_secs(3),
-    )
-    .await?;
+    wait_for_text(&mut master, "当前会话历史已清空", Duration::from_secs(3)).await?;
     master.write_all(b"show status\r")?;
     wait_for_text(&mut master, "tui-e2e-done", Duration::from_secs(5)).await?;
     assert!(
@@ -115,7 +110,8 @@ async fn missing_config_enters_tui_and_config_command_runs_setup() -> anyhow::Re
     let config = directory.path().join("missing.toml");
     let mut process = spawn_tui(&config)?;
 
-    let initial = wait_for_text_capture(&mut process.master, "Ctrl+Q", Duration::from_secs(3)).await?;
+    let initial =
+        wait_for_text_capture(&mut process.master, "Ctrl+Q", Duration::from_secs(3)).await?;
     assert!(!initial.contains("界面语言"));
     assert!(!initial.contains("API Key"));
     process.master.write_all(b"diagnose device\r")?;

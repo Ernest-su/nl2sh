@@ -20,7 +20,24 @@ restore_host_terminal() {
 
 run_remote() {
   trap restore_host_terminal EXIT
-  "${ADB[@]}" shell -t "$@"
+  local rows=24
+  local cols=80
+  local tty_size=""
+  if [[ -r /dev/tty ]] && tty_size="$(stty size < /dev/tty 2>/dev/null)"; then
+    if [[ "${tty_size}" =~ ^([0-9]+)[[:space:]]+([0-9]+)$ ]]; then
+      rows="${BASH_REMATCH[1]}"
+      cols="${BASH_REMATCH[2]}"
+    fi
+  fi
+
+  local remote_command="stty rows ${rows} cols ${cols} 2>/dev/null; exec"
+  local argument=""
+  local quoted=""
+  for argument in "$@"; do
+    printf -v quoted "'%s'" "${argument//\'/\'\\\'\'}"
+    remote_command+=" ${quoted}"
+  done
+  "${ADB[@]}" shell -t "${remote_command}"
 }
 
 if ! command -v adb >/dev/null 2>&1; then

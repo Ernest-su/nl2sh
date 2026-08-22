@@ -8,6 +8,8 @@ use crate::config::UiLanguage;
 use anyhow::Result;
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers, MouseEventKind};
 use std::time::{Duration, Instant};
+pub(crate) const WELCOME_TRAIN_WIDTH: usize = 44;
+pub(crate) const WELCOME_TRAIN_SPEED: usize = 2;
 pub struct App {
     pub input: Input,
     pub input_history: Vec<String>,
@@ -20,6 +22,8 @@ pub struct App {
     pub conversation_scroll: usize,
     /// Whether completed tool results are expanded in the conversation view.
     pub tool_results_expanded: bool,
+    /// Current frame of the one-shot startup train animation.
+    pub welcome_train_frame: Option<u16>,
     pub model: String,
     pub root: String,
     pub ascii: bool,
@@ -69,7 +73,8 @@ pub fn run(options: TuiOptions, history: Vec<String>) -> Result<Option<String>> 
 }
 fn run_inner(options: TuiOptions, mut history: Vec<String>) -> Result<Option<String>> {
     let mut term = TerminalGuard::enter()?;
-    if history.is_empty() {
+    let show_welcome_train = history.is_empty();
+    if show_welcome_train {
         history = i18n::startup_history(options.language, options.ascii);
     }
     let mut app = App {
@@ -82,6 +87,7 @@ fn run_inner(options: TuiOptions, mut history: Vec<String>) -> Result<Option<Str
         history,
         conversation_scroll: 0,
         tool_results_expanded: false,
+        welcome_train_frame: show_welcome_train.then_some(0),
         model: options.model,
         root: options.root,
         ascii: options.ascii,
@@ -94,10 +100,16 @@ fn run_inner(options: TuiOptions, mut history: Vec<String>) -> Result<Option<Str
         popup: None,
     };
     let mut last_cursor_blink = Instant::now();
+    let mut last_train_frame = Instant::now();
     loop {
         if last_cursor_blink.elapsed() >= Duration::from_millis(500) {
             app.cursor_visible = !app.cursor_visible;
             last_cursor_blink = Instant::now();
+        }
+        if last_train_frame.elapsed() >= Duration::from_millis(100) {
+            let viewport_width = term.terminal().size()?.width.saturating_sub(2) as usize;
+            app.advance_welcome_train(viewport_width);
+            last_train_frame = Instant::now();
         }
         term.terminal().draw(|f| ui::draw(f, &app))?;
         if let Some(event) = events::next()? {
@@ -110,6 +122,7 @@ fn run_inner(options: TuiOptions, mut history: Vec<String>) -> Result<Option<Str
                 Event::Key(k) if k.kind == KeyEventKind::Press => {
                     app.cursor_visible = true;
                     last_cursor_blink = Instant::now();
+                    app.welcome_train_frame = None;
                     match (k.code, k.modifiers) {
                         (KeyCode::Char('q'), KeyModifiers::CONTROL) => return Ok(None),
                         (KeyCode::Char('c'), KeyModifiers::CONTROL) => app.input.clear(),
@@ -153,6 +166,19 @@ fn run_inner(options: TuiOptions, mut history: Vec<String>) -> Result<Option<Str
 }
 
 impl App {
+    pub(crate) fn advance_welcome_train(&mut self, viewport_width: usize) {
+        if let Some(frame) = self.welcome_train_frame.as_mut() {
+            let next_distance = usize::from(*frame)
+                .saturating_add(1)
+                .saturating_mul(WELCOME_TRAIN_SPEED);
+            if next_distance >= viewport_width.saturating_add(WELCOME_TRAIN_WIDTH) {
+                self.welcome_train_frame = None;
+            } else {
+                *frame += 1;
+            }
+        }
+    }
+
     pub(crate) fn command_suggestions(&self) -> Vec<&'static str> {
         const COMMANDS: &[&str] = &["/clear", "/config", "/help", "/model", "/provider"];
         let query = self.input.text.trim();
@@ -216,6 +242,7 @@ impl App {
         self.input_history_draft.clear();
         self.conversation_scroll = 0;
         self.tool_results_expanded = false;
+        self.welcome_train_frame = None;
         self.command_selection = 0;
     }
 
@@ -276,6 +303,7 @@ mod tests {
             history: (0..rows).map(|row| row.to_string()).collect(),
             conversation_scroll: 0,
             tool_results_expanded: false,
+            welcome_train_frame: None,
             model: "test".into(),
             root: "Normal".into(),
             ascii: true,
@@ -300,6 +328,14 @@ mod tests {
         assert_eq!(app.conversation_scroll, 98);
         app.scroll_conversation_down(100);
         assert_eq!(app.conversation_scroll, 0);
+    }
+
+    #[test]
+    fn welcome_train_animation_stops_after_its_last_frame() {
+        let mut app = app_with_history(0);
+        app.welcome_train_frame = Some(61);
+        app.advance_welcome_train(80);
+        assert_eq!(app.welcome_train_frame, None);
     }
 
     #[test]
@@ -343,5 +379,6 @@ mod tests {
         assert!(app.input_history.is_empty());
         assert_eq!(app.conversation_scroll, 0);
         assert!(!app.tool_results_expanded);
+        assert_eq!(app.welcome_train_frame, None);
     }
 }

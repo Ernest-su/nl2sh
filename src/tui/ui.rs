@@ -1,4 +1,8 @@
-use super::{app::App, markdown, theme::Theme};
+use super::{
+    app::{App, WELCOME_TRAIN_SPEED, WELCOME_TRAIN_WIDTH},
+    markdown,
+    theme::Theme,
+};
 use crate::config::UiLanguage;
 use ratatui::{
     layout::{Constraint, Direction, Layout},
@@ -501,6 +505,9 @@ fn conversation_lines(app: &App, width: usize, theme: Theme) -> Vec<Line<'_>> {
     for entry in &app.history {
         if let Some(art) = entry.strip_prefix(super::i18n::BUDDHA_ART_PREFIX) {
             lines.extend(buddha_art_lines(art, theme));
+            if let Some(frame) = app.welcome_train_frame {
+                lines.extend(welcome_train_lines(frame, width, theme));
+            }
         } else if let Some(encoded) = entry.strip_prefix(super::output::TOOL_RESULT_PREFIX) {
             let (prefix, details) = encoded.split_once('\n').unwrap_or((encoded, ""));
             if app.tool_results_expanded {
@@ -563,6 +570,65 @@ fn buddha_art_lines(art: &str, theme: Theme) -> Vec<Line<'static>> {
             Line::from(spans)
         })
         .collect()
+}
+
+const TRAIN_BODY: [&str; 6] = [
+    "      ====        ________                 ",
+    "  _D _|  |_______/        \\__I_I_____===__",
+    "   |(_)---  |   H|  NL2SH  |   |        | ",
+    "   /     |  |   H|_________|   |        | ",
+    "  |      |  |   H          |   |        | ",
+    "  '---(O)------------(O)----(O)----(O)--' ",
+];
+const TRAIN_ENGINE_FRONT_COLUMN: usize = 3;
+
+fn welcome_train_lines(frame: u16, width: usize, theme: Theme) -> Vec<Line<'static>> {
+    let smoke = match (frame / 3) % 4 {
+        0 => "       ( )   (@@)   ( )                    ",
+        1 => "    (  )  (@)    (  )                      ",
+        2 => "  (@)    (  )  (@)                         ",
+        _ => "      (@@)   ( )    o                      ",
+    };
+    let position = usize::from(frame).saturating_mul(WELCOME_TRAIN_SPEED) as isize
+        - WELCOME_TRAIN_WIDTH as isize;
+    let right_edge_position =
+        width.saturating_sub(TRAIN_ENGINE_FRONT_COLUMN.saturating_add(1)) as isize;
+    let position = if position > right_edge_position
+        && position - right_edge_position < WELCOME_TRAIN_SPEED as isize
+    {
+        right_edge_position
+    } else {
+        position
+    };
+    let mut lines = vec![Line::styled(
+        clip_moving_ascii(smoke, position, width),
+        theme.style(theme.text_secondary),
+    )];
+    lines.extend(TRAIN_BODY.map(|line| {
+        Line::styled(
+            clip_moving_ascii(line, position, width),
+            theme.style(theme.text_primary),
+        )
+    }));
+    lines
+}
+
+fn clip_moving_ascii(line: &str, position: isize, width: usize) -> String {
+    let indent = position.max(0) as usize;
+    if indent >= width {
+        return String::new();
+    }
+    let skip = position.saturating_neg().max(0) as usize;
+    let visible: String = line
+        .chars()
+        .skip(skip)
+        .take(width.saturating_sub(indent))
+        .collect();
+    if visible.is_empty() {
+        String::new()
+    } else {
+        format!("{}{}", " ".repeat(indent), visible)
+    }
 }
 
 fn append_multiline_entry<'a>(lines: &mut Vec<Line<'a>>, entry: &'a str, theme: Theme) {
@@ -750,6 +816,7 @@ mod tests {
             history: Vec::new(),
             conversation_scroll: 0,
             tool_results_expanded: false,
+            welcome_train_frame: None,
             model: "test".into(),
             root: "Normal".into(),
             ascii: true,
@@ -882,6 +949,7 @@ mod tests {
             history: Vec::new(),
             conversation_scroll: 0,
             tool_results_expanded: false,
+            welcome_train_frame: None,
             model: "deepseek-v4-flash".into(),
             root: "Root".into(),
             ascii: false,
@@ -929,6 +997,7 @@ mod tests {
             history: vec!["background conversation text".into()],
             conversation_scroll: 0,
             tool_results_expanded: false,
+            welcome_train_frame: None,
             model: "test".into(),
             root: "Normal".into(),
             ascii: true,
@@ -1008,6 +1077,7 @@ mod tests {
             )],
             conversation_scroll: 0,
             tool_results_expanded: true,
+            welcome_train_frame: None,
             model: "test".into(),
             root: "Root".into(),
             ascii: true,
@@ -1060,4 +1130,43 @@ mod tests {
         }));
     }
 
+    #[test]
+    fn welcome_train_moves_across_the_viewport_and_contains_branding() {
+        let theme = Theme::for_mode(crate::tui::theme::ColorMode::Ansi256);
+        let middle = welcome_train_lines(32, 80, theme);
+        let rendered = middle
+            .iter()
+            .flat_map(|line| line.spans.iter())
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
+        assert!(rendered.contains("NL2SH"));
+        assert!(middle.iter().all(|line| line.width() <= 80));
+
+        let before_entry = welcome_train_lines(0, 80, theme);
+        assert!(before_entry
+            .iter()
+            .all(|line| line.spans.iter().all(|span| span.content.is_empty())));
+        let after_exit = welcome_train_lines(62, 80, theme);
+        assert!(after_exit
+            .iter()
+            .all(|line| line.spans.iter().all(|span| span.content.is_empty())));
+
+        let at_right_edge = welcome_train_lines(60, 80, theme);
+        assert!(at_right_edge.iter().any(|line| {
+            line.spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect::<String>()
+                .ends_with("_D")
+        }));
+
+        let at_odd_width_right_edge = welcome_train_lines(60, 79, theme);
+        assert!(at_odd_width_right_edge.iter().any(|line| {
+            line.spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect::<String>()
+                .ends_with("_D")
+        }));
+    }
 }
