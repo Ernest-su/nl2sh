@@ -7,6 +7,10 @@
 ### Added
 
 - Chat Completions and Responses now stream model text into the Agent TUI over SSE, with an animated semantic gradient while generation is active and normal Markdown styling immediately after completion.
+- Release archives now contain both ARM64 and ARMv7 binaries in ABI-specific directories; Linux and double-clickable Windows BAT launchers select or connect an ADB device, detect its ABI, and deploy the matching binary automatically.
+- Source build/deploy launchers are now named `android-build-run.sh` and `android-build-run.ps1`; they use the same ADB device selection flow and automatically compile the Rust target matching the selected device ABI.
+- Local `pack-release.sh` and `pack-release.ps1` helpers build both Android ABIs and create the same combined `nl2sh-android.zip` layout and SHA256 checksum used by the GitHub release workflow.
+- README, user-guide, and release-package TUI media now use the animated `screenshots/nl2sh.gif` demonstration instead of the previous static screenshot.
 
 ## [0.2.0] - 2026-08-22
 

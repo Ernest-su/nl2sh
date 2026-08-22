@@ -94,7 +94,8 @@
 
 ## Phase 11 0.1.0 发布基线 — 完成
 
-- [x] CI release matrix：tag 触发并行构建 AArch64/ARMv7 Android release，打包快速启动脚本与校验和，发布 GitHub Release。
+- [x] CI release matrix：tag 触发并行构建 AArch64/ARMv7 Android release，合并为双 ABI 单一压缩包，附带自动选设备/ABI 的 Linux 与 Windows BAT 启动脚本及校验和，发布 GitHub Release。
+- [x] Linux/Windows 本地 release 打包脚本：构建双 ABI，并生成与 GitHub Release 相同结构的统一 ZIP 和 SHA256 校验文件。
 - [x] MIT license、0.1.0 changelog 基线和 Android 双 ABI 发布工作流。
 
 ## Phase 12 0.2.0 稳定性迭代 — 完成

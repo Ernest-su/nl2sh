@@ -10,14 +10,14 @@ Last Updated: 2026-08-22
 - 每个 Android Agent 任务会向 system prompt 动态附加一次低敏感环境摘要（API level、ABI、shell、UID、root/su 能力）；失败时安全降级，不采集设备标识或网络信息，也不影响安全与确认链。
 - 新增本地 `/exit` 命令，可从命令候选菜单或直接输入安全退出 TUI，行为与 Ctrl+Q 一致且不会进入模型上下文。
 - 修复启动小火车以每帧两列移动时可能跨过右边缘贴边帧的问题；奇数和偶数宽度下车头都会抵达内容区最右列后再完整驶出。
-- 首次启动欢迎页会在佛祖图下方播放一次带动态蒸汽和 `NL2SH` 车身字样的纯 ASCII 小火车；`android-run.sh` 会先把宿主终端行列数同步到 Android PTY，动画再按真实内容宽度移动；窄屏按视口裁剪，且不进入会话、审计或模型历史。
+- 首次启动欢迎页会在佛祖图下方播放一次带动态蒸汽和 `NL2SH` 车身字样的纯 ASCII 小火车；`android-build-run.sh` 会先把宿主终端行列数同步到 Android PTY，动画再按真实内容宽度移动；窄屏按视口裁剪，且不进入会话、审计或模型历史。
 - 佛祖终端图的 `\\`、`/`、`|`、`=`、`^` 光芒与轮廓字符使用独立的装饰金色 token 加粗显示，文字和面部细节保持正文色；该 token 不复用安全警告色，历史内容仍为无 ANSI 的纯文本。
 - README 在已知限制之后新增“支持项目”区块，包含 Star/Issue 话术、赞赏说明、可点击的在线微信赞赏码及备用文字链接；TUI 仍保持纯文本方案。
 - 修正终端佛祖祝福图的 Unicode 显示宽度：含中文的祝福行与 ASCII 外框统一为 65 列，避免右侧突出。
 - 缺失配置时不再自动运行启动向导，而是直接进入不可执行模型任务的 TUI；新增 `/provider` API 配置和 `/model` 模型配置入口，`/config` 保留完整配置能力。
 - README 顶部居中展示仓库内的 `assets/logo.png`；启动欢迎页与 `/help` 显示项目 Star/Issue 支持链接、在线微信赞赏链接和纯文本终端祝福图，TUI 仍不内嵌图片或渲染二维码点阵。
 - 新增本地 `/help` 帮助与 `/clear` 会话清理命令；清理可见对话、模型上下文和输入历史，但保留审计日志。
-- 修复 Android ADB TUI 退出后宿主终端仍处于 SGR 鼠标追踪模式的问题：Rust 正常/异常恢复路径统一关闭鼠标捕获，`android-run.sh` 在 ADB 正常、失败或中断退出后额外执行宿主侧兜底恢复。
+- 修复 Android ADB TUI 退出后宿主终端仍处于 SGR 鼠标追踪模式的问题：Rust 正常/异常恢复路径统一关闭鼠标捕获，`android-build-run.sh` 在 ADB 正常、失败或中断退出后额外执行宿主侧兜底恢复。
 - 默认 `max_agent_steps` 由 8 提升到 24、`max_context_turns` 由 10 提升到 16，以支持安装后验证、多阶段诊断等更长任务；`config.toml.example` 与默认值测试同步更新。
 
 ## Current Phase
@@ -31,7 +31,7 @@ Last Updated: 2026-08-22
 - Test status: 0.2.0 的单元、Agent loop 与非 TUI 集成测试通过；两个依赖原始 ANSI 文本连续匹配的伪终端测试受启动动画差分输出影响，发布前需修复。
 - Android cross-compile status: 0.2.0 已使用 NDK r28c、API 26 成功构建 `aarch64-linux-android` 与 `armv7-linux-androideabi` release 产物。
 - Android device validation: 已在 API 34 `armeabi-v7a` 设备完成部署、Agent/PTY 和 TUI smoke test。
-- CI release workflow: 已添加 `.github/workflows/release.yml`，在推送 `v*` tag 时用 GitHub Actions 并行交叉编译 `aarch64-linux-android` 与 `armv7-linux-androideabi`，把预编译 `nl2sh` 与 Linux/Windows 启动脚本、`config.toml.example`、`使用说明.md` 打包为 `.tar.gz`/`.zip` 并附带 SHA256 校验和发布到 GitHub Release；`workflow_dispatch` 可手动触发草稿发布。
+- CI release workflow: 已添加 `.github/workflows/release.yml`，在推送 `v*` tag 时用 GitHub Actions 并行交叉编译 `aarch64-linux-android` 与 `armv7-linux-androideabi`，将两个程序放入统一包的 ABI 子目录，并与自动选择设备/ABI 的 Linux/Windows BAT 启动脚本、`config.toml.example`、`使用说明.md` 打包为单一 `.tar.gz`/`.zip`，附带 SHA256 校验和发布到 GitHub Release；`workflow_dispatch` 可手动触发草稿发布。
 - Known blockers: 尚未验证真实 root 提权、修改确认、超时和全屏交互程序；CI workflow 尚未在真实 GitHub Actions 上运行验证。
 
 ## Completed
@@ -58,9 +58,9 @@ Last Updated: 2026-08-22
 - 输入以 `/` 开头时显示垂直命令候选菜单；Up/Down 选择，Enter 补全，列出 `/help`、`/clear`、`/config`、`/provider` 和 `/model`。
 - TUI、初始化向导与安全确认支持中文/英文，默认中文；启动历史区预置常用 Android 任务和操作说明，且不进入模型上下文。
 - 输入行和低权重状态行使用统一主题的 `background_alt`，快捷键分隔线使用 `border`/`border_focus`，其余 frame 使用非纯黑 `background`。
-- `android-run.sh` 会先执行 `adb root`、等待 adbd 并验证 UID 0，再交叉编译、推送和启动；不支持 root adbd 时才回退 `su -c`，私有配置不可读则提前失败。
-- `android-run.ps1` 使用 NDK `windows-x86_64` LLVM 工具链在 Windows PowerShell 原生完成同等的交叉编译、推送、root/su 回退和启动流程，无需 Bash 或 WSL。
-- `android-run-linux.sh` 与 `android-run-windows.ps1` 可将脚本同目录中的预编译 `nl2sh` 直接推送并启动，跳过 Rust/NDK 编译，同时保留 root adbd 优先、`su` 回退和私有配置保护。
+- `android-build-run.sh` 会选择或连接 ADB 设备、查询 ABI 并自动选择对应 Rust target，再执行 root adbd、交叉编译、推送和启动；不支持 root adbd 时才回退 `su -c`，私有配置不可读则提前失败。
+- `android-build-run.ps1` 使用 NDK `windows-x86_64` LLVM 工具链在 Windows PowerShell 原生完成同等的设备选择、ABI 自动编译、root/su 回退和启动流程，无需 Bash 或 WSL。
+- `android-run-linux.sh` 与可双击的 `android-run-windows.bat` 会在无设备时提示连接网络 ADB、单设备自动选择、多设备按编号选择，再查询 ABI 并从 `bin/arm64-v8a` 或 `bin/armeabi-v7a` 推送对应程序；同时保留 root adbd 优先、`su` 回退和私有配置保护。
 - 部署文档说明了文件存在却由 ABI/ELF interpreter 不匹配引发 `No such file or directory` 的情况，并给出 AArch64/ARMv7 识别、重建和验证步骤。
 - adb TTY 将鼠标 SGR 序列拆成按键字符时，输入边界会过滤 `[<数字;数字;数字M/m`，且空闲 Esc 不再误清已有输入；确认弹窗 Esc 行为不变。
 - `/dev/null` 重定向与 fd 复制不再把只读诊断误判为修改或连带要求 root；真实文件写入和命令副作用仍受确认保护，strict 仍按定义确认全部命令。
@@ -70,8 +70,9 @@ Last Updated: 2026-08-22
 - 交互命令退出后恢复备用屏幕与鼠标捕获，并使 ratatui 强制完整重绘，避免第二轮对话只显示结果而框架消失。
 - 配置、安全、root、HTTP mock 和 Agent loop 测试源码。
 - GitHub Actions release workflow：tag 推送自动构建 AArch64/ARMv7 Android release、打包快速启动脚本并发布 Release。
-- 面向普通用户的中文使用说明，覆盖 ADB 连接、Linux/Windows 启动、32/64 位选择和常见故障，并纳入所有 release 压缩包。
-- 内存查询示例截图嵌入中文使用说明与 README，release 压缩包同步包含 `screenshots/`，保证打包后的说明图文完整。
+- `pack-release.sh` 与 `pack-release.ps1` 可在 Linux/Windows 本地构建双 ABI，并输出与 GitHub Release ZIP 相同的 `nl2sh-android/` 目录结构和 SHA256 校验文件。
+- 面向普通用户的中文使用说明，覆盖 ADB 连接、Linux/Windows 启动、自动设备/32/64 位选择和常见故障，并纳入统一 release 压缩包。
+- `screenshots/nl2sh.gif` 动态操作演示嵌入中文使用说明与 README，release 压缩包同步包含 `screenshots/`，保证打包后的说明动图完整。
 - 已建立 `UI_DESIGN.md`，统一定义深色 TUI palette、语义颜色、各界面区域样式、ANSI 256 fallback、实现边界和验收标准；规范明确颜色不得改变或替代安全分类与确认流程。
 - 已在 `src/tui/theme.rs` 实现集中式 Theme/Palette 与 TrueColor/ANSI 256 能力选择，并迁移标题栏、对话、Markdown、工具结果、表格、快捷键、输入区、状态栏、命令菜单和确认弹窗；长正文与 stdout 不再继承成功绿色。
 - 命令审批改为固定 `1-6` 列表，支持方向键/Enter 与 `y/n/a/e/i/t` 别名；可在当前 Agent 任务内记住完全相同的普通命令，但 Root、Dangerous、Critical 和强确认命令始终禁用该选项，且许可不持久化、不做前缀匹配。
@@ -88,7 +89,7 @@ Last Updated: 2026-08-22
 ## Pending / Known Issues
 
 - PTY 已在 API 34 ARMv7 真机执行只读命令；不同 su/fullscreen 程序仍可能需要兼容调整。
-- `android-run.sh` 与 `android-run.ps1` 默认构建 AArch64；仅支持 `armeabi-v7a` 的设备必须显式设置 `RUST_TARGET=armv7-linux-androideabi`，否则 Android 会因缺少 `/system/bin/linker64` 报 `No such file or directory`。
+- 源码编译启动脚本仅自动映射 `arm64-v8a` 与 `armeabi-v7a`；其他设备 ABI 会明确拒绝，显式 `RUST_TARGET` 与设备不匹配时也会停止。
 - Agent TUI 在 LLM 和捕获式命令执行期间保持同一 ratatui frame；全屏交互命令会临时挂起 TUI，退出后恢复并完整重绘。
 - 新主题已完成渲染与样式测试，仍需在不同 adb shell 宿主的 TrueColor/ANSI 256、窄屏和实际电视显示效果下做真机可读性验证。
 
@@ -102,6 +103,9 @@ Last Updated: 2026-08-22
 
 ## Verification Performed
 
+- 本地统一 ZIP 打包：`bash -n pack-release.sh` 与 `pack-release.ps1` PowerShell AST 解析通过；Windows 脚本使用 NDK 双 ABI release 实际构建成功，生成的 `dist/nl2sh-android.zip` 包含与 GitHub workflow 一致的 ABI 子目录、启动脚本、配置示例、说明和截图，`dist/SHA256SUMS` 复算一致。
+- 源码编译启动脚本：`bash -n android-build-run.sh` 与 `android-build-run.ps1` PowerShell AST 解析通过；在 ARMv7 ADB 设备上，两者均自动选择唯一设备、识别 `armeabi-v7a` 并把 Rust target 映射为 `armv7-linux-androideabi`，显式指定不匹配的 `aarch64-linux-android` 时在编译和推送前明确拒绝。
+- 双 ABI 统一发布包：`bash -n android-run-linux.sh`、`cargo fmt --all -- --check` 与 `cargo check` 通过；模拟组装的 `.tar.gz`/`.zip` 均包含 `bin/arm64-v8a/nl2sh`、`bin/armeabi-v7a/nl2sh`、Linux/BAT 脚本、配置示例、用户说明和截图；Windows BAT 在 ARMv7 ADB 设备自动选择唯一设备、识别 `armeabi-v7a`、推送 32 位程序并正常进入及退出 TUI。`cargo test` 的非 TUI 测试通过，两个已知启动动画伪终端用例仍因 ANSI 差分文本匹配超时而失败。
 - ADB 命令菜单方向键：在 API 28 ARMv7 设备向 `/` 菜单分别以超过 500ms 的间隔注入 `Esc`、`[`、`A/B`；第一项向上循环到最后一项、最后一项向下循环回第一项，菜单保持显示且输入始终为 `/`，无 CSI 字母残留。
 - LLM 流结束重绘：在 API 28 ARMv7 设备部署 release 二进制，通过 Responses 模型生成不同长度的三行中文；生成期间增量渐变正常，完成时执行一次完整重绘，最终 Markdown 无旧字符残留，Ctrl+Q 后终端正常恢复。
 - LLM 流式输出：`cargo fmt --all -- --check`、`cargo check --target aarch64-linux-android` 与 `cargo test --target aarch64-linux-android --no-run` 通过；新增流式文本/工具参数聚合和 TUI 渐变样式测试，其 Android 测试二进制编译通过。
@@ -110,7 +114,7 @@ Last Updated: 2026-08-22
 - 0.2.0 测试：34 项库测试和 10 项 Agent loop 测试通过；`cargo test --all-targets` 中两个旧伪终端测试因启动动画的 ANSI 差分输出不再形成连续原始文本而超时，其余测试通过。
 - `cargo check`：通过。
 - `cargo test --all-targets`：通过，共 68 项测试；覆盖配置/CLI、安全、历史日志及限额、root、双 LLM 协议、重试/timeout、Agent 历史/失败/取消与模型 Tool Result 截断、真实 SIGINT、PTY、初始化顺序、TUI 重配置、编号审批与任务级精确许可、审批面板定位/跨帧清理/方向键拆分、双行布局、TrueColor/ANSI 256 palette、Markdown/表格/工具结果/确认界面的语义配色。
-- `android-run.ps1`：PowerShell AST 语法解析与 `git diff --check` 通过。
+- `android-build-run.ps1`：PowerShell AST 语法解析与 `git diff --check` 通过。
 - `cargo fmt --all -- --check`：通过。
 - Release 用户说明打包：`release.yml` 已通过 `actionlint`，AArch64/ARMv7 模拟打包确认 `.tar.gz` 和 `.zip` 均包含 `使用说明.md`。
 - `cargo clippy --all-targets -- -D warnings`：通过。

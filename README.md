@@ -55,35 +55,49 @@ adb shell -t /data/local/tmp/nl2sh
 
 ```bash
 export ANDROID_NDK_HOME=/path/to/android-ndk
-./android-run.sh
+./android-build-run.sh
 ```
 
 Windows PowerShell 可使用原生 NDK Windows 工具链执行同一流程，不需要 Bash 或 WSL：
 
 ```powershell
 $env:ANDROID_NDK_HOME = "C:\Android\Sdk\ndk\28.2.13676358"
-.\android-run.ps1
+.\android-build-run.ps1
 ```
 
-默认推送到 `/data/local/tmp/nl2sh`。可用 `ANDROID_DIR=/data/local/tmp/tools` 修改设备目录，多设备时用 `ADB_SERIAL=<serial>` 指定设备，ARMv7 设备可同时设置 `RUST_TARGET=armv7-linux-androideabi`。脚本要求主机 `PATH` 中可找到 `adb`，设备端仅使用 Android 自带的 `mkdir`、`chmod` 和 shell。连接后会先执行 `adb root`、等待 adbd 重启并验证 `id -u`；root adbd 成功时，后续推送和启动均以 root 进行。设备不支持 `adb root` 时才尝试 `su -c`，两者都不可用且已有 `0600 config.toml` 不可读时会提前报错，不会放宽 API Key 配置文件权限。
+默认推送到 `/data/local/tmp/nl2sh`。`android-build-run.sh` 与 `android-build-run.ps1` 会在没有设备时提示输入网络 ADB 地址、单设备自动选择、多设备按编号选择，并根据设备 ABI 自动选择 AArch64 或 ARMv7 Rust target；显式设置的 `RUST_TARGET` 与设备不匹配时会停止。可用 `ANDROID_DIR=/data/local/tmp/tools` 修改设备目录，也可用 `ADB_SERIAL=<serial>` 预选设备。脚本要求主机 `PATH` 中可找到 `adb`，设备端仅使用 Android 自带的 `mkdir`、`chmod` 和 shell。连接后会先执行 `adb root`、等待 adbd 重启并验证 `id -u`；root adbd 成功时，后续推送和启动均以 root 进行。设备不支持 `adb root` 时才尝试 `su -c`，两者都不可用且已有 `0600 config.toml` 不可读时会提前报错，不会放宽 API Key 配置文件权限。
 
-已有预编译的 Android `nl2sh` 时，可把它与对应脚本放在同一目录，直接从推送步骤开始，无需 Rust 或 NDK。Linux 使用 `android-run-linux.sh`，Windows PowerShell 使用 `android-run-windows.ps1`；两者同样支持 `ANDROID_DIR` 和 `ADB_SERIAL`：
+预编译发布包同时包含 `bin/arm64-v8a/nl2sh` 与 `bin/armeabi-v7a/nl2sh`，无需 Rust 或 NDK。Linux 使用 `android-run-linux.sh`，Windows 双击 `android-run-windows.bat`；两者都会选择已连接的 ADB 设备、查询 ABI 并推送匹配程序，也支持 `ANDROID_DIR` 和 `ADB_SERIAL`：
 
 ```bash
-chmod +x android-run-linux.sh nl2sh
+chmod +x android-run-linux.sh bin/arm64-v8a/nl2sh bin/armeabi-v7a/nl2sh
 ./android-run-linux.sh
 ```
 
-```powershell
-$env:ADB_SERIAL = "device-serial"
-.\android-run-windows.ps1
+```bat
+set ADB_SERIAL=device-serial
+android-run-windows.bat
 ```
 
 ### 通过 GitHub Actions 自动发布
 
-仓库内置 `.github/workflows/release.yml`。推送 `v*` tag（如 `git tag v0.2.0 && git push origin v0.2.0`）会触发 GitHub Actions：并行交叉编译 `aarch64-linux-android`（arm64-v8a）与 `armv7-linux-androideabi`（armeabi-v7a）两个 release 产物，每个产物连同 Linux/Windows 启动脚本、`config.toml.example` 和面向普通用户的 `使用说明.md` 打包成 `.tar.gz` 与 `.zip`，并附带 `SHA256SUMS` 发布到对应 tag 的 GitHub Release。Actions 页的 `workflow_dispatch` 可手动触发并生成草稿 Release（tag 通过输入指定）。
+仓库内置 `.github/workflows/release.yml`。推送 `v*` tag（如 `git tag v0.2.0 && git push origin v0.2.0`）会触发 GitHub Actions：并行交叉编译 `aarch64-linux-android`（arm64-v8a）与 `armv7-linux-androideabi`（armeabi-v7a），再把两种程序分别放入 `bin/arm64-v8a/` 和 `bin/armeabi-v7a/`，连同 Linux/BAT 启动脚本、`config.toml.example` 和 `使用说明.md` 合并为一份 `nl2sh-android.tar.gz` 与 `nl2sh-android.zip`，并附带 `SHA256SUMS` 发布到对应 tag 的 GitHub Release。Actions 页的 `workflow_dispatch` 可手动触发并生成草稿 Release（tag 通过输入指定）。
 
-下载适合设备 ABI 的包解压后，Linux/macOS 直接运行 `./android-run-linux.sh`，Windows PowerShell 运行 `.\android-run-windows.ps1`；脚本会查找同目录的预编译 `nl2sh` 并完成 root adbd/`su` 回退部署，无需 Rust 或 NDK。
+下载统一发布包并完整解压后，Linux 直接运行 `./android-run-linux.sh`，Windows 双击 `android-run-windows.bat`。没有设备时脚本提示输入网络 ADB 地址，单设备自动选择，多设备按编号选择；随后自动检测 ABI，并完成 root adbd/`su` 回退部署。
+
+需要在本地生成与 GitHub Release 相同目录结构的统一 ZIP 时，先配置 Android NDK，然后运行对应宿主脚本：
+
+```bash
+export ANDROID_NDK_HOME=/path/to/android-ndk
+./pack-release.sh
+```
+
+```powershell
+$env:ANDROID_NDK_HOME = "C:\Android\Sdk\ndk\28.2.13676358"
+.\pack-release.ps1
+```
+
+两个脚本都会构建 AArch64 与 ARMv7 release，将程序放入对应 ABI 子目录，并输出 `dist/nl2sh-android.zip` 和 `dist/SHA256SUMS`；不连接或部署 ADB 设备。
 
 ### Android 提示 `No such file or directory`
 
@@ -111,14 +125,14 @@ Windows PowerShell 构建并部署 ARMv7 版本：
 ```powershell
 rustup target add armv7-linux-androideabi
 $env:RUST_TARGET = "armv7-linux-androideabi"
-.\android-run.ps1
+.\android-build-run.ps1
 ```
 
 Linux/macOS 使用相同目标：
 
 ```bash
 rustup target add armv7-linux-androideabi
-RUST_TARGET=armv7-linux-androideabi ./android-run.sh
+RUST_TARGET=armv7-linux-androideabi ./android-build-run.sh
 ```
 
 重新推送后，`adb shell file /data/local/tmp/nl2sh` 在 ARMv7 设备上应显示 `ELF 32-bit`、`ARM` 和 `/system/bin/linker`，不应显示 `64-bit arm64` 或 `/system/bin/linker64`。如果 ABI 已匹配，再检查文件权限、ELF interpreter 是否存在，以及二进制是否确实由 Android NDK 而非桌面工具链构建。
@@ -164,9 +178,9 @@ Command 模式生成、分类后执行单条命令；`--dry-run` 只展示。修
 
 包版本查询（如 `pm list packages --show-versioncode`、`dumpsys package … | grep versionName`，以及只读的命令替换循环）按只读操作处理，不会因为使用 `$()` 本身反复弹出安全确认；替换内部的修改或危险命令仍会重新分类并确认。
 
-例如，输入“查看当前内存使用情况”后，TUI 会实时显示命令输出、状态和 Agent 的最终总结：
+例如，输入“查看本机信息”后，TUI 会实时显示命令输出、状态和 Agent 的最终总结：
 
-![Querying current memory usage in the TUI](screenshots/query_memory.jpg)
+![nl2sh Android TUI demonstration](screenshots/nl2sh.gif)
 
 ## 测试和真机 smoke test
 
