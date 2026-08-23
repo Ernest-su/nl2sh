@@ -116,3 +116,4 @@
 - [x] `/models` 在线模型发现、手工回退、Provider 元数据抽象及上下文窗口覆盖/占用估算。
 - [x] OpenAI、DeepSeek、SiliconFlow 与 Ollama 模型发现适配。
 - [x] `/balance` 通过公开 Bearer Token 接口查询 DeepSeek 与 SiliconFlow 余额；结果不进入日志或模型上下文，其他 Provider 明确降级为不支持。
+- [x] 支持余额的 Provider 在 TUI 定时刷新并常驻显示；按模型窗口、输出预留和实际输入 Token 动态收缩完整历史轮次。

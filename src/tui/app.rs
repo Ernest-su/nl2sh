@@ -34,6 +34,8 @@ pub struct App {
     pub turn: usize,
     pub max_context: usize,
     pub status: String,
+    /// Last successfully fetched provider balance, kept only in memory.
+    pub provider_balance: Option<String>,
     pub popup: Option<PopupView>,
 }
 #[derive(Clone)]
@@ -101,6 +103,7 @@ fn run_inner(options: TuiOptions, mut history: Vec<String>) -> Result<Option<Str
         turn: options.turn,
         max_context: options.max_context,
         status: i18n::idle(options.language).into(),
+        provider_balance: None,
         popup: None,
     };
     let mut last_cursor_blink = Instant::now();
@@ -335,6 +338,7 @@ mod tests {
             turn: 0,
             max_context: 10,
             status: "idle".into(),
+            provider_balance: None,
             popup: None,
         }
     }

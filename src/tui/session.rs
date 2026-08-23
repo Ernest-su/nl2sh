@@ -38,6 +38,8 @@ use std::{
 };
 use tokio::sync::{mpsc, oneshot};
 
+const BALANCE_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
+
 /// Reason a live Agent TUI session returned to its caller.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionExit {
@@ -146,6 +148,7 @@ async fn run_inner(
                 "provider not configured; use /config, /provider, or /model",
             )
         },
+        provider_balance: None,
         popup: None,
     };
     let mut model_history: Vec<Vec<ConversationItem>> = Vec::new();
@@ -153,7 +156,9 @@ async fn run_inner(
     let mut balance_active: Option<
         Pin<Box<dyn Future<Output = Result<Vec<AccountBalance>>> + Send>>,
     > = None;
-    let mut balance_popup: Option<PopupView> = None;
+    let balance_supported = provider_configured && build_account_client(config).is_ok();
+    let mut balance_manual = false;
+    let mut last_balance_refresh: Option<Instant> = None;
     let mut confirmation: Option<ConfirmationUi> = None;
     let mut quit_after_cancel = false;
     let mut cancel_signal_pending = false;
@@ -164,6 +169,18 @@ async fn run_inner(
     let mut fragmented_arrow = super::events::FragmentedArrowFilter::default();
 
     loop {
+        if balance_supported
+            && active.is_none()
+            && balance_active.is_none()
+            && last_balance_refresh.is_none_or(|last| last.elapsed() >= BALANCE_REFRESH_INTERVAL)
+        {
+            let account_config = config.clone();
+            balance_active = Some(Box::pin(async move {
+                let client = build_account_client(&account_config)?;
+                client.balances(&account_config).await
+            }));
+            last_balance_refresh = Some(Instant::now());
+        }
         if last_cursor_blink.elapsed() >= Duration::from_millis(500) {
             app.cursor_visible = !app.cursor_visible;
             last_cursor_blink = Instant::now();
@@ -197,16 +214,31 @@ async fn run_inner(
         if !is_suspended {
             app.history = snapshot(&history)?;
             app.turn = model_history.len();
-            app.popup = confirmation
-                .as_ref()
-                .map(ConfirmationUi::view)
-                .or_else(|| balance_popup.clone());
+            app.popup = confirmation.as_ref().map(ConfirmationUi::view);
             terminal.terminal().draw(|frame| ui::draw(frame, &app))?;
         }
 
         let mut completed = None;
         let mut balance_completed = None;
-        if let Some(future) = balance_active.as_mut() {
+        if let (Some(balance_future), Some(agent_future)) =
+            (balance_active.as_mut(), active.as_mut())
+        {
+            tokio::select! {
+                result = balance_future.as_mut() => balance_completed = Some(result),
+                result = agent_future.as_mut() => completed = Some(result),
+                request = confirm_rx.recv(), if confirmation.is_none() => {
+                    if let Some(request) = request {
+                        app.status = localized_status(
+                            config.ui_language,
+                            "等待安全确认",
+                            "waiting for confirmation",
+                        );
+                        confirmation = Some(ConfirmationUi::new(request, config.ui_language));
+                    }
+                }
+                _ = tokio::time::sleep(Duration::from_millis(11)) => {}
+            }
+        } else if let Some(future) = balance_active.as_mut() {
             tokio::select! {
                 result = future.as_mut() => balance_completed = Some(result),
                 _ = tokio::time::sleep(Duration::from_millis(11)) => {}
@@ -232,18 +264,31 @@ async fn run_inner(
 
         if let Some(result) = balance_completed {
             balance_active = None;
-            let (title, lines) = balance_popup_content(result, config.ui_language);
-            balance_popup = Some(PopupView {
-                title,
-                lines,
-                dangerous: false,
-                informational: true,
-            });
-            app.status = localized_status(
-                config.ui_language,
-                "余额查询完成",
-                "balance lookup complete",
-            );
+            match result {
+                Ok(balances) if !balances.is_empty() => {
+                    app.provider_balance = Some(format_balances(&balances));
+                    if balance_manual {
+                        app.status =
+                            localized_status(config.ui_language, "余额已刷新", "balance refreshed");
+                    }
+                }
+                Ok(_) if balance_manual => {
+                    app.status = localized_status(
+                        config.ui_language,
+                        "Provider 未返回余额",
+                        "provider returned no balance",
+                    );
+                }
+                Err(_) if balance_manual => {
+                    app.status = localized_status(
+                        config.ui_language,
+                        "余额刷新失败，保留上次结果",
+                        "balance refresh failed; keeping last value",
+                    );
+                }
+                Ok(_) | Err(_) => {}
+            }
+            balance_manual = false;
         }
 
         if let Some(result) = completed {
@@ -252,6 +297,9 @@ async fn run_inner(
             match result {
                 Ok(outcome) => {
                     append_transcript(&history, &outcome, config.ascii_symbols, &log)?;
+                    for _ in 0..outcome.history_turns_evicted.min(model_history.len()) {
+                        model_history.remove(0);
+                    }
                     model_history.push(outcome.transcript);
                     while model_history.len() > config.max_context_turns {
                         model_history.remove(0);
@@ -374,16 +422,6 @@ async fn run_inner(
             if active.is_some() {
                 continue;
             }
-            if balance_active.is_some() {
-                continue;
-            }
-            if balance_popup.is_some() {
-                if matches!(key.code, KeyCode::Esc | KeyCode::Enter) {
-                    balance_popup = None;
-                    app.status = localized_status(config.ui_language, "空闲", "idle");
-                }
-                continue;
-            }
             let Some(key) = (if app.command_menu_visible() {
                 fragmented_arrow.normalize(key)
             } else {
@@ -414,11 +452,21 @@ async fn run_inner(
                         "/model" => return Ok(SessionExit::Configure(ConfigTarget::Model)),
                         "/models" => return Ok(SessionExit::Configure(ConfigTarget::Models)),
                         "/balance" => {
+                            if !balance_supported {
+                                app.status = localized_status(
+                                    config.ui_language,
+                                    "当前 Provider 不支持余额查询",
+                                    "current provider does not support balance lookup",
+                                );
+                                continue;
+                            }
                             let account_config = config.clone();
                             balance_active = Some(Box::pin(async move {
                                 let client = build_account_client(&account_config)?;
                                 client.balances(&account_config).await
                             }));
+                            balance_manual = true;
+                            last_balance_refresh = Some(Instant::now());
                             app.status = localized_status(
                                 config.ui_language,
                                 "正在网络查询 Provider 余额",
@@ -515,36 +563,12 @@ fn context_usage(input: Option<u64>, window: Option<u64>) -> String {
     }
 }
 
-fn balance_popup_content(
-    result: Result<Vec<AccountBalance>>,
-    language: UiLanguage,
-) -> (String, Vec<String>) {
-    let title = localized_status(language, "Provider 余额", "Provider balance").into();
-    let mut lines = match result {
-        Ok(balances) if balances.is_empty() => vec![localized_status(
-            language,
-            "Provider 未返回余额。",
-            "The provider returned no balances.",
-        )
-        .into()],
-        Ok(balances) => balances
-            .into_iter()
-            .map(|balance| format!("{} {}", balance.currency, balance.amount))
-            .collect(),
-        Err(error) => vec![format!(
-            "{} {error:#}",
-            localized_status(language, "查询失败：", "Lookup failed:")
-        )],
-    };
-    lines.push(
-        localized_status(
-            language,
-            "仅当前显示，不写日志。Esc/Enter 关闭",
-            "Display only; not logged. Esc/Enter closes",
-        )
-        .into(),
-    );
-    (title, lines)
+fn format_balances(balances: &[AccountBalance]) -> String {
+    balances
+        .iter()
+        .map(|balance| format!("{} {}", balance.currency, balance.amount))
+        .collect::<Vec<_>>()
+        .join(" / ")
 }
 
 struct SessionTextSink {
@@ -911,17 +935,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn balance_popup_is_transient_and_contains_no_credential() {
-        let (title, lines) = balance_popup_content(
-            Ok(vec![AccountBalance {
-                currency: "CNY".into(),
-                amount: "12.34".into(),
-            }]),
-            UiLanguage::ZhCn,
-        );
-        assert!(title.contains("余额"));
-        assert!(lines.iter().any(|line| line == "CNY 12.34"));
-        assert!(lines.iter().any(|line| line.contains("不写日志")));
+    fn balance_format_contains_only_display_values() {
+        let text = format_balances(&[AccountBalance {
+            currency: "CNY".into(),
+            amount: "12.34".into(),
+        }]);
+        assert_eq!(text, "CNY 12.34");
     }
     use crate::{config::Config, security::assess};
 

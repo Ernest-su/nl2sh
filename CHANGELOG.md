@@ -10,7 +10,8 @@
 - A `/models` flow now fetches the current provider's model list with a visible network-loading message and falls back to manual model entry without logging credentials or raw account responses.
 - Provider metadata is normalized behind a dedicated client for OpenAI, DeepSeek, SiliconFlow, and Ollama; known or user-overridden context windows drive an estimated context-usage percentage in the TUI.
 - A non-audited `/balance` command uses documented bearer-token endpoints for DeepSeek and SiliconFlow; unsupported providers fail visibly without attempting private console APIs.
-- Agent-mode balance lookup now stays inside the TUI: the status line reports network activity and a dismissible transient popup shows the result without adding it to conversation or audit history.
+- Supported provider balances refresh every 60 seconds and remain visible in the TUI title bar; failures retain the last successful in-memory value without adding account data to conversation, configuration, or audit history.
+- Agent history now contracts by complete oldest turns when observed provider input tokens cross the known context-window safety watermark, preserving the system instruction, current interaction, and complete tool rounds.
 - Chat Completions and Responses now stream model text into the Agent TUI over SSE, with an animated semantic gradient while generation is active and normal Markdown styling immediately after completion.
 - Release archives now contain both ARM64 and ARMv7 binaries in ABI-specific directories; Linux and double-clickable Windows BAT launchers select or connect an ADB device, detect its ABI, and deploy the matching binary automatically.
 - Source build/deploy launchers are now named `android-build-run.sh` and `android-build-run.ps1`; they use the same ADB device selection flow and automatically compile the Rust target matching the selected device ABI.

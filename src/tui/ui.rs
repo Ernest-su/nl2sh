@@ -15,13 +15,26 @@ use unicode_width::UnicodeWidthChar;
 
 fn title_line(app: &App, theme: Theme) -> Line<'static> {
     let separator = || Span::styled(" | ", theme.style(theme.text_muted));
-    vec![
+    let mut spans = vec![
         Span::styled(
             format!("nl2sh v{}", env!("CARGO_PKG_VERSION")),
             theme.bold(theme.text_primary),
         ),
         separator(),
         Span::styled(app.mode.clone(), theme.style(theme.cyan)),
+    ];
+    if let Some(balance) = &app.provider_balance {
+        spans.push(separator());
+        spans.push(Span::styled(
+            match app.language {
+                UiLanguage::ZhCn => "余额 ",
+                UiLanguage::En => "balance ",
+            },
+            theme.style(theme.text_secondary),
+        ));
+        spans.push(Span::styled(balance.clone(), theme.style(theme.success)));
+    }
+    spans.extend([
         separator(),
         Span::styled(
             app.root.clone(),
@@ -40,8 +53,8 @@ fn title_line(app: &App, theme: Theme) -> Line<'static> {
             if app.ascii { "ASCII" } else { "Unicode" },
             theme.style(theme.text_secondary),
         ),
-    ]
-    .into()
+    ]);
+    spans.into()
 }
 
 fn shortcut_line(language: UiLanguage, theme: Theme) -> Line<'static> {
@@ -905,6 +918,7 @@ mod tests {
             turn: 2,
             max_context: 10,
             status: "idle".into(),
+            provider_balance: None,
             popup: None,
         };
         terminal.draw(|frame| draw(frame, &app))?;
@@ -1063,6 +1077,7 @@ mod tests {
             turn: 3,
             max_context: 10,
             status: "空闲；上次执行 4 步".into(),
+            provider_balance: None,
             popup: None,
         };
         let title = title_line(&app, theme);
@@ -1111,6 +1126,7 @@ mod tests {
             turn: 0,
             max_context: 10,
             status: "waiting for confirmation".into(),
+            provider_balance: None,
             popup: Some(PopupView {
                 title: "Security confirmation".into(),
                 lines: vec![
@@ -1193,6 +1209,7 @@ mod tests {
             turn: 1,
             max_context: 10,
             status: "idle".into(),
+            provider_balance: None,
             popup: None,
         };
         terminal.draw(|frame| draw(frame, &app))?;

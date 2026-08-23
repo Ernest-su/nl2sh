@@ -35,6 +35,8 @@ pub struct AgentOutcome {
     pub usage: Usage,
     /// Input tokens reported for the final model request, used for context estimates.
     pub final_input_tokens: Option<u64>,
+    /// Complete historical turns evicted using observed provider token usage.
+    pub history_turns_evicted: usize,
 }
 impl AgentRunner<'_> {
     /// Runs one natural-language request until final text or the step limit.
@@ -79,6 +81,7 @@ impl AgentRunner<'_> {
         let mut task_approvals = HashSet::new();
         let mut usage = Usage::default();
         let mut final_input_tokens = None;
+        let mut history_turns_evicted = 0;
         for step in 1..=self.config.max_agent_steps {
             let mut items = ctx.items();
             items.extend(current.clone());
@@ -94,6 +97,12 @@ impl AgentRunner<'_> {
             };
             usage.accumulate(&response.usage);
             final_input_tokens = response.usage.input_tokens;
+            if let (Some(observed), Some(budget)) = (
+                response.usage.input_tokens,
+                self.config.effective_input_token_budget(),
+            ) {
+                history_turns_evicted += ctx.trim_for_observed_usage(observed, budget);
+            }
             if response.tool_calls.is_empty() {
                 let final_text = response
                     .text
@@ -112,6 +121,7 @@ impl AgentRunner<'_> {
                     transcript,
                     usage,
                     final_input_tokens,
+                    history_turns_evicted,
                 });
             }
             let calls = response.tool_calls;
@@ -244,6 +254,7 @@ impl AgentRunner<'_> {
             transcript,
             usage,
             final_input_tokens,
+            history_turns_evicted,
         })
     }
 

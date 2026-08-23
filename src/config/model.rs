@@ -235,6 +235,17 @@ impl Config {
             .or_else(|| crate::provider_metadata::known_context_window(&self.model))
     }
 
+    /// Returns the input-token watermark used to preserve output headroom.
+    pub fn effective_input_token_budget(&self) -> Option<u64> {
+        self.effective_context_window().map(|window| {
+            let safety_watermark = window.saturating_mul(85) / 100;
+            let output_watermark = self
+                .model_max_output_tokens
+                .map_or(window, |output| window.saturating_sub(output));
+            safety_watermark.min(output_watermark).max(1)
+        })
+    }
+
     /// Reports whether the current endpoint has the credentials required by
     /// its built-in provider policy.
     pub fn provider_is_configured(&self) -> bool {
