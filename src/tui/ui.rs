@@ -384,6 +384,7 @@ fn render_command_menu(f: &mut Frame, app: &App, input_area: ratatui::layout::Re
         .enumerate()
         .map(|(index, command)| {
             let description = match (app.language, *command) {
+                (UiLanguage::ZhCn, "/balance") => "查询 Provider 余额",
                 (UiLanguage::ZhCn, "/clear") => "清空当前会话",
                 (UiLanguage::ZhCn, "/config") => "重新配置模型服务",
                 (UiLanguage::ZhCn, "/exit") => "安全退出",
@@ -391,6 +392,7 @@ fn render_command_menu(f: &mut Frame, app: &App, input_area: ratatui::layout::Re
                 (UiLanguage::ZhCn, "/model") => "配置模型",
                 (UiLanguage::ZhCn, "/models") => "在线选择模型",
                 (UiLanguage::ZhCn, "/provider") => "配置 API 服务",
+                (UiLanguage::En, "/balance") => "Query provider balance",
                 (UiLanguage::En, "/clear") => "Clear the current session",
                 (UiLanguage::En, "/config") => "Reconfigure the model provider",
                 (UiLanguage::En, "/exit") => "Quit safely",

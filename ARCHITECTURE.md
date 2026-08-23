@@ -48,6 +48,7 @@ TUI 的视觉语义统一由 `UI_DESIGN.md` 约束。实现应以集中式 `Them
 | `src/history` | `HistoryLog`、JSON Lines 事件与安全创建 | 交互事件 → 可刷新诊断日志 | 不记录 provider 凭据，不参与安全决策 |
 | `src/llm` | `LlmClient`、`TextDeltaSink`、统一消息/工具类型、两个 HTTP/SSE adapter、retry | `LlmRequest` → 文本增量 + `LlmResponse` | 不进行安全判断或执行工具 |
 | `src/provider_metadata` | `ProviderMetadataClient`、Provider 识别、模型列表与上下文元数据归一化 | Provider 配置 → `ModelMetadata` 列表 | 只读网络访问，不记录凭据/原始账户响应，不参与模型推理与安全判断 |
+| `src/provider_account` | `ProviderAccountClient`、余额结果归一化 | Provider 凭据 → 可显示余额 | 仅调用公开只读接口；不记录凭据、余额或原始响应，不参与推理、安全或执行 |
 | `src/agent` | `AgentRunner`、上下文完整交互单元、工具 schema、`Confirmer` | 用户任务 → Tool Loop / 最终文本 | 不得绕过 security 和 confirmer |
 | `src/security` | normalize、side-effect 分类、内置/自定义规则、`SecurityAssessment` | 原始命令 → 风险和确认要求 | 不依赖 TUI、LLM 或执行器 |
 | `src/shell` | `CommandExecutor`、root invocation、process group、pipeline/PTY 边界 | 已批准命令 → `ExecutionResult` | 不自行降低风险或批准命令 |

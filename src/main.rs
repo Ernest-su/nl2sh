@@ -218,6 +218,7 @@ fn config_target(input: &str) -> Option<tui::ConfigTarget> {
         "/provider" => Some(tui::ConfigTarget::Provider),
         "/model" => Some(tui::ConfigTarget::Model),
         "/models" => Some(tui::ConfigTarget::Models),
+        "/balance" => Some(tui::ConfigTarget::Balance),
         _ => None,
     }
 }
@@ -228,6 +229,7 @@ async fn run_configure_target(path: &std::path::Path, target: tui::ConfigTarget)
         tui::ConfigTarget::Provider => config::run_provider_configure(path),
         tui::ConfigTarget::Model => config::run_model_configure(path),
         tui::ConfigTarget::Models => config::run_models_configure(path).await,
+        tui::ConfigTarget::Balance => config::run_balance_query(path).await,
     }
 }
 

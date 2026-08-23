@@ -4,6 +4,7 @@ Last Updated: 2026-08-23
 
 ## Recent Changes
 
+- 新增不记入审计的 `/balance`：使用现有 API Token 查询 DeepSeek 与 SiliconFlow 的公开只读余额接口；其他未提供稳定 Bearer Token 余额接口的国内外 Provider 明确显示不支持，不调用控制台私有接口。
 - 新增独立 `ProviderMetadataClient`，分别适配 OpenAI、DeepSeek、SiliconFlow 的模型列表与 Ollama 原生模型详情；配置支持上下文窗口/最大输出 Token 覆盖，已知窗口用于在状态栏估算最后一次请求的上下文占用率。
 - Agent 任务会累计所有模型步骤返回的输入/输出 Token，并在 TUI 状态栏展示本次任务合计；新增 `/models` 在线模型选择，网络或协议失败时回退手工输入，凭据和原始 Provider 响应不写入审计日志。
 - 启动小火车由约 10 FPS 提升到约 30 FPS，并将每帧位移由两列改为一列，以减少跳格卡顿；TUI 事件轮询与异步刷新周期同步缩短，动画约 4.1 秒后结束。
@@ -107,6 +108,7 @@ Last Updated: 2026-08-23
 
 ## Verification Performed
 
+- Provider 余额第三阶段：WSL2 `cargo check`、42 项库测试及除两个已知动画匹配用例外的全部 target 测试通过；Android ARMv7 release 构建、推送后在真实 ADB PTY 使用 `/balance` 成功查询 DeepSeek CNY 余额、确认返回 TUI，并以完整显示文本检查 JSONL 日志未记录余额。
 - Provider 元数据第二阶段：WSL2 `cargo check`、41 项库测试、10 项 Agent loop 测试和 6 项配置测试通过；Android ARMv7 release 构建、推送后在真实 ADB PTY 使用 `/models` 成功拉取 DeepSeek 模型及 1,000,000 Token 上下文元数据，并完成选择和 TUI 恢复。
 - Token 统计与 `/models` 第一阶段：WSL2 `cargo check` 通过；`cargo test` 的 40 项库测试、CLI、Agent loop、取消、配置、日志、LLM mock、PTY、root 与安全测试通过，两个已知启动动画伪终端用例仍因 ANSI 差分文本匹配超时；Android API 设备完成 ARMv7 release 构建、推送及 `--version` 启动验证。
 - 本地统一 ZIP 打包：`bash -n pack-release.sh` 与 `pack-release.ps1` PowerShell AST 解析通过；Windows 脚本使用 NDK 双 ABI release 实际构建成功，生成的 `dist/nl2sh-android.zip` 包含与 GitHub workflow 一致的 ABI 子目录、启动脚本、配置示例、说明和截图，`dist/SHA256SUMS` 复算一致。

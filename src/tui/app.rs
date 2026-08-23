@@ -191,6 +191,7 @@ impl App {
 
     pub(crate) fn command_suggestions(&self) -> Vec<&'static str> {
         const COMMANDS: &[&str] = &[
+            "/balance",
             "/clear",
             "/config",
             "/exit",

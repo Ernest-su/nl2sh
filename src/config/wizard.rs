@@ -1,4 +1,5 @@
 use super::{ApiType, Config, ConfirmPolicy, ExecuteUserMode, UiLanguage};
+use crate::provider_account::build_account_client;
 use crate::provider_metadata::{build_metadata_client, known_context_window, ModelMetadata};
 use anyhow::{bail, Context, Result};
 use crossterm::{
@@ -369,6 +370,61 @@ pub async fn run_models_configure(path: &Path) -> Result<()> {
     }
     cfg.validate_runtime()?;
     write_upsert(path, &cfg)
+}
+
+/// Queries and displays balances without persisting or logging account data.
+pub async fn run_balance_query(path: &Path) -> Result<()> {
+    let cfg = load_stored_or_default(path)?;
+    println!(
+        "{}",
+        label(
+            cfg.ui_language,
+            "正在从 Provider 网络查询余额…",
+            "Fetching provider balance…"
+        )
+    );
+    match build_account_client(&cfg) {
+        Ok(client) => match client.balances(&cfg).await {
+            Ok(balances) if balances.is_empty() => println!(
+                "{}",
+                label(
+                    cfg.ui_language,
+                    "Provider 未返回余额。",
+                    "The provider returned no balances."
+                )
+            ),
+            Ok(balances) => {
+                for balance in balances {
+                    println!("{} {}", balance.currency, balance.amount);
+                }
+            }
+            Err(error) => println!(
+                "{} {error:#}",
+                label(cfg.ui_language, "余额查询失败：", "Balance lookup failed:")
+            ),
+        },
+        Err(error) => println!(
+            "{} {error:#}",
+            label(
+                cfg.ui_language,
+                "当前 Provider 不支持余额查询：",
+                "Balance lookup is unsupported for this provider:"
+            )
+        ),
+    }
+    println!(
+        "{}",
+        label(
+            cfg.ui_language,
+            "余额仅显示在当前终端，不写入审计日志。按 Enter 返回。",
+            "Balance is shown only in this terminal and is not audited. Press Enter to return."
+        )
+    );
+    let mut ignored = String::new();
+    io::stdin()
+        .read_line(&mut ignored)
+        .context("failed to wait for balance acknowledgement")?;
+    Ok(())
 }
 
 fn load_stored_or_default(path: &Path) -> Result<Config> {

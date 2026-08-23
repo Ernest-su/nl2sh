@@ -57,6 +57,8 @@ pub enum ConfigTarget {
     Model,
     /// Fetch models from the configured provider, with manual fallback.
     Models,
+    /// Query a documented provider balance endpoint without persisting the result.
+    Balance,
 }
 
 /// Runs the default Agent as a live single-frame TUI session.
@@ -371,6 +373,7 @@ async fn run_inner(
                         "/provider" => return Ok(SessionExit::Configure(ConfigTarget::Provider)),
                         "/model" => return Ok(SessionExit::Configure(ConfigTarget::Model)),
                         "/models" => return Ok(SessionExit::Configure(ConfigTarget::Models)),
+                        "/balance" => return Ok(SessionExit::Configure(ConfigTarget::Balance)),
                         "/help" => {
                             log.record("local_command", "/help")?;
                             history

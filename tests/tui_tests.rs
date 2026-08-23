@@ -166,13 +166,8 @@ async fn model_command_can_create_partial_config_without_startup_wizard() -> any
     wait_for_text(&mut process.master, "Ctrl+Q", Duration::from_secs(3)).await?;
     process.master.write_all(b"/model\r")?;
     wait_for_text(&mut process.master, "模型", Duration::from_secs(3)).await?;
-    process.master.write_all(b"model-from-tui\r")?;
-    wait_for_text(
-        &mut process.master,
-        "model-from-tui",
-        Duration::from_secs(3),
-    )
-    .await?;
+    process.master.write_all(b"model-from-tui\r\r\r")?;
+    wait_for_text(&mut process.master, "Ctrl+Q", Duration::from_secs(3)).await?;
 
     let loaded = nl2sh::config::load_unvalidated(Some(&config))?;
     assert_eq!(loaded.model, "model-from-tui");
