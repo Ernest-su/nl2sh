@@ -4,7 +4,7 @@ use crate::{
     limits::truncate_text,
     llm::{
         ConversationItem, ConversationMessage, LlmClient, LlmRequest, Role, TextDeltaSink,
-        ToolResult, ToolRound,
+        ToolResult, ToolRound, Usage,
     },
     security::assess,
     shell::CommandExecutor,
@@ -31,6 +31,8 @@ pub struct AgentOutcome {
     pub steps: usize,
     /// Complete current interaction, including inseparable tool rounds.
     pub transcript: Vec<ConversationItem>,
+    /// Token usage accumulated across every model request in this task.
+    pub usage: Usage,
 }
 impl AgentRunner<'_> {
     /// Runs one natural-language request until final text or the step limit.
@@ -73,6 +75,7 @@ impl AgentRunner<'_> {
         let mut current = vec![user_item.clone()];
         let mut transcript = vec![user_item];
         let mut task_approvals = HashSet::new();
+        let mut usage = Usage::default();
         for step in 1..=self.config.max_agent_steps {
             let mut items = ctx.items();
             items.extend(current.clone());
@@ -86,6 +89,7 @@ impl AgentRunner<'_> {
             } else {
                 self.llm.complete(request).await?
             };
+            usage.accumulate(&response.usage);
             if response.tool_calls.is_empty() {
                 let final_text = response
                     .text
@@ -102,6 +106,7 @@ impl AgentRunner<'_> {
                     final_text,
                     steps: step,
                     transcript,
+                    usage,
                 });
             }
             let calls = response.tool_calls;
@@ -232,6 +237,7 @@ impl AgentRunner<'_> {
             final_text,
             steps: self.config.max_agent_steps,
             transcript,
+            usage,
         })
     }
 

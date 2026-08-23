@@ -55,6 +55,8 @@ pub enum ConfigTarget {
     Provider,
     /// Model identifier only.
     Model,
+    /// Fetch models from the configured provider, with manual fallback.
+    Models,
 }
 
 /// Runs the default Agent as a live single-frame TUI session.
@@ -223,8 +225,20 @@ async fn run_inner(
                         model_history.remove(0);
                     }
                     app.status = match config.ui_language {
-                        UiLanguage::ZhCn => format!("空闲；上次执行 {} 步", outcome.steps),
-                        UiLanguage::En => format!("idle; last agent steps: {}", outcome.steps),
+                        UiLanguage::ZhCn => format!(
+                            "空闲；上次 {} 步，Token 输入 {} / 输出 {} / 总计 {}",
+                            outcome.steps,
+                            usage_value(outcome.usage.input_tokens),
+                            usage_value(outcome.usage.output_tokens),
+                            usage_value(outcome.usage.total_tokens())
+                        ),
+                        UiLanguage::En => format!(
+                            "idle; last {} steps, tokens in {} / out {} / total {}",
+                            outcome.steps,
+                            usage_value(outcome.usage.input_tokens),
+                            usage_value(outcome.usage.output_tokens),
+                            usage_value(outcome.usage.total_tokens())
+                        ),
                     };
                 }
                 Err(error) => {
@@ -350,6 +364,7 @@ async fn run_inner(
                         "/config" => return Ok(SessionExit::Configure(ConfigTarget::All)),
                         "/provider" => return Ok(SessionExit::Configure(ConfigTarget::Provider)),
                         "/model" => return Ok(SessionExit::Configure(ConfigTarget::Model)),
+                        "/models" => return Ok(SessionExit::Configure(ConfigTarget::Models)),
                         "/help" => {
                             log.record("local_command", "/help")?;
                             history
@@ -424,6 +439,10 @@ async fn run_inner(
             }
         }
     }
+}
+
+fn usage_value(value: Option<u64>) -> String {
+    value.map_or_else(|| "?".into(), |value| value.to_string())
 }
 
 struct SessionTextSink {

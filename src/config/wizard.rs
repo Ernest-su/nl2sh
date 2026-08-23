@@ -6,6 +6,7 @@ use crossterm::{
     execute,
     terminal::{self, ClearType},
 };
+use serde_json::Value;
 use std::{
     fs::{self, OpenOptions},
     io::{self, Write},
@@ -261,6 +262,92 @@ pub fn run_model_configure(path: &Path) -> Result<()> {
     cfg.model = prompt(label(cfg.ui_language, "模型", "Model"), &cfg.model)?;
     cfg.validate_runtime()?;
     write_upsert(path, &cfg)
+}
+
+/// Fetches models from the configured OpenAI-compatible endpoint and lets the user select one.
+pub async fn run_models_configure(path: &Path) -> Result<()> {
+    let mut cfg = load_stored_or_default(path)?;
+    println!(
+        "{}",
+        label(
+            cfg.ui_language,
+            "正在从 Provider 网络拉取可用模型…",
+            "Fetching available models from the provider…"
+        )
+    );
+    let result = fetch_openai_compatible_models(&cfg).await;
+    let models = match result {
+        Ok(models) if !models.is_empty() => models,
+        Ok(_) => {
+            println!(
+                "{}",
+                label(
+                    cfg.ui_language,
+                    "Provider 未返回模型，改为手工输入。",
+                    "The provider returned no models; switching to manual input."
+                )
+            );
+            return run_model_configure(path);
+        }
+        Err(error) => {
+            println!(
+                "{} {error:#}",
+                label(
+                    cfg.ui_language,
+                    "模型列表拉取失败，改为手工输入：",
+                    "Model discovery failed; switching to manual input:"
+                )
+            );
+            return run_model_configure(path);
+        }
+    };
+    for (index, model) in models.iter().enumerate() {
+        println!("{:>3}. {model}", index + 1);
+    }
+    let choice = prompt(
+        label(
+            cfg.ui_language,
+            "选择编号或直接输入模型名称",
+            "Select a number or enter a model identifier",
+        ),
+        &cfg.model,
+    )?;
+    cfg.model = choice
+        .parse::<usize>()
+        .ok()
+        .and_then(|index| index.checked_sub(1))
+        .and_then(|index| models.get(index).cloned())
+        .unwrap_or(choice);
+    cfg.validate_runtime()?;
+    write_upsert(path, &cfg)
+}
+
+async fn fetch_openai_compatible_models(cfg: &Config) -> Result<Vec<String>> {
+    let url = format!("{}/models", cfg.endpoint.trim_end_matches('/'));
+    let mut request = reqwest::Client::new().get(url);
+    let key = if cfg.api_key.trim().is_empty() {
+        std::env::var("NL2SH_API_KEY").unwrap_or_default()
+    } else {
+        cfg.api_key.clone()
+    };
+    if !key.trim().is_empty() {
+        request = request.bearer_auth(key);
+    }
+    let response = request.send().await.context("model-list request failed")?;
+    let status = response.status();
+    if !status.is_success() {
+        bail!("provider returned HTTP {status}")
+    }
+    let value: Value = response.json().await.context("invalid model-list JSON")?;
+    let mut models = value["data"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|model| model["id"].as_str().map(str::to_owned))
+        .collect::<Vec<_>>();
+    models.sort();
+    models.dedup();
+    Ok(models)
 }
 
 fn load_stored_or_default(path: &Path) -> Result<Config> {

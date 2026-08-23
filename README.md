@@ -157,7 +157,7 @@ cp config.toml.example config.toml
 
 `history_log_file` 默认为 `nl2sh.log`，相对路径按 `config.toml` 所在目录解析。日志采用逐行 JSON，记录用户输入、命令、输出、结果和错误并在每条记录后刷新；新文件权限为 `0600`。日志可能包含命令输出中的设备信息，排查完成后应按实际保密要求保管或清理，但不会写入 API Key。\n\n输出资源默认受限：实时 TUI 为 256 KiB、单个捕获流为 1 MiB、单个发给模型的 Tool Result 为 128 KiB、单条日志事件为 256 KiB、单个日志文件为 10 MiB。对应配置项为 `ui_live_output_max_bytes`、`tool_output_max_bytes`、`model_tool_output_max_bytes`、`history_log_event_max_bytes` 和 `history_log_max_bytes`。所有内容截断都会插入 `NL2SH ... TRUNCATED` 标记；日志达到文件上限后停止追加，不会静默形成不完整记录。
 
-`ui_language` 控制终端界面语言，可选 `zh_cn` 或 `en`，默认 `zh_cn`。显式初始化及 `/config` 完整配置会询问界面语言，之后的向导、状态栏、确认弹窗和快捷键说明使用所选语言。`/config` 配置全部模型服务字段，`/provider` 只配置 API Endpoint、API Key 和 API 类型，`/model` 只配置模型名称；服务商选择会优先定位当前 URL 对应的内置项，未知 URL 则进入自定义项。API Key 留空会保留当前配置。`/help` 显示本地帮助，`/clear` 清空当前会话的可见对话、模型上下文和输入历史但保留 JSONL 审计日志，`/exit` 安全退出。启动欢迎页与 `/help` 还会显示项目支持、在线赞赏链接和纯文本终端祝福图；TUI 不内嵌或渲染 Logo、二维码等图片。这些启动内容不会发送给模型。
+`ui_language` 控制终端界面语言，可选 `zh_cn` 或 `en`，默认 `zh_cn`。显式初始化及 `/config` 完整配置会询问界面语言，之后的向导、状态栏、确认弹窗和快捷键说明使用所选语言。`/config` 配置全部模型服务字段，`/provider` 只配置 API Endpoint、API Key 和 API 类型，`/model` 只配置模型名称，`/models` 使用当前凭据从 Provider 网络拉取模型列表并选择，拉取失败时自动保留手工输入路径；服务商选择会优先定位当前 URL 对应的内置项，未知 URL 则进入自定义项。API Key 留空会保留当前配置。模型列表请求只在配置流程中使用凭据，不把凭据或原始响应写入审计日志。`/help` 显示本地帮助，`/clear` 清空当前会话的可见对话、模型上下文和输入历史但保留 JSONL 审计日志，`/exit` 安全退出。启动欢迎页与 `/help` 还会显示项目支持、在线赞赏链接和纯文本终端祝福图；TUI 不内嵌或渲染 Logo、二维码等图片。这些启动内容不会发送给模型。
 
 每个 Android Agent 任务开始时会向 system prompt 附加一次低敏感运行环境摘要，包括 API level、ABI、`/system/bin/sh`、当前 UID 和 root/su 能力。摘要仅用于提高命令兼容性，不包含型号、序列号、Android ID、IP、账号或应用列表，也不会改变安全分类、确认和提权策略；内存、存储与网络等易变信息仍由工具按需查询。
 
@@ -172,7 +172,7 @@ nl2sh --endpoint http://127.0.0.1:11434/v1 --model local --api-type chat_complet
 nl2sh --no-pty --ascii
 ```
 
-Command 模式生成、分类后执行单条命令；`--dry-run` 只展示。修改或危险命令在无 TTY 时会拒绝，不能用管道伪造确认。需要多轮执行和结果回传时使用默认 Agent 模式。Agent TUI 在请求和捕获式执行期间保持活跃，并在界面内显示输出与确认弹窗；审批弹窗支持方向键与 Enter，也可直接使用 `1-6` 或 `y/n/a/e/i/t` 选择允许一次、当前任务允许完全相同命令、拒绝、编辑、交互执行或捕获执行。任务级允许不适用于 Root 或危险命令，不持久化且不做命令前缀匹配。命令运行时实时展示有界输出，完成后工具结果默认折叠，按 F2 可展开或收起；超出各层配置上限时，日志和模型上下文会携带明确截断标记。Agent 总结支持终端 Markdown 渲染。TUI 使用统一的现代深色语义主题，并按终端能力选择 TrueColor 或 ANSI 256 palette；普通正文保持灰白，青蓝表示交互与焦点，绿色、黄色和红色分别保留给成功、警告和错误。底部输入框使用低对比度深色背景和青蓝色闪烁光标，支持 Left/Right/Home/End/Delete 编辑及 Up/Down 调取当前会话输入历史；输入 `/` 时显示垂直命令候选，使用 Up/Down 选择、Enter 补全，当前提供 `/help`、`/clear`、`/config`、`/provider` 和 `/model`。TUI 启用鼠标追踪以稳定接收滚轮；复制屏幕文字时按住 Shift 拖选，由宿主终端高亮选区，再通过右键系统菜单复制。对话区只保留上下边框，避免选取内容混入左右边框。另支持 PageUp/PageDown 浏览历史、Enter 提交、Ctrl+C 取消当前任务（空闲时清空输入）、Ctrl+Q 安全退出。
+Command 模式生成、分类后执行单条命令；`--dry-run` 只展示。修改或危险命令在无 TTY 时会拒绝，不能用管道伪造确认。需要多轮执行和结果回传时使用默认 Agent 模式。Agent TUI 在请求和捕获式执行期间保持同一 frame，并在界面内显示输出与确认弹窗；审批弹窗支持方向键与 Enter，也可直接使用 `1-6` 或 `y/n/a/e/i/t` 选择允许一次、当前任务允许完全相同命令、拒绝、编辑、交互执行或捕获执行。任务级允许不适用于 Root 或危险命令，不持久化且不做命令前缀匹配。命令运行时实时展示有界输出，完成后工具结果默认折叠，按 F2 可展开或收起；超出各层配置上限时，日志和模型上下文会携带明确截断标记。Agent 总结支持终端 Markdown 渲染。TUI 使用统一的现代深色语义主题，并按终端能力选择 TrueColor 或 ANSI 256 palette；普通正文保持灰白，青蓝表示交互与焦点，绿色、黄色和红色分别保留给成功、警告和错误。底部输入框使用低对比度深色背景和青蓝色闪烁光标，支持 Left/Right/Home/End/Delete 编辑及 Up/Down 调取当前会话输入历史；输入 `/` 时显示垂直命令候选，使用 Up/Down 选择、Enter 补全，当前提供 `/help`、`/clear`、`/config`、`/provider`、`/model` 和 `/models`。每次 Agent 任务完成后，状态栏显示该任务跨全部 Tool Calling 步骤累计的输入、输出和总 Token；Provider 未返回用量时显示未知而不是零。TUI 启用鼠标追踪以稳定接收滚轮；复制屏幕文字时按住 Shift 拖选，由宿主终端高亮选区，再通过右键系统菜单复制。对话区只保留上下边框，避免选取内容混入左右边框。另支持 PageUp/PageDown 浏览历史、Enter 提交、Ctrl+C 取消当前任务（空闲时清空输入）、Ctrl+Q 安全退出。
 
 风险等级为 `ReadOnly`、`Mutating`、`Dangerous`、`Critical`。内置检测覆盖危险删除、格式化、块设备写入、递归根权限修改、重启/关机、分区擦除和读写 remount；自定义规则使用 `[[security_rules]]` 添加，不能替换内置规则。
 

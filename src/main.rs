@@ -63,7 +63,7 @@ async fn main() -> Result<()> {
             {
                 tui::SessionExit::Quit => return Ok(()),
                 tui::SessionExit::Configure(target) => {
-                    run_configure_target(&path, target)?;
+                    run_configure_target(&path, target).await?;
                     cfg = load_runtime_config(&path, &cli)?;
                     provider_configured = cfg.provider_is_configured();
                     llm = build_client(&cfg)?;
@@ -99,7 +99,7 @@ async fn main() -> Result<()> {
             None => return Ok(()),
         };
         if let Some(target) = config_target(instruction.trim()) {
-            run_configure_target(&path, target)?;
+            run_configure_target(&path, target).await?;
             cfg = load_runtime_config(&path, &cli)?;
             provider_configured = cfg.provider_is_configured();
             llm = build_client(&cfg)?;
@@ -217,15 +217,17 @@ fn config_target(input: &str) -> Option<tui::ConfigTarget> {
         "/config" => Some(tui::ConfigTarget::All),
         "/provider" => Some(tui::ConfigTarget::Provider),
         "/model" => Some(tui::ConfigTarget::Model),
+        "/models" => Some(tui::ConfigTarget::Models),
         _ => None,
     }
 }
 
-fn run_configure_target(path: &std::path::Path, target: tui::ConfigTarget) -> Result<()> {
+async fn run_configure_target(path: &std::path::Path, target: tui::ConfigTarget) -> Result<()> {
     match target {
         tui::ConfigTarget::All => config::run_configure(path),
         tui::ConfigTarget::Provider => config::run_provider_configure(path),
         tui::ConfigTarget::Model => config::run_model_configure(path),
+        tui::ConfigTarget::Models => config::run_models_configure(path).await,
     }
 }
 

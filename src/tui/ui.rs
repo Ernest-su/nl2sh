@@ -389,12 +389,14 @@ fn render_command_menu(f: &mut Frame, app: &App, input_area: ratatui::layout::Re
                 (UiLanguage::ZhCn, "/exit") => "安全退出",
                 (UiLanguage::ZhCn, "/help") => "显示帮助",
                 (UiLanguage::ZhCn, "/model") => "配置模型",
+                (UiLanguage::ZhCn, "/models") => "在线选择模型",
                 (UiLanguage::ZhCn, "/provider") => "配置 API 服务",
                 (UiLanguage::En, "/clear") => "Clear the current session",
                 (UiLanguage::En, "/config") => "Reconfigure the model provider",
                 (UiLanguage::En, "/exit") => "Quit safely",
                 (UiLanguage::En, "/help") => "Show help",
                 (UiLanguage::En, "/model") => "Configure the model",
+                (UiLanguage::En, "/models") => "Fetch and select a model",
                 (UiLanguage::En, "/provider") => "Configure the API provider",
                 _ => "",
             };
@@ -642,7 +644,7 @@ const TRAIN_BODY: [&str; 6] = [
     " |        |   |          H   |  |      |  ",
     " '--(O)----(O)----(O)------------(O)---'  ",
 ];
-const TRAIN_ENGINE_FRONT_COLUMN: usize = 41;
+const TRAIN_ENGINE_FRONT_COLUMN: usize = 39;
 
 fn welcome_train_lines(frame: u16, width: usize, theme: Theme) -> Vec<Line<'static>> {
     let smoke = match (frame / 3) % 4 {
@@ -1238,7 +1240,7 @@ mod tests {
             .iter()
             .all(|line| line.spans.iter().all(|span| span.content.is_empty())));
 
-        let at_right_edge = welcome_train_lines(82, 80, theme);
+        let at_right_edge = welcome_train_lines(84, 80, theme);
         assert!(at_right_edge.iter().any(|line| {
             line.spans
                 .iter()
@@ -1247,7 +1249,7 @@ mod tests {
                 .ends_with("D_")
         }));
 
-        let at_odd_width_right_edge = welcome_train_lines(81, 79, theme);
+        let at_odd_width_right_edge = welcome_train_lines(83, 79, theme);
         assert!(at_odd_width_right_edge.iter().any(|line| {
             line.spans
                 .iter()
