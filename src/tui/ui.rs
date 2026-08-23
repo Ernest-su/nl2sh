@@ -186,9 +186,11 @@ fn status_color(app: &App, theme: Theme) -> Color {
     }
 }
 
-fn popup_color(dangerous: bool, theme: Theme) -> Color {
+fn popup_color(dangerous: bool, informational: bool, theme: Theme) -> Color {
     if dangerous {
         theme.error
+    } else if informational {
+        theme.accent
     } else {
         theme.warning
     }
@@ -353,11 +355,14 @@ pub fn draw(f: &mut Frame, app: &App) {
                 Block::default()
                     .borders(Borders::ALL)
                     .style(Style::default().bg(theme.background_alt))
-                    .border_style(popup_style(theme, popup_color(popup.dangerous, theme)))
+                    .border_style(popup_style(
+                        theme,
+                        popup_color(popup.dangerous, popup.informational, theme),
+                    ))
                     .title(Line::styled(
                         popup.title.as_str(),
                         theme
-                            .bold(popup_color(popup.dangerous, theme))
+                            .bold(popup_color(popup.dangerous, popup.informational, theme))
                             .bg(theme.background_alt),
                     )),
             ),
@@ -864,6 +869,14 @@ fn bottom_left_rect(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn informational_popup_uses_accent_instead_of_risk_color() {
+        let theme = Theme::for_mode(crate::tui::theme::ColorMode::Ansi256);
+        assert_eq!(popup_color(false, true, theme), theme.accent);
+        assert_eq!(popup_color(false, false, theme), theme.warning);
+        assert_eq!(popup_color(true, false, theme), theme.error);
+    }
     use crate::tui::{app::PopupView, input::Input};
     use ratatui::{backend::TestBackend, Terminal};
 
@@ -1112,6 +1125,7 @@ mod tests {
                     "  6. UNIQUE_OPTION_RESIDUE".into(),
                 ],
                 dangerous: false,
+                informational: false,
             }),
         };
         terminal.draw(|frame| draw(frame, &app))?;
@@ -1120,6 +1134,7 @@ mod tests {
             title: "Security confirmation".into(),
             lines: vec!["High risk: type YES, then Enter:".into(), "Y".into()],
             dangerous: true,
+            informational: false,
         });
         terminal.draw(|frame| draw(frame, &app))?;
 

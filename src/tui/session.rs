@@ -14,6 +14,7 @@ use crate::{
     config::{Config, UiLanguage},
     history::HistoryLog,
     llm::{ConversationItem, LlmClient, TextDeltaSink},
+    provider_account::{build_account_client, AccountBalance},
     security::{RiskLevel, SecurityAssessment},
     shell::{OutputSink, ShellExecutor},
 };
@@ -149,6 +150,10 @@ async fn run_inner(
     };
     let mut model_history: Vec<Vec<ConversationItem>> = Vec::new();
     let mut active: Option<Pin<Box<dyn Future<Output = Result<AgentOutcome>> + '_>>> = None;
+    let mut balance_active: Option<
+        Pin<Box<dyn Future<Output = Result<Vec<AccountBalance>>> + Send>>,
+    > = None;
+    let mut balance_popup: Option<PopupView> = None;
     let mut confirmation: Option<ConfirmationUi> = None;
     let mut quit_after_cancel = false;
     let mut cancel_signal_pending = false;
@@ -192,12 +197,21 @@ async fn run_inner(
         if !is_suspended {
             app.history = snapshot(&history)?;
             app.turn = model_history.len();
-            app.popup = confirmation.as_ref().map(ConfirmationUi::view);
+            app.popup = confirmation
+                .as_ref()
+                .map(ConfirmationUi::view)
+                .or_else(|| balance_popup.clone());
             terminal.terminal().draw(|frame| ui::draw(frame, &app))?;
         }
 
         let mut completed = None;
-        if let Some(future) = active.as_mut() {
+        let mut balance_completed = None;
+        if let Some(future) = balance_active.as_mut() {
+            tokio::select! {
+                result = future.as_mut() => balance_completed = Some(result),
+                _ = tokio::time::sleep(Duration::from_millis(11)) => {}
+            }
+        } else if let Some(future) = active.as_mut() {
             tokio::select! {
                 result = future.as_mut() => completed = Some(result),
                 request = confirm_rx.recv(), if confirmation.is_none() => {
@@ -214,6 +228,22 @@ async fn run_inner(
             }
         } else {
             tokio::time::sleep(Duration::from_millis(11)).await;
+        }
+
+        if let Some(result) = balance_completed {
+            balance_active = None;
+            let (title, lines) = balance_popup_content(result, config.ui_language);
+            balance_popup = Some(PopupView {
+                title,
+                lines,
+                dangerous: false,
+                informational: true,
+            });
+            app.status = localized_status(
+                config.ui_language,
+                "余额查询完成",
+                "balance lookup complete",
+            );
         }
 
         if let Some(result) = completed {
@@ -344,6 +374,16 @@ async fn run_inner(
             if active.is_some() {
                 continue;
             }
+            if balance_active.is_some() {
+                continue;
+            }
+            if balance_popup.is_some() {
+                if matches!(key.code, KeyCode::Esc | KeyCode::Enter) {
+                    balance_popup = None;
+                    app.status = localized_status(config.ui_language, "空闲", "idle");
+                }
+                continue;
+            }
             let Some(key) = (if app.command_menu_visible() {
                 fragmented_arrow.normalize(key)
             } else {
@@ -373,7 +413,19 @@ async fn run_inner(
                         "/provider" => return Ok(SessionExit::Configure(ConfigTarget::Provider)),
                         "/model" => return Ok(SessionExit::Configure(ConfigTarget::Model)),
                         "/models" => return Ok(SessionExit::Configure(ConfigTarget::Models)),
-                        "/balance" => return Ok(SessionExit::Configure(ConfigTarget::Balance)),
+                        "/balance" => {
+                            let account_config = config.clone();
+                            balance_active = Some(Box::pin(async move {
+                                let client = build_account_client(&account_config)?;
+                                client.balances(&account_config).await
+                            }));
+                            app.status = localized_status(
+                                config.ui_language,
+                                "正在网络查询 Provider 余额",
+                                "fetching provider balance",
+                            );
+                            continue;
+                        }
                         "/help" => {
                             log.record("local_command", "/help")?;
                             history
@@ -461,6 +513,38 @@ fn context_usage(input: Option<u64>, window: Option<u64>) -> String {
         }
         _ => "?".into(),
     }
+}
+
+fn balance_popup_content(
+    result: Result<Vec<AccountBalance>>,
+    language: UiLanguage,
+) -> (String, Vec<String>) {
+    let title = localized_status(language, "Provider 余额", "Provider balance").into();
+    let mut lines = match result {
+        Ok(balances) if balances.is_empty() => vec![localized_status(
+            language,
+            "Provider 未返回余额。",
+            "The provider returned no balances.",
+        )
+        .into()],
+        Ok(balances) => balances
+            .into_iter()
+            .map(|balance| format!("{} {}", balance.currency, balance.amount))
+            .collect(),
+        Err(error) => vec![format!(
+            "{} {error:#}",
+            localized_status(language, "查询失败：", "Lookup failed:")
+        )],
+    };
+    lines.push(
+        localized_status(
+            language,
+            "仅当前显示，不写日志。Esc/Enter 关闭",
+            "Display only; not logged. Esc/Enter closes",
+        )
+        .into(),
+    );
+    (title, lines)
 }
 
 struct SessionTextSink {
@@ -581,11 +665,13 @@ impl ConfirmationUi {
                     title: "安全确认".into(),
                     lines: vec!["正在关闭…".into()],
                     dangerous: false,
+                    informational: false,
                 },
                 UiLanguage::En => PopupView {
                     title: "Confirmation".into(),
                     lines: vec!["Closing…".into()],
                     dangerous: false,
+                    informational: false,
                 },
             };
         };
@@ -647,6 +733,7 @@ impl ConfirmationUi {
                 request.assessment.risk_level,
                 RiskLevel::Dangerous | RiskLevel::Critical
             ),
+            informational: false,
         }
     }
 
@@ -822,6 +909,20 @@ impl ConfirmationUi {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn balance_popup_is_transient_and_contains_no_credential() {
+        let (title, lines) = balance_popup_content(
+            Ok(vec![AccountBalance {
+                currency: "CNY".into(),
+                amount: "12.34".into(),
+            }]),
+            UiLanguage::ZhCn,
+        );
+        assert!(title.contains("余额"));
+        assert!(lines.iter().any(|line| line == "CNY 12.34"));
+        assert!(lines.iter().any(|line| line.contains("不写日志")));
+    }
     use crate::{config::Config, security::assess};
 
     fn request(command: &str) -> (ConfirmationUi, oneshot::Receiver<ConfirmationDecision>) {

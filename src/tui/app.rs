@@ -36,11 +36,14 @@ pub struct App {
     pub status: String,
     pub popup: Option<PopupView>,
 }
+#[derive(Clone)]
 pub struct PopupView {
     pub title: String,
     pub lines: Vec<String>,
     /// Whether the local assessment requires danger styling in addition to text.
     pub dangerous: bool,
+    /// Whether this popup is informational rather than a security confirmation.
+    pub informational: bool,
 }
 /// Immutable labels and counters displayed by one TUI prompt.
 pub struct TuiOptions {
