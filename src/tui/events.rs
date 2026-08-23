@@ -1,6 +1,6 @@
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 pub fn next() -> Result<Option<Event>> {
     if event::poll(Duration::from_millis(33))? {
         Ok(Some(event::read()?))
@@ -18,7 +18,7 @@ pub(super) struct FragmentedArrowFilter {
 enum ArrowSequenceState {
     #[default]
     Idle,
-    Escape,
+    Escape(Instant),
     Introducer,
 }
 
@@ -26,10 +26,10 @@ impl FragmentedArrowFilter {
     pub(super) fn normalize(&mut self, mut key: KeyEvent) -> Option<KeyEvent> {
         match (&self.state, key.code) {
             (_, KeyCode::Esc) => {
-                self.state = ArrowSequenceState::Escape;
+                self.state = ArrowSequenceState::Escape(Instant::now());
                 None
             }
-            (ArrowSequenceState::Escape, KeyCode::Char('[' | 'O')) => {
+            (ArrowSequenceState::Escape(_), KeyCode::Char('[' | 'O')) => {
                 self.state = ArrowSequenceState::Introducer;
                 None
             }
@@ -58,6 +58,18 @@ impl FragmentedArrowFilter {
 
     pub(super) fn reset(&mut self) {
         self.state = ArrowSequenceState::Idle;
+    }
+
+    /// Returns a standalone Escape after allowing fragmented arrow bytes to arrive.
+    pub(super) fn take_expired_escape(&mut self, delay: Duration) -> bool {
+        let expired = matches!(
+            self.state,
+            ArrowSequenceState::Escape(started) if started.elapsed() >= delay
+        );
+        if expired {
+            self.reset();
+        }
+        expired
     }
 }
 
@@ -90,5 +102,15 @@ mod tests {
             .normalize(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE))
             .map(|key| key.code);
         assert_eq!(key, Some(KeyCode::Char('x')));
+    }
+
+    #[test]
+    fn releases_a_standalone_escape_after_the_grace_period() {
+        let mut filter = FragmentedArrowFilter::default();
+        assert!(filter
+            .normalize(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
+            .is_none());
+        assert!(filter.take_expired_escape(Duration::ZERO));
+        assert!(!filter.take_expired_escape(Duration::ZERO));
     }
 }

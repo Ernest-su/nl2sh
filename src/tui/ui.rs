@@ -410,6 +410,7 @@ fn render_command_menu(f: &mut Frame, app: &App, input_area: ratatui::layout::Re
                 (UiLanguage::ZhCn, "/model") => "配置模型",
                 (UiLanguage::ZhCn, "/models") => "在线选择模型",
                 (UiLanguage::ZhCn, "/provider") => "配置 API 服务",
+                (UiLanguage::ZhCn, "/proxy") => "配置网络代理",
                 (UiLanguage::En, "/balance") => "Query provider balance",
                 (UiLanguage::En, "/clear") => "Clear the current session",
                 (UiLanguage::En, "/config") => "Reconfigure the model provider",
@@ -418,6 +419,7 @@ fn render_command_menu(f: &mut Frame, app: &App, input_area: ratatui::layout::Re
                 (UiLanguage::En, "/model") => "Configure the model",
                 (UiLanguage::En, "/models") => "Fetch and select a model",
                 (UiLanguage::En, "/provider") => "Configure the API provider",
+                (UiLanguage::En, "/proxy") => "Configure network proxy",
                 _ => "",
             };
             let style = if index == selected {

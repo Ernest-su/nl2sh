@@ -205,6 +205,7 @@ impl App {
             "/model",
             "/models",
             "/provider",
+            "/proxy",
         ];
         let query = self.input.text.trim();
         if !query.starts_with('/') || query.contains(char::is_whitespace) {
@@ -388,7 +389,7 @@ mod tests {
         assert!(!app.complete_selected_command());
 
         app.input.set("/p".into());
-        assert_eq!(app.command_suggestions(), vec!["/provider"]);
+        assert_eq!(app.command_suggestions(), vec!["/provider", "/proxy"]);
         app.input.set("/m".into());
         assert_eq!(app.command_suggestions(), vec!["/model", "/models"]);
         app.input.set("/e".into());

@@ -62,6 +62,8 @@ pub enum ConfigTarget {
     Models,
     /// Query a documented provider balance endpoint without persisting the result.
     Balance,
+    /// Reload proxy settings already saved by the in-TUI editor.
+    Proxy,
 }
 
 /// Runs the default Agent as a live single-frame TUI session.
@@ -160,6 +162,7 @@ async fn run_inner(
     let mut balance_manual = false;
     let mut last_balance_refresh: Option<Instant> = None;
     let mut confirmation: Option<ConfirmationUi> = None;
+    let mut proxy_editor: Option<ProxyEditor> = None;
     let mut quit_after_cancel = false;
     let mut cancel_signal_pending = false;
     let mut was_suspended = false;
@@ -169,6 +172,15 @@ async fn run_inner(
     let mut fragmented_arrow = super::events::FragmentedArrowFilter::default();
 
     loop {
+        if proxy_editor.is_some() && fragmented_arrow.take_expired_escape(Duration::from_millis(35))
+        {
+            proxy_editor = None;
+            app.status = localized_status(
+                config.ui_language,
+                "代理配置未修改",
+                "proxy configuration unchanged",
+            );
+        }
         if balance_supported
             && active.is_none()
             && balance_active.is_none()
@@ -214,7 +226,10 @@ async fn run_inner(
         if !is_suspended {
             app.history = snapshot(&history)?;
             app.turn = model_history.len();
-            app.popup = confirmation.as_ref().map(ConfirmationUi::view);
+            app.popup = confirmation
+                .as_ref()
+                .map(ConfirmationUi::view)
+                .or_else(|| proxy_editor.as_ref().map(ProxyEditor::view));
             terminal.terminal().draw(|frame| ui::draw(frame, &app))?;
         }
 
@@ -419,6 +434,45 @@ async fn run_inner(
                 }
                 continue;
             }
+            if let Some(editor) = proxy_editor.as_mut() {
+                let Some(key) = fragmented_arrow.normalize(key) else {
+                    continue;
+                };
+                match editor.handle_key(key) {
+                    ProxyEditorAction::Continue => {}
+                    ProxyEditorAction::Cancel => {
+                        proxy_editor = None;
+                        app.status = localized_status(
+                            config.ui_language,
+                            "代理配置未修改",
+                            "proxy configuration unchanged",
+                        );
+                    }
+                    ProxyEditorAction::Save => {
+                        let mut updated = config.clone();
+                        editor.apply(&mut updated);
+                        let Some(path) = updated.source.clone() else {
+                            app.status = localized_status(
+                                config.ui_language,
+                                "无法定位配置文件",
+                                "cannot locate configuration file",
+                            );
+                            continue;
+                        };
+                        match crate::config::save_config(&path, &updated) {
+                            Ok(()) => return Ok(SessionExit::Configure(ConfigTarget::Proxy)),
+                            Err(_) => {
+                                app.status = localized_status(
+                                    config.ui_language,
+                                    "代理配置无效或保存失败",
+                                    "invalid proxy configuration or save failed",
+                                );
+                            }
+                        }
+                    }
+                }
+                continue;
+            }
             if active.is_some() {
                 continue;
             }
@@ -451,6 +505,15 @@ async fn run_inner(
                         "/provider" => return Ok(SessionExit::Configure(ConfigTarget::Provider)),
                         "/model" => return Ok(SessionExit::Configure(ConfigTarget::Model)),
                         "/models" => return Ok(SessionExit::Configure(ConfigTarget::Models)),
+                        "/proxy" => {
+                            proxy_editor = Some(ProxyEditor::new(config));
+                            app.status = localized_status(
+                                config.ui_language,
+                                "正在配置网络代理",
+                                "configuring network proxy",
+                            );
+                            continue;
+                        }
                         "/balance" => {
                             if !balance_supported {
                                 app.status = localized_status(
@@ -569,6 +632,174 @@ fn format_balances(balances: &[AccountBalance]) -> String {
         .map(|balance| format!("{} {}", balance.currency, balance.amount))
         .collect::<Vec<_>>()
         .join(" / ")
+}
+
+struct ProxyEditor {
+    enabled: bool,
+    proxy_type: crate::config::ProxyType,
+    address: String,
+    username: String,
+    password: String,
+    bypass: String,
+    selected: usize,
+    language: UiLanguage,
+}
+
+enum ProxyEditorAction {
+    Continue,
+    Cancel,
+    Save,
+}
+
+impl ProxyEditor {
+    fn new(config: &Config) -> Self {
+        Self {
+            enabled: config.proxy_enabled,
+            proxy_type: config.proxy_type,
+            address: config.proxy_address.clone(),
+            username: config.proxy_username.clone(),
+            password: config.proxy_password.clone(),
+            bypass: config.proxy_bypass.clone(),
+            selected: 0,
+            language: config.ui_language,
+        }
+    }
+
+    fn view(&self) -> PopupView {
+        let marker = |index| if self.selected == index { ">" } else { " " };
+        let kind = match self.proxy_type {
+            crate::config::ProxyType::Http => "HTTP/HTTPS CONNECT",
+            crate::config::ProxyType::Socks5 => "SOCKS5 (local DNS)",
+            crate::config::ProxyType::Socks5h => "SOCKS5H (proxy DNS, recommended)",
+        };
+        let password = if self.password.is_empty() {
+            String::new()
+        } else {
+            "*".repeat(self.password.chars().count())
+        };
+        let (title, enabled, labels, help) = match self.language {
+            UiLanguage::ZhCn => (
+                "网络代理配置",
+                if self.enabled {
+                    "启用"
+                } else {
+                    "关闭（保留配置）"
+                },
+                [
+                    "总开关",
+                    "类型",
+                    "地址 host:port",
+                    "用户名",
+                    "密码",
+                    "绕过列表",
+                ],
+                "↑/↓ 选择；←/→ 切换；输入编辑；Delete 清空；Enter 下一项/保存；Esc 取消",
+            ),
+            UiLanguage::En => (
+                "Network proxy configuration",
+                if self.enabled {
+                    "enabled"
+                } else {
+                    "off (settings retained)"
+                },
+                [
+                    "Master switch",
+                    "Type",
+                    "Address host:port",
+                    "Username",
+                    "Password",
+                    "Bypass list",
+                ],
+                "Up/Down select; Left/Right toggle; type to edit; Delete clears; Enter next/save; Esc cancel",
+            ),
+        };
+        let values = [
+            enabled,
+            kind,
+            &self.address,
+            &self.username,
+            &password,
+            &self.bypass,
+        ];
+        let mut lines = labels
+            .into_iter()
+            .zip(values)
+            .enumerate()
+            .map(|(index, (label, value))| format!("{} {label}: {value}", marker(index)))
+            .collect::<Vec<_>>();
+        lines.push(String::new());
+        lines.push(help.into());
+        PopupView {
+            title: title.into(),
+            lines,
+            dangerous: false,
+            informational: true,
+        }
+    }
+
+    fn handle_key(&mut self, key: KeyEvent) -> ProxyEditorAction {
+        match key.code {
+            KeyCode::Esc => ProxyEditorAction::Cancel,
+            KeyCode::Up => {
+                self.selected = self.selected.checked_sub(1).unwrap_or(5);
+                ProxyEditorAction::Continue
+            }
+            KeyCode::Down | KeyCode::Tab => {
+                self.selected = (self.selected + 1) % 6;
+                ProxyEditorAction::Continue
+            }
+            KeyCode::Left | KeyCode::Right | KeyCode::Char(' ') if self.selected < 2 => {
+                if self.selected == 0 {
+                    self.enabled = !self.enabled;
+                } else {
+                    self.proxy_type = match self.proxy_type {
+                        crate::config::ProxyType::Http => crate::config::ProxyType::Socks5,
+                        crate::config::ProxyType::Socks5 => crate::config::ProxyType::Socks5h,
+                        crate::config::ProxyType::Socks5h => crate::config::ProxyType::Http,
+                    };
+                }
+                ProxyEditorAction::Continue
+            }
+            KeyCode::Enter if self.selected == 5 => ProxyEditorAction::Save,
+            KeyCode::Enter => {
+                self.selected += 1;
+                ProxyEditorAction::Continue
+            }
+            KeyCode::Backspace if self.selected >= 2 => {
+                self.selected_text_mut().pop();
+                ProxyEditorAction::Continue
+            }
+            KeyCode::Delete if self.selected >= 2 => {
+                self.selected_text_mut().clear();
+                ProxyEditorAction::Continue
+            }
+            KeyCode::Char(character)
+                if self.selected >= 2 && !key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
+                self.selected_text_mut().push(character);
+                ProxyEditorAction::Continue
+            }
+            _ => ProxyEditorAction::Continue,
+        }
+    }
+
+    fn selected_text_mut(&mut self) -> &mut String {
+        match self.selected {
+            2 => &mut self.address,
+            3 => &mut self.username,
+            4 => &mut self.password,
+            _ => &mut self.bypass,
+        }
+    }
+
+    fn apply(&self, config: &mut Config) {
+        config.proxy_enabled = self.enabled;
+        config.proxy_type = self.proxy_type;
+        config.proxy_address = self.address.trim().into();
+        config.proxy_username = self.username.clone();
+        config.proxy_password = self.password.clone();
+        config.proxy_bypass = self.bypass.trim().into();
+    }
 }
 
 struct SessionTextSink {
@@ -941,6 +1172,26 @@ mod tests {
             amount: "12.34".into(),
         }]);
         assert_eq!(text, "CNY 12.34");
+    }
+
+    #[test]
+    fn proxy_editor_masks_password_and_preserves_fields_when_disabled() {
+        let mut config = Config {
+            proxy_enabled: true,
+            proxy_address: "proxy.example:1080".into(),
+            proxy_username: "user".into(),
+            proxy_password: "secret".into(),
+            ..Config::default()
+        };
+        let mut editor = ProxyEditor::new(&config);
+        editor.enabled = false;
+        let view = editor.view();
+        assert!(view.lines.iter().any(|line| line.contains("******")));
+        assert!(!view.lines.iter().any(|line| line.contains("secret")));
+        editor.apply(&mut config);
+        assert!(!config.proxy_enabled);
+        assert_eq!(config.proxy_address, "proxy.example:1080");
+        assert_eq!(config.proxy_password, "secret");
     }
     use crate::{config::Config, security::assess};
 

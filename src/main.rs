@@ -230,6 +230,7 @@ async fn run_configure_target(path: &std::path::Path, target: tui::ConfigTarget)
         tui::ConfigTarget::Model => config::run_model_configure(path),
         tui::ConfigTarget::Models => config::run_models_configure(path).await,
         tui::ConfigTarget::Balance => config::run_balance_query(path).await,
+        tui::ConfigTarget::Proxy => Ok(()),
     }
 }
 

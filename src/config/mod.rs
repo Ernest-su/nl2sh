@@ -8,5 +8,5 @@ pub use loader::{
 pub use model::*;
 pub use wizard::{
     run_balance_query, run_configure, run_model_configure, run_models_configure,
-    run_provider_configure, run_wizard,
+    run_provider_configure, run_wizard, save_config,
 };

@@ -79,7 +79,7 @@ async fn get(config: &Config, path: &str) -> Result<Value> {
     if key.trim().is_empty() {
         bail!("API token is required for balance lookup")
     }
-    let response = reqwest::Client::new()
+    let response = crate::network::build_http_client(config)?
         .get(format!(
             "{}/{}",
             config.endpoint.trim_end_matches('/'),

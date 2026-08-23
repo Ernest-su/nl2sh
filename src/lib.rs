@@ -9,6 +9,7 @@ pub mod history;
 pub mod limits;
 /// Provider-neutral LLM types and OpenAI-compatible HTTP clients.
 pub mod llm;
+pub mod network;
 /// Read-only provider account data for documented balance endpoints.
 pub mod provider_account;
 /// Provider-specific model discovery and normalized metadata.

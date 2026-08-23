@@ -64,6 +64,19 @@ pub enum UiLanguage {
     En,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+/// Explicit outbound proxy protocol.
+pub enum ProxyType {
+    #[default]
+    /// HTTP proxy, including CONNECT for HTTPS destinations.
+    Http,
+    /// SOCKS5 with local DNS resolution.
+    Socks5,
+    /// SOCKS5 with proxy-side DNS resolution.
+    Socks5h,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 /// Fully defaulted and validated runtime configuration.
@@ -80,6 +93,18 @@ pub struct Config {
     pub endpoint: String,
     /// Selected API wire protocol.
     pub api_type: ApiType,
+    /// Master proxy switch. Disabling it preserves all proxy fields.
+    pub proxy_enabled: bool,
+    /// Proxy transport selected by the TUI.
+    pub proxy_type: ProxyType,
+    /// Proxy host and port without credentials or scheme.
+    pub proxy_address: String,
+    /// Optional proxy authentication username.
+    pub proxy_username: String,
+    /// Optional proxy authentication password.
+    pub proxy_password: String,
+    /// Comma-separated hosts which bypass the proxy.
+    pub proxy_bypass: String,
     /// Maximum complete text interaction units retained.
     pub max_context_turns: usize,
     /// Maximum model/tool iterations per request.
@@ -148,6 +173,12 @@ impl Default for Config {
             model_max_output_tokens: None,
             endpoint: "https://api.openai.com/v1".into(),
             api_type: ApiType::Responses,
+            proxy_enabled: false,
+            proxy_type: ProxyType::Http,
+            proxy_address: String::new(),
+            proxy_username: String::new(),
+            proxy_password: String::new(),
+            proxy_bypass: "localhost,127.0.0.1,::1".into(),
             max_context_turns: 16,
             max_agent_steps: 24,
             llm_retry_count: 3,
@@ -189,6 +220,14 @@ impl Config {
         let url = Url::parse(&self.endpoint).context("endpoint is not a valid URL")?;
         if !matches!(url.scheme(), "http" | "https") {
             bail!("endpoint must use http or https")
+        }
+        if self.proxy_enabled {
+            if self.proxy_address.trim().is_empty()
+                || self.proxy_address.chars().any(char::is_whitespace)
+            {
+                bail!("enabled proxy requires a host:port address without whitespace")
+            }
+            Url::parse(&self.proxy_url()).context("proxy address is not valid")?;
         }
         if self.model.trim().is_empty() {
             bail!("model must not be empty")
@@ -244,6 +283,16 @@ impl Config {
                 .map_or(window, |output| window.saturating_sub(output));
             safety_watermark.min(output_watermark).max(1)
         })
+    }
+
+    /// Returns the credential-free proxy URL assembled from configured fields.
+    pub fn proxy_url(&self) -> String {
+        let scheme = match self.proxy_type {
+            ProxyType::Http => "http",
+            ProxyType::Socks5 => "socks5",
+            ProxyType::Socks5h => "socks5h",
+        };
+        format!("{scheme}://{}", self.proxy_address.trim())
     }
 
     /// Reports whether the current endpoint has the credentials required by

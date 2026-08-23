@@ -91,8 +91,9 @@ impl ProviderMetadataClient for HttpProviderMetadataClient {
 }
 
 async fn list_openai_models(config: &Config) -> Result<Vec<ModelMetadata>> {
+    let client = crate::network::build_http_client(config)?;
     let value = send_json(
-        reqwest::Client::new().get(format!("{}/models", config.endpoint.trim_end_matches('/'))),
+        client.get(format!("{}/models", config.endpoint.trim_end_matches('/'))),
         config,
     )
     .await?;
@@ -112,15 +113,12 @@ async fn list_openai_models(config: &Config) -> Result<Vec<ModelMetadata>> {
 }
 
 async fn list_ollama_models(config: &Config) -> Result<Vec<ModelMetadata>> {
+    let client = crate::network::build_http_client(config)?;
     let root = config
         .endpoint
         .trim_end_matches('/')
         .trim_end_matches("/v1");
-    let value = send_json(
-        reqwest::Client::new().get(format!("{root}/api/tags")),
-        config,
-    )
-    .await?;
+    let value = send_json(client.get(format!("{root}/api/tags")), config).await?;
     let ids = value["models"]
         .as_array()
         .into_iter()
@@ -131,7 +129,7 @@ async fn list_ollama_models(config: &Config) -> Result<Vec<ModelMetadata>> {
     let mut models = Vec::with_capacity(ids.len());
     for id in ids {
         let details = send_json(
-            reqwest::Client::new()
+            client
                 .post(format!("{root}/api/show"))
                 .json(&json!({ "model": id })),
             config,

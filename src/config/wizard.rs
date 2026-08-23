@@ -460,6 +460,12 @@ fn write_upsert(path: &Path, cfg: &Config) -> Result<()> {
     }
 }
 
+/// Atomically persists a validated configuration from an in-TUI editor.
+pub fn save_config(path: &Path, cfg: &Config) -> Result<()> {
+    cfg.validate_runtime()?;
+    write_upsert(path, cfg)
+}
+
 fn parse_language(value: &str) -> Result<UiLanguage> {
     parse(
         value,

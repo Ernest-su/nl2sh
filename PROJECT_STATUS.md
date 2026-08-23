@@ -5,6 +5,8 @@ Last Updated: 2026-08-23
 ## Recent Changes
 
 - 支持余额接口时，Agent TUI 会在启动后及每 60 秒静默刷新，最近一次成功余额常驻顶栏，失败保留旧值；手工 `/balance` 立即刷新，余额仍只存在内存且不进入对话、配置或审计历史。
+- 新增 `/proxy` Agent TUI 配置弹窗，支持 HTTP CONNECT、SOCKS5/SOCKS5H、认证和绕过列表；总开关关闭时保留配置。LLM、模型发现、Ollama 元数据和余额查询统一使用同一代理策略，密码仅掩码显示且不进入日志或模型上下文。
+- `/proxy` 弹窗复用方向键碎片序列过滤：CSI/SS3 左右键不会再因先到达的 Esc 字节而关闭弹窗，独立 Esc 在短暂组合窗口后仍可取消。
 - Agent 根据已知 Context Window、最大输出预留和 Provider 实际输入 Token 动态淘汰最旧完整历史轮次；system instruction、当前交互和 Tool Calling round 不拆分，配置的轮次与步骤上限仍是硬边界。
 - 新增不记入审计的 `/balance`：使用现有 API Token 查询 DeepSeek 与 SiliconFlow 的公开只读余额接口；其他未提供稳定 Bearer Token 余额接口的国内外 Provider 明确显示不支持，不调用控制台私有接口。
 - 新增独立 `ProviderMetadataClient`，分别适配 OpenAI、DeepSeek、SiliconFlow 的模型列表与 Ollama 原生模型详情；配置支持上下文窗口/最大输出 Token 覆盖，已知窗口用于在状态栏估算最后一次请求的上下文占用率。
@@ -110,6 +112,8 @@ Last Updated: 2026-08-23
 
 ## Verification Performed
 
+- 代理弹窗方向键修复：WSL2 `cargo fmt --all -- --check`、`cargo check` 与 49 项库测试通过，新增独立 Esc 延迟释放及碎片 CSI/SS3 方向键回归覆盖。
+- `/proxy` 代理配置：WSL2 `cargo check`、48 项库测试及除 2 个既有动画时序用例外的全部 target 测试通过；Android API 34 ARMv7 release 构建与真机 PTY 验证弹窗打开、类型切换、Esc 取消、保存后热重载及终端恢复正常，配置文件保持 `0600`。启用 SOCKS 后 strip 二进制为 2,530,264 bytes，比此前增加 23,480 bytes（约 0.94%）。
 - 余额常驻与动态上下文：WSL2 `cargo fmt --all -- --check`、`cargo check`、45 项库测试及 Agent/config/provider 等测试通过；全量测试仅有 2 个既有 TUI 动画时序用例超时。Android API 34 ARMv7 release 真机确认会话启动后余额自动出现在 80 列顶栏、退出时终端正常恢复，并确认完整余额显示文本未进入 JSONL 日志。
 - TUI 内余额弹窗：WSL2 `cargo check` 与 44 项库测试通过；Android ARMv7 真机确认查询期间保留 TUI frame、状态栏显示网络活动、结果弹窗可见并可关闭，余额完整显示文本未进入 JSONL 日志。
 - Provider 余额第三阶段：WSL2 `cargo check`、42 项库测试及除两个已知动画匹配用例外的全部 target 测试通过；Android ARMv7 release 构建、推送后在真实 ADB PTY 使用 `/balance` 成功查询 DeepSeek CNY 余额、确认返回 TUI，并以完整显示文本检查 JSONL 日志未记录余额。

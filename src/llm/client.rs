@@ -49,9 +49,7 @@ pub struct HttpLlmClient {
 /// Builds a rustls-backed HTTP client from validated configuration.
 pub fn build_client(cfg: &Config) -> Result<HttpLlmClient> {
     Ok(HttpLlmClient {
-        client: Client::builder()
-            .timeout(std::time::Duration::from_secs(cfg.llm_request_timeout_secs))
-            .build()?,
+        client: crate::network::build_http_client(cfg)?,
         endpoint: cfg.endpoint.trim_end_matches('/').into(),
         key: cfg.api_key.clone(),
         api_type: cfg.api_type,
