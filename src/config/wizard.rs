@@ -1,4 +1,5 @@
 use super::{ApiType, Config, ConfirmPolicy, ExecuteUserMode, UiLanguage};
+use crate::provider_metadata::{build_metadata_client, known_context_window, ModelMetadata};
 use anyhow::{bail, Context, Result};
 use crossterm::{
     cursor,
@@ -6,7 +7,6 @@ use crossterm::{
     execute,
     terminal::{self, ClearType},
 };
-use serde_json::Value;
 use std::{
     fs::{self, OpenOptions},
     io::{self, Write},
@@ -260,8 +260,46 @@ pub fn run_provider_configure(path: &Path) -> Result<()> {
 pub fn run_model_configure(path: &Path) -> Result<()> {
     let mut cfg = load_stored_or_default(path)?;
     cfg.model = prompt(label(cfg.ui_language, "模型", "Model"), &cfg.model)?;
+    let current = cfg
+        .model_context_window
+        .map_or_else(String::new, |value| value.to_string());
+    let context = prompt(
+        label(
+            cfg.ui_language,
+            "上下文窗口 Token（留空自动识别）",
+            "Context-window tokens (empty for automatic detection)",
+        ),
+        &current,
+    )?;
+    cfg.model_context_window = parse_optional_positive(&context)?;
+    let current_output = cfg
+        .model_max_output_tokens
+        .map_or_else(String::new, |value| value.to_string());
+    let output = prompt(
+        label(
+            cfg.ui_language,
+            "最大输出 Token（留空自动识别）",
+            "Maximum output tokens (empty for automatic detection)",
+        ),
+        &current_output,
+    )?;
+    cfg.model_max_output_tokens = parse_optional_positive(&output)?;
     cfg.validate_runtime()?;
     write_upsert(path, &cfg)
+}
+
+fn parse_optional_positive(value: &str) -> Result<Option<u64>> {
+    if value.trim().is_empty() {
+        return Ok(None);
+    }
+    let value = value
+        .trim()
+        .parse::<u64>()
+        .context("invalid positive token limit")?;
+    if value == 0 {
+        bail!("token limit must be positive")
+    }
+    Ok(Some(value))
 }
 
 /// Fetches models from the configured OpenAI-compatible endpoint and lets the user select one.
@@ -275,7 +313,7 @@ pub async fn run_models_configure(path: &Path) -> Result<()> {
             "Fetching available models from the provider…"
         )
     );
-    let result = fetch_openai_compatible_models(&cfg).await;
+    let result = build_metadata_client(&cfg).list_models(&cfg).await;
     let models = match result {
         Ok(models) if !models.is_empty() => models,
         Ok(_) => {
@@ -302,7 +340,10 @@ pub async fn run_models_configure(path: &Path) -> Result<()> {
         }
     };
     for (index, model) in models.iter().enumerate() {
-        println!("{:>3}. {model}", index + 1);
+        let context = model
+            .context_window
+            .map_or_else(|| "?".into(), |value| value.to_string());
+        println!("{:>3}. {}  context={context}", index + 1, model.id);
     }
     let choice = prompt(
         label(
@@ -312,42 +353,22 @@ pub async fn run_models_configure(path: &Path) -> Result<()> {
         ),
         &cfg.model,
     )?;
-    cfg.model = choice
+    let selected = choice
         .parse::<usize>()
         .ok()
         .and_then(|index| index.checked_sub(1))
         .and_then(|index| models.get(index).cloned())
-        .unwrap_or(choice);
+        .unwrap_or_else(|| ModelMetadata {
+            context_window: known_context_window(&choice),
+            max_output_tokens: None,
+            id: choice,
+        });
+    cfg.model = selected.id;
+    if cfg.model_context_window.is_none() {
+        cfg.model_context_window = selected.context_window;
+    }
     cfg.validate_runtime()?;
     write_upsert(path, &cfg)
-}
-
-async fn fetch_openai_compatible_models(cfg: &Config) -> Result<Vec<String>> {
-    let url = format!("{}/models", cfg.endpoint.trim_end_matches('/'));
-    let mut request = reqwest::Client::new().get(url);
-    let key = if cfg.api_key.trim().is_empty() {
-        std::env::var("NL2SH_API_KEY").unwrap_or_default()
-    } else {
-        cfg.api_key.clone()
-    };
-    if !key.trim().is_empty() {
-        request = request.bearer_auth(key);
-    }
-    let response = request.send().await.context("model-list request failed")?;
-    let status = response.status();
-    if !status.is_success() {
-        bail!("provider returned HTTP {status}")
-    }
-    let value: Value = response.json().await.context("invalid model-list JSON")?;
-    let mut models = value["data"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|model| model["id"].as_str().map(str::to_owned))
-        .collect::<Vec<_>>();
-    models.sort();
-    models.dedup();
-    Ok(models)
 }
 
 fn load_stored_or_default(path: &Path) -> Result<Config> {

@@ -33,6 +33,8 @@ pub struct AgentOutcome {
     pub transcript: Vec<ConversationItem>,
     /// Token usage accumulated across every model request in this task.
     pub usage: Usage,
+    /// Input tokens reported for the final model request, used for context estimates.
+    pub final_input_tokens: Option<u64>,
 }
 impl AgentRunner<'_> {
     /// Runs one natural-language request until final text or the step limit.
@@ -76,6 +78,7 @@ impl AgentRunner<'_> {
         let mut transcript = vec![user_item];
         let mut task_approvals = HashSet::new();
         let mut usage = Usage::default();
+        let mut final_input_tokens = None;
         for step in 1..=self.config.max_agent_steps {
             let mut items = ctx.items();
             items.extend(current.clone());
@@ -90,6 +93,7 @@ impl AgentRunner<'_> {
                 self.llm.complete(request).await?
             };
             usage.accumulate(&response.usage);
+            final_input_tokens = response.usage.input_tokens;
             if response.tool_calls.is_empty() {
                 let final_text = response
                     .text
@@ -107,6 +111,7 @@ impl AgentRunner<'_> {
                     steps: step,
                     transcript,
                     usage,
+                    final_input_tokens,
                 });
             }
             let calls = response.tool_calls;
@@ -238,6 +243,7 @@ impl AgentRunner<'_> {
             steps: self.config.max_agent_steps,
             transcript,
             usage,
+            final_input_tokens,
         })
     }
 

@@ -72,6 +72,10 @@ pub struct Config {
     pub api_key: String,
     /// Provider model identifier.
     pub model: String,
+    /// Optional user/provider context-window override in tokens.
+    pub model_context_window: Option<u64>,
+    /// Optional user/provider maximum output-token override.
+    pub model_max_output_tokens: Option<u64>,
     /// API base URL, normally ending in `/v1`.
     pub endpoint: String,
     /// Selected API wire protocol.
@@ -140,6 +144,8 @@ impl Default for Config {
         Self {
             api_key: String::new(),
             model: "gpt-4o-mini".into(),
+            model_context_window: None,
+            model_max_output_tokens: None,
             endpoint: "https://api.openai.com/v1".into(),
             api_type: ApiType::Responses,
             max_context_turns: 16,
@@ -190,6 +196,9 @@ impl Config {
         if self.max_context_turns == 0 || self.max_agent_steps == 0 {
             bail!("context turns and agent steps must be positive")
         }
+        if self.model_context_window == Some(0) || self.model_max_output_tokens == Some(0) {
+            bail!("model token limits must be positive when configured")
+        }
         if self.llm_request_timeout_secs == 0 || self.execute_timeout_secs == 0 {
             bail!("request and execution timeouts must be positive")
         }
@@ -218,6 +227,12 @@ impl Config {
                 .with_context(|| format!("invalid security rule {}", rule.id))?;
         }
         Ok(())
+    }
+
+    /// Returns the configured override or a conservative built-in model value.
+    pub fn effective_context_window(&self) -> Option<u64> {
+        self.model_context_window
+            .or_else(|| crate::provider_metadata::known_context_window(&self.model))
     }
 
     /// Reports whether the current endpoint has the credentials required by

@@ -149,6 +149,8 @@ cp config.toml.example config.toml
 
 `api_type` 可选 `responses` 或 `chat_completions`。兼容服务对协议的支持并不一致，nl2sh 不会因一次业务错误擅自切换协议。
 
+`model_context_window` 和 `model_max_output_tokens` 是可选的 Token 限额覆盖；省略上下文窗口时，nl2sh 优先使用 Provider 元数据，再使用内置的保守模型注册表。OpenAI、DeepSeek、SiliconFlow 使用各自的 OpenAI 风格模型列表，Ollama 使用原生 `/api/tags` 与 `/api/show` 读取本地模型及上下文。状态栏的上下文百分比使用最后一次模型请求的输入 Token 除以已知窗口估算，未知时显示 `?`。
+
 `execute_user_mode`：
 
 - `auto`：UID 0 直接运行；普通命令保持当前用户；明确需要 root 时才尝试 `su -c`。

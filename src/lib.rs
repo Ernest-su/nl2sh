@@ -9,6 +9,8 @@ pub mod history;
 pub mod limits;
 /// Provider-neutral LLM types and OpenAI-compatible HTTP clients.
 pub mod llm;
+/// Provider-specific model discovery and normalized metadata.
+pub mod provider_metadata;
 /// Local shell command classification and confirmation requirements.
 pub mod security;
 /// PTY/pipeline execution, process cleanup, and Android root selection.

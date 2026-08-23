@@ -224,20 +224,26 @@ async fn run_inner(
                     while model_history.len() > config.max_context_turns {
                         model_history.remove(0);
                     }
+                    let context = context_usage(
+                        outcome.final_input_tokens,
+                        config.effective_context_window(),
+                    );
                     app.status = match config.ui_language {
                         UiLanguage::ZhCn => format!(
-                            "空闲；上次 {} 步，Token 输入 {} / 输出 {} / 总计 {}",
+                            "空闲；上次 {} 步，Token 输入 {} / 输出 {} / 总计 {}，上下文 {}",
                             outcome.steps,
                             usage_value(outcome.usage.input_tokens),
                             usage_value(outcome.usage.output_tokens),
-                            usage_value(outcome.usage.total_tokens())
+                            usage_value(outcome.usage.total_tokens()),
+                            context
                         ),
                         UiLanguage::En => format!(
-                            "idle; last {} steps, tokens in {} / out {} / total {}",
+                            "idle; last {} steps, tokens in {} / out {} / total {}, context {}",
                             outcome.steps,
                             usage_value(outcome.usage.input_tokens),
                             usage_value(outcome.usage.output_tokens),
-                            usage_value(outcome.usage.total_tokens())
+                            usage_value(outcome.usage.total_tokens()),
+                            context
                         ),
                     };
                 }
@@ -443,6 +449,15 @@ async fn run_inner(
 
 fn usage_value(value: Option<u64>) -> String {
     value.map_or_else(|| "?".into(), |value| value.to_string())
+}
+
+fn context_usage(input: Option<u64>, window: Option<u64>) -> String {
+    match (input, window) {
+        (Some(input), Some(window)) if window > 0 => {
+            format!("{:.1}%", input as f64 * 100.0 / window as f64)
+        }
+        _ => "?".into(),
+    }
 }
 
 struct SessionTextSink {
