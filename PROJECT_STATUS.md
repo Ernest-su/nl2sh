@@ -7,6 +7,8 @@ Last Updated: 2026-08-23
 - 支持余额接口时，Agent TUI 会在启动后及每 60 秒静默刷新，最近一次成功余额常驻顶栏，失败保留旧值；手工 `/balance` 立即刷新，余额仍只存在内存且不进入对话、配置或审计历史。
 - 新增 `/proxy` Agent TUI 配置弹窗，支持 HTTP CONNECT、SOCKS5/SOCKS5H、认证和绕过列表；总开关关闭时保留配置。LLM、模型发现、Ollama 元数据和余额查询统一使用同一代理策略，密码仅掩码显示且不进入日志或模型上下文。
 - `/proxy` 弹窗复用方向键碎片序列过滤：CSI/SS3 左右键不会再因先到达的 Esc 字节而关闭弹窗，独立 Esc 在短暂组合窗口后仍可取消。
+- Agent 与单命令 prompt 明确以 stock Android `/system/bin/sh` 和 toybox 为基线，不再无证据假设 Python、Bash、Node、常见脚本运行时、开发工具或 Linux 包管理器存在；非基线程序必须先只读探测并准备 Android 原生回退。
+- 普通输入路径现在也统一过滤碎片终端序列，将部分 PTY 的 `Esc O Q` 还原为 F2，避免循环展开/收起工具结果时把 `OQ` 写入输入框。
 - Agent 根据已知 Context Window、最大输出预留和 Provider 实际输入 Token 动态淘汰最旧完整历史轮次；system instruction、当前交互和 Tool Calling round 不拆分，配置的轮次与步骤上限仍是硬边界。
 - 新增不记入审计的 `/balance`：使用现有 API Token 查询 DeepSeek 与 SiliconFlow 的公开只读余额接口；其他未提供稳定 Bearer Token 余额接口的国内外 Provider 明确显示不支持，不调用控制台私有接口。
 - 新增独立 `ProviderMetadataClient`，分别适配 OpenAI、DeepSeek、SiliconFlow 的模型列表与 Ollama 原生模型详情；配置支持上下文窗口/最大输出 Token 覆盖，已知窗口用于在状态栏估算最后一次请求的上下文占用率。

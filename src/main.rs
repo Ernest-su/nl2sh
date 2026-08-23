@@ -3,7 +3,9 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use cli::{Cli, Mode};
 use nl2sh::{
-    agent::{AgentRunner, ConfirmationDecision, Confirmer, StdioConfirmer},
+    agent::{
+        android_shell_constraints, AgentRunner, ConfirmationDecision, Confirmer, StdioConfirmer,
+    },
     config::{self},
     history::HistoryLog,
     llm::{build_client, ConversationMessage, LlmClient, LlmRequest, Role},
@@ -358,7 +360,10 @@ async fn run_command(
     dry: bool,
     output: std::sync::Arc<dyn OutputSink>,
 ) -> Result<()> {
-    let system="You are an Android shell command generator. Generate one executable command for Android adb shell. Output only the command. No Markdown, explanation, prefix, or alternatives. Do not assume Termux. Prefer toybox. If unsafe or unreliable return NL2SH_UNABLE_TO_GENERATE.";
+    let system = format!(
+        "You are an Android shell command generator. Generate one executable command for Android adb shell. Output only the command. No Markdown, explanation, prefix, or alternatives. {} If a non-baseline runtime would be required and cannot be safely probed with a toybox fallback in the same command, return NL2SH_UNABLE_TO_GENERATE. If unsafe or unreliable return NL2SH_UNABLE_TO_GENERATE.",
+        android_shell_constraints()
+    );
     let r = llm
         .complete(LlmRequest {
             model: cfg.model.clone(),

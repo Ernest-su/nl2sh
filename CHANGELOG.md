@@ -14,6 +14,8 @@
 - Agent history now contracts by complete oldest turns when observed provider input tokens cross the known context-window safety watermark, preserving the system instruction, current interaction, and complete tool rounds.
 - Added an in-TUI `/proxy` editor for HTTP CONNECT, SOCKS5/SOCKS5H, authentication, bypass rules, and a non-destructive master switch; all Provider clients now share the same credential-safe proxy policy.
 - Fragmented CSI/SS3 left and right arrow sequences are now reconstructed inside the proxy editor instead of being mistaken for a standalone Escape and closing the popup.
+- Agent and command prompts now explicitly target stock Android `/system/bin/sh` and toybox, requiring evidence before using desktop scripting runtimes, development tools, or package managers.
+- Fragmented `ESC O Q` F2 sequences are now normalized on ordinary input paths, preventing stray `OQ` text and reliably toggling tool-result expansion.
 - Chat Completions and Responses now stream model text into the Agent TUI over SSE, with an animated semantic gradient while generation is active and normal Markdown styling immediately after completion.
 - Release archives now contain both ARM64 and ARMv7 binaries in ABI-specific directories; Linux and double-clickable Windows BAT launchers select or connect an ADB device, detect its ABI, and deploy the matching binary automatically.
 - Source build/deploy launchers are now named `android-build-run.sh` and `android-build-run.ps1`; they use the same ADB device selection flow and automatically compile the Rust target matching the selected device ABI.

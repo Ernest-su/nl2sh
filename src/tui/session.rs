@@ -476,12 +476,7 @@ async fn run_inner(
             if active.is_some() {
                 continue;
             }
-            let Some(key) = (if app.command_menu_visible() {
-                fragmented_arrow.normalize(key)
-            } else {
-                fragmented_arrow.reset();
-                Some(key)
-            }) else {
+            let Some(key) = fragmented_arrow.normalize(key) else {
                 continue;
             };
             app.welcome_train_frame = None;

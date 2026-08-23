@@ -41,6 +41,8 @@ impl FragmentedArrowFilter {
                     'D' => Some(KeyCode::Left),
                     'H' => Some(KeyCode::Home),
                     'F' => Some(KeyCode::End),
+                    // F2 is commonly encoded as the SS3 sequence ESC O Q.
+                    'Q' => Some(KeyCode::F(2)),
                     _ => None,
                 };
                 self.reset();
@@ -93,6 +95,21 @@ mod tests {
                 .map(|key| key.code);
             assert_eq!(key, Some(KeyCode::Up));
         }
+    }
+
+    #[test]
+    fn reconstructs_fragmented_ss3_f2_without_leaking_oq() {
+        let mut filter = FragmentedArrowFilter::default();
+        assert!(filter
+            .normalize(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
+            .is_none());
+        assert!(filter
+            .normalize(KeyEvent::new(KeyCode::Char('O'), KeyModifiers::NONE))
+            .is_none());
+        let key = filter
+            .normalize(KeyEvent::new(KeyCode::Char('Q'), KeyModifiers::NONE))
+            .map(|key| key.code);
+        assert_eq!(key, Some(KeyCode::F(2)));
     }
 
     #[test]

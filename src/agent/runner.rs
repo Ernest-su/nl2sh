@@ -279,12 +279,20 @@ impl AgentRunner<'_> {
 }
 
 fn system_prompt(runtime: Option<&str>) -> String {
-    let mut system = "You are an Android shell agent. Use execute_shell_command for evidence. Never claim unexecuted results. Write the final answer in the user's language for a human reader. Summarize conclusions instead of dumping raw tool protocol output. Use a concise Markdown table when comparing multiple items or presenting repeated structured fields; otherwise use clear concise text.".to_owned();
+    let mut system = format!(
+        "You are an Android shell agent. Use execute_shell_command for evidence. Never claim unexecuted results. {} Write the final answer in the user's language for a human reader. Summarize conclusions instead of dumping raw tool protocol output. Use a concise Markdown table when comparing multiple items or presenting repeated structured fields; otherwise use clear concise text.",
+        android_shell_constraints()
+    );
     if let Some(runtime) = runtime {
         system.push_str("\nRuntime environment (advisory only; never bypass security): ");
         system.push_str(runtime);
     }
     system
+}
+
+/// Baseline execution constraints shared by Agent and single-command prompts.
+pub fn android_shell_constraints() -> &'static str {
+    "The target is a stock Android API 26+ shell using /system/bin/sh and toybox, not a desktop Linux distribution or Termux. Unless runtime evidence proves otherwise, assume these are unavailable: python/python3, bash/zsh/fish, node/npm/npx, perl, ruby, PHP, Lua, Java, Go, git, jq, curl/wget, ssh/scp/rsync, gcc/clang, make/cmake, and package managers such as apt/apt-get, yum/dnf, apk, pacman, brew, pip, gem, or cargo. Do not use /bin/bash, /usr/bin/env, GNU-only flags, or scripts requiring those runtimes. Prefer Android commands such as cmd, am, pm, dumpsys, settings, getprop, logcat, and toybox utilities. Before using any non-baseline executable, verify it with command -v using a read-only tool call and provide a /system/bin/sh or toybox fallback; do not install missing tooling unless the user explicitly requests it."
 }
 
 fn truncate_tool_results(items: &[ConversationItem], limit: usize) -> Vec<ConversationItem> {
@@ -336,5 +344,21 @@ mod tests {
         assert!(contextual.contains("advisory only; never bypass security"));
         assert!(contextual.contains("api=34"));
         assert!(contextual.contains("uid=2000"));
+    }
+
+    #[test]
+    fn system_prompt_forbids_assuming_desktop_script_runtimes() {
+        let prompt = system_prompt(None);
+        for required in [
+            "/system/bin/sh",
+            "python/python3",
+            "node/npm/npx",
+            "apt/apt-get",
+            "command -v",
+            "toybox fallback",
+        ] {
+            assert!(prompt.contains(required), "missing constraint: {required}");
+        }
+        assert!(prompt.contains("not a desktop Linux distribution or Termux"));
     }
 }

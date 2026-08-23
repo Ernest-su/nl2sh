@@ -128,12 +128,7 @@ fn run_inner(options: TuiOptions, mut history: Vec<String>) -> Result<Option<Str
                     _ => {}
                 },
                 Event::Key(k) if k.kind == KeyEventKind::Press => {
-                    let Some(k) = (if app.command_menu_visible() {
-                        fragmented_arrow.normalize(k)
-                    } else {
-                        fragmented_arrow.reset();
-                        Some(k)
-                    }) else {
+                    let Some(k) = fragmented_arrow.normalize(k) else {
                         continue;
                     };
                     app.cursor_visible = true;
