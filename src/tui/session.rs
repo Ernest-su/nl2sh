@@ -159,7 +159,7 @@ async fn run_inner(
             app.cursor_visible = !app.cursor_visible;
             last_cursor_blink = Instant::now();
         }
-        if last_train_frame.elapsed() >= Duration::from_millis(100) {
+        if last_train_frame.elapsed() >= super::app::WELCOME_TRAIN_FRAME_INTERVAL {
             let viewport_width = terminal.terminal().size()?.width.saturating_sub(2) as usize;
             app.advance_welcome_train(viewport_width);
             last_train_frame = Instant::now();
@@ -206,10 +206,10 @@ async fn run_inner(
                         confirmation = Some(ConfirmationUi::new(request, config.ui_language));
                     }
                 }
-                _ = tokio::time::sleep(Duration::from_millis(30)) => {}
+                _ = tokio::time::sleep(Duration::from_millis(11)) => {}
             }
         } else {
-            tokio::time::sleep(Duration::from_millis(30)).await;
+            tokio::time::sleep(Duration::from_millis(11)).await;
         }
 
         if let Some(result) = completed {

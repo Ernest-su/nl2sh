@@ -9,7 +9,8 @@ use anyhow::Result;
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers, MouseEventKind};
 use std::time::{Duration, Instant};
 pub(crate) const WELCOME_TRAIN_WIDTH: usize = 44;
-pub(crate) const WELCOME_TRAIN_SPEED: usize = 2;
+pub(crate) const WELCOME_TRAIN_SPEED: usize = 1;
+pub(crate) const WELCOME_TRAIN_FRAME_INTERVAL: Duration = Duration::from_millis(33);
 pub struct App {
     pub input: Input,
     pub input_history: Vec<String>,
@@ -107,7 +108,7 @@ fn run_inner(options: TuiOptions, mut history: Vec<String>) -> Result<Option<Str
             app.cursor_visible = !app.cursor_visible;
             last_cursor_blink = Instant::now();
         }
-        if last_train_frame.elapsed() >= Duration::from_millis(100) {
+        if last_train_frame.elapsed() >= WELCOME_TRAIN_FRAME_INTERVAL {
             let viewport_width = term.terminal().size()?.width.saturating_sub(2) as usize;
             app.advance_welcome_train(viewport_width);
             last_train_frame = Instant::now();
@@ -342,7 +343,7 @@ mod tests {
     #[test]
     fn welcome_train_animation_stops_after_its_last_frame() {
         let mut app = app_with_history(0);
-        app.welcome_train_frame = Some(61);
+        app.welcome_train_frame = Some(123);
         app.advance_welcome_train(80);
         assert_eq!(app.welcome_train_frame, None);
     }

@@ -635,21 +635,21 @@ fn buddha_art_lines(art: &str, theme: Theme) -> Vec<Line<'static>> {
 }
 
 const TRAIN_BODY: [&str; 6] = [
-    "      ====        ________                 ",
-    "  _D _|  |_______/        \\__I_I_____===__",
-    "   |(_)---  |   H|  NL2SH  |   |        | ",
-    "   /     |  |   H|_________|   |        | ",
-    "  |      |  |   H          |   |        | ",
-    "  '---(O)------------(O)----(O)----(O)--' ",
+    "                 ________        ====      ",
+    "__===_____I_I__/        \\_______|  |_ D_  ",
+    " |        |   |  NL2SH  |H   |  ---(_)|   ",
+    " |        |   |_________|H   |  |     \\   ",
+    " |        |   |          H   |  |      |  ",
+    " '--(O)----(O)----(O)------------(O)---'  ",
 ];
-const TRAIN_ENGINE_FRONT_COLUMN: usize = 3;
+const TRAIN_ENGINE_FRONT_COLUMN: usize = 41;
 
 fn welcome_train_lines(frame: u16, width: usize, theme: Theme) -> Vec<Line<'static>> {
     let smoke = match (frame / 3) % 4 {
-        0 => "       ( )   (@@)   ( )                    ",
-        1 => "    (  )  (@)    (  )                      ",
-        2 => "  (@)    (  )  (@)                         ",
-        _ => "      (@@)   ( )    o                      ",
+        0 => "                    ( )   (@@)   ( )       ",
+        1 => "                      (  )    (@)  (  )    ",
+        2 => "                         (@)  (  )    (@)  ",
+        _ => "                      o    ( )   (@@)      ",
     };
     let position = usize::from(frame).saturating_mul(WELCOME_TRAIN_SPEED) as isize
         - WELCOME_TRAIN_WIDTH as isize;
@@ -1220,7 +1220,7 @@ mod tests {
     #[test]
     fn welcome_train_moves_across_the_viewport_and_contains_branding() {
         let theme = Theme::for_mode(crate::tui::theme::ColorMode::Ansi256);
-        let middle = welcome_train_lines(32, 80, theme);
+        let middle = welcome_train_lines(64, 80, theme);
         let rendered = middle
             .iter()
             .flat_map(|line| line.spans.iter())
@@ -1233,27 +1233,27 @@ mod tests {
         assert!(before_entry
             .iter()
             .all(|line| line.spans.iter().all(|span| span.content.is_empty())));
-        let after_exit = welcome_train_lines(62, 80, theme);
+        let after_exit = welcome_train_lines(124, 80, theme);
         assert!(after_exit
             .iter()
             .all(|line| line.spans.iter().all(|span| span.content.is_empty())));
 
-        let at_right_edge = welcome_train_lines(60, 80, theme);
+        let at_right_edge = welcome_train_lines(82, 80, theme);
         assert!(at_right_edge.iter().any(|line| {
             line.spans
                 .iter()
                 .map(|span| span.content.as_ref())
                 .collect::<String>()
-                .ends_with("_D")
+                .ends_with("D_")
         }));
 
-        let at_odd_width_right_edge = welcome_train_lines(60, 79, theme);
+        let at_odd_width_right_edge = welcome_train_lines(81, 79, theme);
         assert!(at_odd_width_right_edge.iter().any(|line| {
             line.spans
                 .iter()
                 .map(|span| span.content.as_ref())
                 .collect::<String>()
-                .ends_with("_D")
+                .ends_with("D_")
         }));
     }
 }

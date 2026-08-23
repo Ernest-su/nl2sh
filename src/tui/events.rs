@@ -2,7 +2,7 @@ use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent};
 use std::time::Duration;
 pub fn next() -> Result<Option<Event>> {
-    if event::poll(Duration::from_millis(100))? {
+    if event::poll(Duration::from_millis(33))? {
         Ok(Some(event::read()?))
     } else {
         Ok(None)
