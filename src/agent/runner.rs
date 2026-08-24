@@ -367,7 +367,7 @@ impl AgentRunner<'_> {
                 }
             }
         }
-        let limit = stopped_by.unwrap_or_else(|| {
+        let limit = stopped_by.unwrap_or({
             if self.config.max_agent_steps > effective_steps {
                 LimitType::SystemHardStep
             } else {
