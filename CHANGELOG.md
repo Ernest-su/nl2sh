@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added `@` file and directory references in the TUI with bounded path suggestions, Up/Down selection, Right-arrow completion, relative/absolute/tilde paths, and longest-existing-prefix parsing for prompts such as `@test.txt写的是什么内容`; referenced content remains behind bounded structured file tools.
 - Made the confirmation panel size itself from wrapped content; oversized commands and diffs scroll with the wheel or PageUp/PageDown while approval controls remain pinned.
 - Added bounded `read_file`, `list_dir`, `search_text`, and `apply_patch` tools without a workspace path sandbox; edits show a diff and require confirmation before an atomic write.
 - Added private session autosave plus `/sessions` list, resume, rename, and delete operations; credentials, balances, and temporary approvals are excluded.

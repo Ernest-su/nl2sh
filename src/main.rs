@@ -283,6 +283,7 @@ async fn run_once(
     history: &[Vec<nl2sh::llm::ConversationItem>],
     output: std::sync::Arc<dyn OutputSink>,
 ) -> Result<Option<nl2sh::agent::AgentOutcome>> {
+    let instruction = nl2sh::file_references::augment_file_references(instruction);
     match mode {
         Mode::Agent => {
             let executor = ShellExecutor::new(cfg.clone()).with_output(output);
@@ -292,13 +293,13 @@ async fn run_once(
                 executor: &executor,
                 confirmer: &StdioConfirmer,
             }
-            .run_with_history(instruction, history)
+            .run_with_history(&instruction, history)
             .await?;
             println!("{}", outcome.final_text);
             Ok(Some(outcome))
         }
         Mode::Command => {
-            run_command(cfg, llm, instruction, dry_run, output).await?;
+            run_command(cfg, llm, &instruction, dry_run, output).await?;
             Ok(None)
         }
     }

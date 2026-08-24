@@ -3,6 +3,7 @@
 pub mod agent;
 /// Validated TOML configuration and initialization wizard.
 pub mod config;
+pub mod file_references;
 /// Bounded structured file operations for the Agent.
 pub mod file_tools;
 /// Persistent structured interaction history for diagnostics.

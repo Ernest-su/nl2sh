@@ -1,9 +1,10 @@
 # Project Status
 
-Last Updated: 2026-08-24
+Last Updated: 2026-08-25
 
 ## Recent Changes
 
+- TUI 输入新增 `@` 文件/目录引用候选：支持相对路径、绝对路径、`@~`、`@/`、`@.` 和父目录路径，Up/Down 选择、Right 补全，目录可继续下钻。提交时按最长已存在路径前缀解析，`@test.txt写的是什么内容` 无需额外空格；只附加绝对路径提示，内容仍由有界结构化文件工具读取，安全与确认链不变。
 - 命令批准弹窗改为内容驱动的动态宽高：长命令和结构化 diff 超过终端可用高度时可用滚轮或 PageUp/PageDown 浏览，上方正文独立滚动，底部审批选项、强确认或编辑输入保持可见。
 - 新增结构化 `read_file`、`list_dir`、`search_text` 与 `apply_patch` Agent 工具：路径不设工作区边界并支持绝对路径、父目录和符号链接，读取/遍历/匹配/文件大小仍有界；补丁先展示 diff 并确认，再原子写入。
 - 新增私有会话快照与 `/sessions` 管理：已完成 turn 自动保存，支持列表、恢复、重命名和删除；恢复重新应用上下文与 Tool Result 上限，Provider 凭据、代理密码、余额和临时审批许可不进入会话文件。
@@ -140,6 +141,7 @@ Last Updated: 2026-08-24
 
 ## Verification Performed
 
+- `@` 文件/目录引用：`cargo fmt --all -- --check`、`cargo check`、`cargo clippy --all-targets -- -D warnings` 与 71 项库测试通过；新增回归覆盖句中光标补全、相对 `@.`、绝对路径、`@~`、目录标记，以及 `@test.txt写的是什么内容` 的最长已存在路径解析。全量 `cargo test` 的其余测试通过，既有 `agent_reply_remains_in_live_tui_until_ctrl_q` 仍因启动动画 ANSI 差分文本匹配超时。
 - 结构化文件工具、会话恢复与长内容审批布局：`cargo fmt --all -- --check`、`cargo check` 和 66 项库测试通过；全量 `cargo test` 的 CLI、Agent、取消、配置、日志、LLM mock、PTY、root、安全及 4 项 TUI 测试通过，既有 `agent_reply_remains_in_live_tui_until_ctrl_q` 仍因启动动画 ANSI 差分文本匹配超时。新增回归覆盖 Tool schema、绝对/父目录/符号链接路径、确认前不写入、原子替换、会话保存/恢复/重命名/删除、凭据脱敏，以及审批正文滚动与固定操作区。
 - Windows ADB 滚轮诊断确认：默认鼠标捕获模式下设备端只收到退出按键，滚轮事件未到达进程；禁用捕获后 Windows Terminal 稳定发送 Up/Down 事件。兼容实现的 `cargo fmt --all -- --check` 与 Linux 目标 `cargo check` 通过；新增单元测试覆盖 SGR 降级输入。`cargo test` 的 61 项库测试及其他非 TUI 测试通过，全量测试仅既有 `agent_reply_remains_in_live_tui_until_ctrl_q` 因启动动画 ANSI 差分文本匹配超时而失败。
 - `/shell` 返回完整重绘：`cargo fmt --all -- --check`、`cargo check` 和 `/shell` 伪终端回归通过；回归在 `exit` 后要求重新出现完整框架的 `Ctrl+Q` 提示，并继续验证安全退出与 shell 内容不写入日志。

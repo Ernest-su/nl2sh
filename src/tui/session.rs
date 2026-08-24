@@ -139,6 +139,9 @@ async fn run_inner(
         input_history_draft: String::new(),
         cursor_visible: true,
         command_selection: 0,
+        file_selection: 0,
+        file_suggestion_query: None,
+        file_suggestions: Vec::new(),
         history: snapshot(&history)?,
         conversation_scroll: 0,
         tool_results_expanded: false,
@@ -992,18 +995,21 @@ async fn run_inner(
                             continue;
                         }
                         push_history(&history, format!("> {input}"), &log, "user")?;
+                        let agent_input = crate::file_references::augment_file_references(&input);
                         app.status = localized_status(
                             config.ui_language,
                             "正在请求模型 / 执行工具",
                             "requesting LLM / executing tools",
                         );
                         active = Some(Box::pin(runner.run_with_history_streaming_owned(
-                            input,
+                            agent_input,
                             model_history.clone(),
                             &stream_sink,
                         )));
                     }
                 }
+                (KeyCode::Up, _) if app.file_menu_visible() => app.select_previous_file(),
+                (KeyCode::Down, _) if app.file_menu_visible() => app.select_next_file(),
                 (KeyCode::Up, _) if app.command_menu_visible() => app.select_previous_command(),
                 (KeyCode::Down, _) if app.command_menu_visible() => app.select_next_command(),
                 (KeyCode::Up | KeyCode::Down, _) if windows_scroll => {
@@ -1012,6 +1018,7 @@ async fn run_inner(
                 (KeyCode::Up, _) => app.previous_input(),
                 (KeyCode::Down, _) => app.next_input(),
                 (KeyCode::Left, _) => app.input.move_left(),
+                (KeyCode::Right, _) if app.complete_selected_file() => {}
                 (KeyCode::Right, _) => app.input.move_right(),
                 (KeyCode::Home, _) => app.input.move_home(),
                 (KeyCode::End, _) => app.input.move_end(),
