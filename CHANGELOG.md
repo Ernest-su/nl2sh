@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Fixed incomplete TUI frames after leaving `/shell` by explicitly invalidating ratatui's retained buffer before redrawing the restored alternate screen.
+- TUI Settings now keeps separate in-session Endpoint drafts for Ollama and Custom, restoring each value after switching through other Provider presets.
+- Restored built-in Provider selection inside the unified TUI Settings panel, sharing the OpenAI, DeepSeek, Moonshot/Kimi, SiliconFlow, Ollama, and Custom presets with the legacy wizard while preserving API keys, models, and protocol choices.
+- Added `/shell` to suspend the TUI and open a direct interactive system shell; `exit` or Ctrl+D restores and fully redraws the existing TUI without sending shell content to the model or audit log.
 - Agent tasks now enforce independent step, tool-call, active-time, stalled-progress, repeated-action, and hard-step budgets. Fast/Normal/Deep presets are available; confirmation waits are excluded from active time, while safety classification and confirmation remain mandatory.
 - Repeated normalized commands with unchanged results are blocked before a fourth execution, stalled rounds force replanning before termination, and 80%/90% step warnings ask the model to converge. Task summaries now expose steps, tool calls, active duration, replans, and the terminating limit.
 - 设置面板文本字段新增 UTF-8 安全的 Left/Right/Home/End 光标移动，插入、Backspace 和 Delete 均围绕当前光标执行，密码字段保持掩码。

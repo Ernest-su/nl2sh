@@ -201,7 +201,7 @@ impl App {
 
     pub(crate) fn command_suggestions(&self) -> Vec<&'static str> {
         const COMMANDS: &[&str] = &[
-            "/balance", "/clear", "/config", "/exit", "/help", "/setting", "/update",
+            "/balance", "/clear", "/config", "/exit", "/help", "/setting", "/shell", "/update",
         ];
         let query = self.input.text.trim();
         if !query.starts_with('/') || query.contains(char::is_whitespace) {

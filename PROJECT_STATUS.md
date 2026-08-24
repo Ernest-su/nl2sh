@@ -60,6 +60,10 @@ Last Updated: 2026-08-24
 
 ## Completed
 
+- `/shell` 退出后显式清除 ratatui 差分缓存，确保恢复 alternate screen 后完整重绘 TUI，而非只绘制差异导致界面缺失。
+- Provider 设置在面板会话内分别保留 Ollama 与 Custom 的 Endpoint 草稿，切换到其他内置服务商再返回时恢复此前输入。
+- 统一 TUI 设置面板的“服务”分类恢复内置 Provider 选择，复用向导中的 OpenAI、DeepSeek、Moonshot/Kimi、SiliconFlow、Ollama 与 Custom 预设；切换只回填 Endpoint，不覆盖 API Key、模型或协议。
+- 本地 `/shell` 可暂停 TUI 并进入系统交互 shell，使用 `exit` 或 Ctrl+D 后回收子进程、恢复终端并重绘原会话；shell 内容不进入模型上下文或审计日志。
 - Android shell 版类 Hermes AI Agent 的产品定位，以单文件 Android 可执行程序和丰富 TUI 为主要交付形态。
 - 模块化 Cargo 工程、CLI、配置加载/校验/向导。
 - 两种 OpenAI API adapter 与统一 LLM trait。
@@ -128,6 +132,10 @@ Last Updated: 2026-08-24
 
 ## Verification Performed
 
+- `/shell` 返回完整重绘：`cargo fmt --all -- --check`、`cargo check` 和 `/shell` 伪终端回归通过；回归在 `exit` 后要求重新出现完整框架的 `Ctrl+Q` 提示，并继续验证安全退出与 shell 内容不写入日志。
+- Ollama/Custom Endpoint 草稿保留：`cargo fmt --all -- --check`、`cargo check` 与 8 项设置面板测试通过；新增回归覆盖自定义 Ollama 地址和 Custom 地址在切换其他 Provider 后分别恢复。
+- TUI 内置 Provider 恢复：`cargo fmt --all -- --check`、`cargo check`、59 项库测试及其余非 TUI 集成测试通过；新增回归覆盖预设识别、Endpoint 联动、Custom 编辑，以及 API Key、模型和协议不被覆盖。全量 `cargo test` 仅既有 `agent_reply_remains_in_live_tui_until_ctrl_q` 因启动动画 ANSI 差分文本匹配超时。
+- `/shell` 直控终端：`cargo fmt --all -- --check`、`cargo check` 与新增伪终端回归通过；回归覆盖普通命令执行、`exit` 返回、TUI 子进程继续存活、安全退出，以及 shell 内容不写入审计日志。全量 `cargo test` 的其余测试通过，既有启动动画原始 ANSI 连续文本匹配用例 `agent_reply_remains_in_live_tui_until_ctrl_q` 仍超时。
 - Agent 任务运行预算：stable Rust 1.98.0 下 `cargo fmt --all -- --check` 与 `cargo check` 通过；58 项库测试、3 项主程序测试、13 项 Agent loop、取消、配置、日志、10 项 LLM mock、PTY、root、安全以及 3 项其他 TUI 测试通过，共 108 项。全量 `cargo test` 仅既有 `agent_reply_remains_in_live_tui_until_ctrl_q` 失败，单独重跑仍因启动动画 ratatui 差分 ANSI 输出无法形成连续“审计日志保留”原始文本而超时。
 - LLM 自动协议协商：`cargo fmt --all -- --check`、`cargo check`、`cargo clippy --all-targets -- -D warnings` 与 NDK r28/API 26 AArch64 release 构建通过；58 项库测试、CLI、Agent loop、取消、配置、日志、10 项 LLM mock、PTY、root 与安全测试通过。回归覆盖 Responses 成功、结构不匹配回退并缓存 Chat Completions、SSE 回退、部分文本后禁止重放，以及 503 不误判；全量 `cargo test` 的 4 项 TUI 伪终端测试中 3 项通过，既有启动动画原始 ANSI 文本匹配用例 `agent_reply_remains_in_live_tui_until_ctrl_q` 仍超时。
 - 设置面板日志与 ASCII Art 开关：`cargo fmt --all -- --check`、`cargo check`、`cargo clippy --all-targets -- -D warnings` 通过；58 项库测试、CLI、Agent、配置、日志、LLM mock、PTY、root 与安全测试通过。全量 `cargo test` 的 4 项 TUI 伪终端测试中 3 项通过，既有启动动画原始 ANSI 文本匹配用例 `agent_reply_remains_in_live_tui_until_ctrl_q` 仍超时。

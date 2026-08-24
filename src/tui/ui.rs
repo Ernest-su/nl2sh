@@ -406,6 +406,7 @@ fn render_command_menu(f: &mut Frame, app: &App, input_area: ratatui::layout::Re
                 (UiLanguage::ZhCn, "/clear") => "清空当前会话",
                 (UiLanguage::ZhCn, "/config") => "重新配置模型服务",
                 (UiLanguage::ZhCn, "/setting") => "打开设置（/config 别名）",
+                (UiLanguage::ZhCn, "/shell") => "进入普通终端（exit 返回）",
                 (UiLanguage::ZhCn, "/exit") => "安全退出",
                 (UiLanguage::ZhCn, "/help") => "显示帮助",
                 (UiLanguage::ZhCn, "/update") => "检查版本更新",
@@ -413,6 +414,7 @@ fn render_command_menu(f: &mut Frame, app: &App, input_area: ratatui::layout::Re
                 (UiLanguage::En, "/clear") => "Clear the current session",
                 (UiLanguage::En, "/config") => "Reconfigure the model provider",
                 (UiLanguage::En, "/setting") => "Open Settings (/config alias)",
+                (UiLanguage::En, "/shell") => "Open terminal (exit returns)",
                 (UiLanguage::En, "/exit") => "Quit safely",
                 (UiLanguage::En, "/help") => "Show help",
                 (UiLanguage::En, "/update") => "Check for updates",
@@ -957,6 +959,7 @@ mod tests {
         assert!(menu.contains("/exit"));
         assert!(menu.contains("/help"));
         assert!(menu.contains("/setting"));
+        assert!(menu.contains("/shell"));
         assert!(!menu.contains("/provider"));
         assert!(terminal
             .backend()

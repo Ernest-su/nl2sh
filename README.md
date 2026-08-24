@@ -163,7 +163,7 @@ Agent 任务默认使用 Normal 预算：50 Step、100 次 Tool Call、30 分钟
 
 `history_log_file` 默认为 `nl2sh.log`，相对路径按 `config.toml` 所在目录解析。日志采用逐行 JSON，记录用户输入、命令、输出、结果和错误并在每条记录后刷新；新文件权限为 `0600`。日志可能包含命令输出中的设备信息，排查完成后应按实际保密要求保管或清理，但不会写入 API Key。设置面板“界面”分类中的“清除审计日志”可用 Enter 截断当前日志，清除后本次进程仍会继续记录新事件。\n\n输出资源默认受限：实时 TUI 为 256 KiB、单个捕获流为 1 MiB、单个发给模型的 Tool Result 为 128 KiB、单条日志事件为 256 KiB、单个日志文件为 10 MiB。对应配置项为 `ui_live_output_max_bytes`、`tool_output_max_bytes`、`model_tool_output_max_bytes`、`history_log_event_max_bytes` 和 `history_log_max_bytes`。所有内容截断都会插入 `NL2SH ... TRUNCATED` 标记；日志达到文件上限后停止追加，不会静默形成不完整记录。
 
-`ui_language` 控制终端界面语言，可选 `zh_cn` 或 `en`，默认 `zh_cn`。使用 `/config` 或其别名 `/setting` 打开统一设置面板；原 `/provider`、`/model`、`/models`、`/proxy` 命令已移除。Tab/Shift+Tab 切分类，Up/Down 选字段，Left/Right 调整当前值，Ctrl+S 保存；面板接管键盘焦点，当前文本字段具有输入边界、背景和闪烁光标。最大步骤和轮次显示推荐值 24/16。`show_buddha_ascii_art` 与 `show_train_ascii_art` 分别控制佛像和启动小火车，默认均为 `true`，可在“界面”分类中独立关闭。
+`ui_language` 控制终端界面语言，可选 `zh_cn` 或 `en`，默认 `zh_cn`。使用 `/config` 或其别名 `/setting` 打开统一设置面板；原 `/provider`、`/model`、`/models`、`/proxy` 命令已移除。“服务”分类可用 Left/Right 在 OpenAI、DeepSeek、Moonshot/Kimi、SiliconFlow、Ollama 和 Custom 间选择，内置项会回填 Endpoint 但保留 API Key、模型与协议。Tab/Shift+Tab 切分类，Up/Down 选字段，Left/Right 调整当前值，Ctrl+S 保存；面板接管键盘焦点，当前文本字段具有输入边界、背景和闪烁光标。最大步骤和轮次显示推荐值 24/16。`show_buddha_ascii_art` 与 `show_train_ascii_art` 分别控制佛像和启动小火车，默认均为 `true`，可在“界面”分类中独立关闭。
 
 设置面板的“网络”Tab 支持 HTTP/HTTPS CONNECT、SOCKS5 和推荐的 SOCKS5H（由代理解析 DNS），以及可选用户名、密码和绕过列表。总开关关闭时保留其他代理字段。代理设置统一用于模型请求、模型发现、余额和更新检查；密码掩码显示，不进入对话或审计日志。
 
@@ -172,6 +172,8 @@ Agent 任务默认使用 Normal 预算：50 Step、100 次 Tool Call、30 分钟
 ## 使用
 
 TUI 将所有去除前导空白后以 `/` 开头的输入保留为本地命令；未知斜杠命令只显示本地提示，不会发送给 LLM。
+
+在一次设置面板会话中，Ollama 与 Custom 分别保留自己的 Endpoint 草稿；切换到其他 Provider 再切回来时，会恢复该选项此前填写的地址。
 
 设置面板的“模型与智能体”Tab 提供“在线模型列表”，选中后按 Enter 会在后台从当前 Provider 拉取模型；成功后使用 Up/Down 和 Enter 选择并回填模型元数据，失败时保留手工输入。
 
@@ -186,6 +188,8 @@ nl2sh update                  # 检查并安装最新 Android 构建
 ```
 
 Command 模式生成、分类后执行单条命令；`--dry-run` 只展示。修改或危险命令在无 TTY 时会拒绝，不能用管道伪造确认。需要多轮执行和结果回传时使用默认 Agent 模式。Agent TUI 在请求和捕获式执行期间保持同一 frame，并在界面内显示输出与确认弹窗；审批弹窗支持方向键与 Enter，也可直接使用 `1-6` 或 `y/n/a/e/i/t` 选择允许一次、当前任务允许完全相同命令、拒绝、编辑、交互执行或捕获执行。任务级允许不适用于 Root 或危险命令，不持久化且不做命令前缀匹配。命令运行时实时展示有界输出，完成后工具结果默认折叠，按 F2 可展开或收起；超出各层配置上限时，日志和模型上下文会携带明确截断标记。Agent 总结支持终端 Markdown 渲染。TUI 使用统一的现代深色语义主题，并按终端能力选择 TrueColor 或 ANSI 256 palette；普通正文保持灰白，青蓝表示交互与焦点，绿色、黄色和红色分别保留给成功、警告和错误。底部输入框使用低对比度深色背景和青蓝色闪烁光标，支持 Left/Right/Home/End/Delete 编辑及 Up/Down 调取当前会话输入历史；输入 `/` 时显示垂直命令候选，使用 Up/Down 选择、Enter 补全，当前提供 `/help`、`/clear`、`/config`、`/setting`、`/balance`、`/update` 和 `/exit`。每次 Agent 任务完成后，状态栏显示该任务跨全部 Tool Calling 步骤累计的输入、输出和总 Token；Provider 未返回用量时显示未知而不是零。TUI 启用鼠标追踪以稳定接收滚轮；复制屏幕文字时按住 Shift 拖选，由宿主终端高亮选区，再通过右键系统菜单复制。对话区只保留上下边框，避免选取内容混入左右边框。另支持 PageUp/PageDown 浏览历史、Enter 提交、Ctrl+C 取消当前任务（空闲时清空输入）、Ctrl+Q 安全退出。
+
+本地命令 `/shell` 会暂停 TUI 并进入设备的普通交互 shell，可直接运行 adb shell 环境中的命令；输入 `exit` 或按 `Ctrl+D` 即恢复原 TUI。原会话不会丢失，shell 输入与输出也不会发送给模型或写入审计日志。该命令也会出现在 `/` 候选菜单中。
 
 风险等级为 `ReadOnly`、`Mutating`、`Dangerous`、`Critical`。内置检测覆盖危险删除、格式化、块设备写入、递归根权限修改、重启/关机、分区擦除和读写 remount；自定义规则使用 `[[security_rules]]` 添加，不能替换内置规则。
 

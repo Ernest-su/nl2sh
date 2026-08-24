@@ -690,6 +690,58 @@ async fn run_inner(
                             );
                             continue;
                         }
+                        "/shell" => {
+                            log.record("local_command", "/shell")?;
+                            app.status = localized_status(
+                                config.ui_language,
+                                "普通终端运行中；输入 exit 或按 Ctrl+D 返回",
+                                "terminal active; type exit or press Ctrl+D to return",
+                            );
+                            let result = executor
+                                .execute_user_shell(interactive_shell_command())
+                                .await;
+                            // This local shell is awaited inside the event loop, so the
+                            // regular suspended-state edge detector cannot observe its
+                            // true -> false transition. Invalidate ratatui's retained
+                            // buffer explicitly before the next full frame.
+                            terminal
+                                .terminal()
+                                .clear()
+                                .context("clear terminal after local shell")?;
+                            app.status = match result {
+                                Ok(result) if result.interrupted => localized_status(
+                                    config.ui_language,
+                                    "普通终端已中断，已返回 TUI",
+                                    "terminal interrupted; returned to TUI",
+                                ),
+                                Ok(_) => localized_status(
+                                    config.ui_language,
+                                    "已从普通终端返回 TUI",
+                                    "returned to TUI from terminal",
+                                ),
+                                Err(error) => {
+                                    history
+                                        .lock()
+                                        .map_err(|_| {
+                                            anyhow::anyhow!("TUI history lock is poisoned")
+                                        })?
+                                        .push(match config.ui_language {
+                                            UiLanguage::ZhCn => {
+                                                format!("⚠️ 无法启动普通终端：{error:#}")
+                                            }
+                                            UiLanguage::En => format!(
+                                                "[WARN] Could not start terminal: {error:#}"
+                                            ),
+                                        });
+                                    localized_status(
+                                        config.ui_language,
+                                        "普通终端启动失败",
+                                        "failed to start terminal",
+                                    )
+                                }
+                            };
+                            continue;
+                        }
                         "/help" => {
                             log.record("local_command", "/help")?;
                             history
@@ -903,6 +955,9 @@ impl UpdatePrompt {
 
 struct SettingsEditor {
     config: Config,
+    provider: usize,
+    ollama_endpoint: String,
+    custom_endpoint: String,
     tab: usize,
     selected: usize,
     text_cursor: usize,
@@ -922,8 +977,21 @@ enum SettingsAction {
 
 impl SettingsEditor {
     fn new(config: &Config, tab: usize) -> Self {
+        let provider = crate::config::provider_index(&config.endpoint);
+        let ollama_index = crate::config::PROVIDERS.len() - 2;
+        let ollama_endpoint = if provider == ollama_index {
+            config.endpoint.clone()
+        } else {
+            crate::config::PROVIDERS[ollama_index]
+                .endpoint()
+                .unwrap_or_default()
+                .into()
+        };
         let mut editor = Self {
             config: config.clone(),
+            provider,
+            ollama_endpoint,
+            custom_endpoint: config.endpoint.clone(),
             tab: tab.min(4),
             selected: 0,
             text_cursor: 0,
@@ -937,7 +1005,7 @@ impl SettingsEditor {
     }
 
     fn field_count(&self) -> usize {
-        [3, 6, 6, 7, 6][self.tab]
+        [4, 6, 6, 7, 6][self.tab]
     }
 
     fn view(&self, cursor_visible: bool) -> PopupView {
@@ -1026,6 +1094,12 @@ impl SettingsEditor {
         let zh = self.config.ui_language == UiLanguage::ZhCn;
         match self.tab {
             0 => vec![
+                (
+                    if zh { "服务商" } else { "Provider" },
+                    crate::config::PROVIDERS[self.provider]
+                        .name(self.config.ui_language)
+                        .into(),
+                ),
                 (
                     if zh { "API 地址" } else { "API endpoint" },
                     self.config.endpoint.clone(),
@@ -1303,6 +1377,7 @@ impl SettingsEditor {
                     let cursor = self.text_cursor;
                     self.text_mut().drain(previous..cursor);
                     self.text_cursor = previous;
+                    self.record_edited_endpoint();
                 }
                 SettingsAction::Continue
             }
@@ -1310,6 +1385,7 @@ impl SettingsEditor {
                 if let Some(character) = self.selected_text()[self.text_cursor..].chars().next() {
                     let cursor = self.text_cursor;
                     self.text_mut().drain(cursor..cursor + character.len_utf8());
+                    self.record_edited_endpoint();
                 }
                 SettingsAction::Continue
             }
@@ -1334,6 +1410,9 @@ impl SettingsEditor {
                 } else {
                     cursor + character.len_utf8()
                 };
+                if !stripped {
+                    self.record_edited_endpoint();
+                }
                 SettingsAction::Continue
             }
             _ => SettingsAction::Continue,
@@ -1341,12 +1420,12 @@ impl SettingsEditor {
     }
 
     fn is_text_field(&self) -> bool {
-        matches!((self.tab, self.selected), (0, 0 | 1) | (1, 0) | (4, 2..=5))
+        matches!((self.tab, self.selected), (0, 1 | 2) | (1, 0) | (4, 2..=5))
     }
     fn text_mut(&mut self) -> &mut String {
         match (self.tab, self.selected) {
-            (0, 0) => &mut self.config.endpoint,
-            (0, 1) => &mut self.config.api_key,
+            (0, 1) => &mut self.config.endpoint,
+            (0, 2) => &mut self.config.api_key,
             (1, 0) => &mut self.config.model,
             (4, 2) => &mut self.config.proxy_address,
             (4, 3) => &mut self.config.proxy_username,
@@ -1357,8 +1436,8 @@ impl SettingsEditor {
 
     fn selected_text(&self) -> &str {
         match (self.tab, self.selected) {
-            (0, 0) => &self.config.endpoint,
-            (0, 1) => &self.config.api_key,
+            (0, 1) => &self.config.endpoint,
+            (0, 2) => &self.config.api_key,
             (1, 0) => &self.config.model,
             (4, 2) => &self.config.proxy_address,
             (4, 3) => &self.config.proxy_username,
@@ -1390,6 +1469,37 @@ impl SettingsEditor {
         }
     }
 
+    fn record_edited_endpoint(&mut self) {
+        if self.tab == 0 && self.selected == 1 {
+            let ollama_index = crate::config::PROVIDERS.len() - 2;
+            if self.provider == ollama_index {
+                self.ollama_endpoint = self.config.endpoint.clone();
+            } else {
+                self.provider = crate::config::PROVIDERS.len() - 1;
+                self.custom_endpoint = self.config.endpoint.clone();
+            }
+        }
+    }
+
+    fn select_provider(&mut self, direction: i8) {
+        let ollama_index = crate::config::PROVIDERS.len() - 2;
+        let custom_index = crate::config::PROVIDERS.len() - 1;
+        match self.provider {
+            index if index == ollama_index => self.ollama_endpoint = self.config.endpoint.clone(),
+            index if index == custom_index => self.custom_endpoint = self.config.endpoint.clone(),
+            _ => {}
+        }
+        self.provider = cycle_index(self.provider, crate::config::PROVIDERS.len(), direction);
+        self.config.endpoint = match self.provider {
+            index if index == ollama_index => self.ollama_endpoint.clone(),
+            index if index == custom_index => self.custom_endpoint.clone(),
+            index => crate::config::PROVIDERS[index]
+                .endpoint()
+                .unwrap_or_default()
+                .into(),
+        };
+    }
+
     fn input_with_cursor(&self, displayed: &str, cursor_visible: bool) -> String {
         let selected = self.selected_text();
         let mut cursor = self.text_cursor.min(selected.len());
@@ -1408,7 +1518,10 @@ impl SettingsEditor {
     fn adjust(&mut self, direction: i8) {
         use crate::config::{ApiType, ConfirmPolicy, ExecuteUserMode, ProxyType, SecurityLevel};
         match (self.tab, self.selected) {
-            (0, 2) => {
+            (0, 0) => {
+                self.select_provider(direction);
+            }
+            (0, 3) => {
                 self.config.api_type = cycle3(
                     self.config.api_type,
                     [ApiType::Auto, ApiType::Responses, ApiType::ChatCompletions],
@@ -1538,6 +1651,14 @@ fn cycle3<T: Copy + PartialEq>(value: T, values: [T; 3], direction: i8) -> T {
     }]
 }
 
+fn cycle_index(value: usize, count: usize, direction: i8) -> usize {
+    if direction < 0 {
+        value.checked_sub(1).unwrap_or(count - 1)
+    } else {
+        (value + 1) % count
+    }
+}
+
 struct SessionTextSink {
     history: Arc<Mutex<Vec<String>>>,
     max_bytes: usize,
@@ -1572,6 +1693,17 @@ fn localized_status(language: UiLanguage, zh_cn: &str, en: &str) -> String {
         UiLanguage::En => en,
     }
     .into()
+}
+
+fn interactive_shell_command() -> &'static str {
+    #[cfg(target_os = "android")]
+    {
+        "exec /system/bin/sh -i"
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        "exec /bin/sh -i"
+    }
 }
 
 struct ConfirmRequest {
@@ -1973,6 +2105,8 @@ mod tests {
         let config = Config::default();
         let original = config.endpoint.clone();
         let mut editor = SettingsEditor::new(&config, 0);
+        editor.selected = 1;
+        editor.sync_text_cursor();
         for character in "<35;46;8M".chars() {
             editor.handle_key(KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE));
         }
@@ -2006,6 +2140,8 @@ mod tests {
             ..Config::default()
         };
         let mut editor = SettingsEditor::new(&config, 0);
+        editor.selected = 1;
+        editor.sync_text_cursor();
         editor.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
         editor.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
         editor.handle_key(KeyEvent::new(KeyCode::Char('中'), KeyModifiers::NONE));
@@ -2014,6 +2150,63 @@ mod tests {
         assert_eq!(editor.config.endpoint, "你中好");
         editor.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
         assert_eq!(editor.config.endpoint, "你好");
+    }
+
+    #[test]
+    fn settings_provider_presets_update_only_the_endpoint() {
+        let config = Config {
+            endpoint: "https://api.openai.com/v1".into(),
+            api_key: "keep-secret".into(),
+            model: "keep-model".into(),
+            api_type: crate::config::ApiType::Responses,
+            ..Config::default()
+        };
+        let mut editor = SettingsEditor::new(&config, 0);
+
+        assert_eq!(editor.provider, 0);
+        editor.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
+        assert_eq!(editor.config.endpoint, "https://api.deepseek.com");
+        assert_eq!(editor.config.api_key, "keep-secret");
+        assert_eq!(editor.config.model, "keep-model");
+        assert_eq!(editor.config.api_type, crate::config::ApiType::Responses);
+
+        editor.provider = crate::config::PROVIDERS.len() - 2;
+        editor.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
+        assert_eq!(editor.provider, crate::config::PROVIDERS.len() - 1);
+        assert_eq!(editor.config.endpoint, "https://api.openai.com/v1");
+
+        editor.selected = 1;
+        editor.sync_text_cursor();
+        editor.handle_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE));
+        assert_eq!(editor.provider, crate::config::PROVIDERS.len() - 1);
+    }
+
+    #[test]
+    fn settings_restore_ollama_and_custom_endpoint_drafts() {
+        let config = Config {
+            endpoint: "https://custom.example/v1".into(),
+            ..Config::default()
+        };
+        let mut editor = SettingsEditor::new(&config, 0);
+        let ollama_index = crate::config::PROVIDERS.len() - 2;
+        let custom_index = crate::config::PROVIDERS.len() - 1;
+        assert_eq!(editor.provider, custom_index);
+
+        editor.select_provider(-1);
+        assert_eq!(editor.provider, ollama_index);
+        editor.selected = 1;
+        editor.config.endpoint = "http://192.168.1.20:11434/v1".into();
+        editor.record_edited_endpoint();
+
+        editor.selected = 0;
+        editor.select_provider(-1);
+        editor.select_provider(1);
+        assert_eq!(editor.provider, ollama_index);
+        assert_eq!(editor.config.endpoint, "http://192.168.1.20:11434/v1");
+
+        editor.select_provider(1);
+        assert_eq!(editor.provider, custom_index);
+        assert_eq!(editor.config.endpoint, "https://custom.example/v1");
     }
     use crate::{config::Config, security::assess};
 
