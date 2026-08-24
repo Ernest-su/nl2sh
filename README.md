@@ -13,6 +13,9 @@ Natural Language to Shell 是面向 Android 原生 `adb shell` 的类 Hermes AI 
 - 默认使用多轮 Agent Tool Calling；也支持只生成单条命令的 Command 模式。
 - 核心程序是单文件 Android 可执行程序，可直接推送到设备运行。
 - 丰富 TUI 支持 LLM 文本流式渐变输出、实时状态与命令输出、内嵌确认、历史滚动、工具结果折叠、Markdown 渲染、中英文界面和热重配置。
+- 内置 `read_file`、`list_dir`、`search_text`、`apply_patch` 结构化文件工具；允许绝对路径、父目录和符号链接，资源大小仍受限，补丁先展示 diff 并确认。
+- 完整对话自动保存，可用 `/sessions` 列表、恢复、重命名或删除；凭据、余额和临时审批不保存。
+- 审批窗口根据命令或 diff 动态调整宽高；超高内容可用滚轮或 PageUp/PageDown 浏览，操作选项始终固定可见。
 - 支持 Chat Completions 与 Responses API、自定义 OpenAI 兼容 endpoint。
 - `balanced` 默认策略自动执行只读查询、确认修改操作、二次确认危险操作。
 - LLM 不能决定确认、风险等级、root 提升或超时；用户编辑后的命令必须重新分类。
@@ -187,7 +190,9 @@ nl2sh --no-pty --ascii
 nl2sh update                  # 检查并安装最新 Android 构建
 ```
 
-Command 模式生成、分类后执行单条命令；`--dry-run` 只展示。修改或危险命令在无 TTY 时会拒绝，不能用管道伪造确认。需要多轮执行和结果回传时使用默认 Agent 模式。Agent TUI 在请求和捕获式执行期间保持同一 frame，并在界面内显示输出与确认弹窗；审批弹窗支持方向键与 Enter，也可直接使用 `1-6` 或 `y/n/a/e/i/t` 选择允许一次、当前任务允许完全相同命令、拒绝、编辑、交互执行或捕获执行。任务级允许不适用于 Root 或危险命令，不持久化且不做命令前缀匹配。命令运行时实时展示有界输出，完成后工具结果默认折叠，按 F2 可展开或收起；超出各层配置上限时，日志和模型上下文会携带明确截断标记。Agent 总结支持终端 Markdown 渲染。TUI 使用统一的现代深色语义主题，并按终端能力选择 TrueColor 或 ANSI 256 palette；普通正文保持灰白，青蓝表示交互与焦点，绿色、黄色和红色分别保留给成功、警告和错误。底部输入框使用低对比度深色背景和青蓝色闪烁光标，支持 Left/Right/Home/End/Delete 编辑及 Up/Down 调取当前会话输入历史；输入 `/` 时显示垂直命令候选，使用 Up/Down 选择、Enter 补全，当前提供 `/help`、`/clear`、`/config`、`/setting`、`/balance`、`/update` 和 `/exit`。每次 Agent 任务完成后，状态栏显示该任务跨全部 Tool Calling 步骤累计的输入、输出和总 Token；Provider 未返回用量时显示未知而不是零。TUI 启用鼠标追踪以稳定接收滚轮；复制屏幕文字时按住 Shift 拖选，由宿主终端高亮选区，再通过右键系统菜单复制。对话区只保留上下边框，避免选取内容混入左右边框。另支持 PageUp/PageDown 浏览历史、Enter 提交、Ctrl+C 取消当前任务（空闲时清空输入）、Ctrl+Q 安全退出。
+Command 模式生成、分类后执行单条命令；`--dry-run` 只展示。修改或危险命令在无 TTY 时会拒绝，不能用管道伪造确认。需要多轮执行和结果回传时使用默认 Agent 模式。Agent TUI 在请求和捕获式执行期间保持同一 frame，并在界面内显示输出与确认弹窗；审批弹窗支持方向键与 Enter，也可直接使用 `1-6` 或 `y/n/a/e/i/t` 选择允许一次、当前任务允许完全相同命令、拒绝、编辑、交互执行或捕获执行。任务级允许不适用于 Root 或危险命令，不持久化且不做命令前缀匹配。命令运行时实时展示有界输出，完成后工具结果默认折叠，按 F2 可展开或收起；超出各层配置上限时，日志和模型上下文会携带明确截断标记。Agent 总结支持终端 Markdown 渲染。TUI 使用统一的现代深色语义主题，并按终端能力选择 TrueColor 或 ANSI 256 palette；普通正文保持灰白，青蓝表示交互与焦点，绿色、黄色和红色分别保留给成功、警告和错误。底部输入框使用低对比度深色背景和青蓝色闪烁光标，支持 Left/Right/Home/End/Delete 编辑及 Up/Down 调取当前会话输入历史；输入 `/` 时显示垂直命令候选，使用 Up/Down 选择、Enter 补全，当前提供 `/help`、`/clear`、`/config`、`/setting`、`/balance`、`/sessions`、`/update` 和 `/exit`。每次 Agent 任务完成后，状态栏显示该任务跨全部 Tool Calling 步骤累计的输入、输出和总 Token；Provider 未返回用量时显示未知而不是零。TUI 启用鼠标追踪以稳定接收滚轮；复制屏幕文字时按住 Shift 拖选，由宿主终端高亮选区，再通过右键系统菜单复制。对话区只保留上下边框，避免选取内容混入左右边框。另支持 PageUp/PageDown 浏览历史、Enter 提交、Ctrl+C 取消当前任务（空闲时清空输入）、Ctrl+Q 安全退出。
+
+会话在每个完整 Agent turn 后自动保存到配置目录旁的私有 `sessions/` 目录。名称只接受字母、数字、`-` 和 `_`：`/sessions` 列表，`/sessions resume NAME` 恢复，`/sessions rename OLD NEW` 重命名，`/sessions delete NAME` 删除。会话只保存对话与有界工具结果，不保存 API Key、代理密码、余额或当前任务审批许可。
 
 本地命令 `/shell` 会暂停 TUI 并进入设备的普通交互 shell，可直接运行 adb shell 环境中的命令；输入 `exit` 或按 `Ctrl+D` 即恢复原 TUI。原会话不会丢失，shell 输入与输出也不会发送给模型或写入审计日志。该命令也会出现在 `/` 候选菜单中。
 

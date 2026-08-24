@@ -3,6 +3,8 @@
 pub mod agent;
 /// Validated TOML configuration and initialization wizard.
 pub mod config;
+/// Bounded structured file operations for the Agent.
+pub mod file_tools;
 /// Persistent structured interaction history for diagnostics.
 pub mod history;
 /// Shared bounded-text utilities for execution, UI, logs, and model context.
@@ -16,6 +18,8 @@ pub mod provider_account;
 pub mod provider_metadata;
 /// Local shell command classification and confirmation requirements.
 pub mod security;
+/// Private, bounded conversation snapshots used by `/sessions`.
+pub mod sessions;
 /// PTY/pipeline execution, process cleanup, and Android root selection.
 pub mod shell;
 /// Ratatui/crossterm terminal input interface.

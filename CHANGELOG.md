@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Made the confirmation panel size itself from wrapped content; oversized commands and diffs scroll with the wheel or PageUp/PageDown while approval controls remain pinned.
+- Added bounded `read_file`, `list_dir`, `search_text`, and `apply_patch` tools without a workspace path sandbox; edits show a diff and require confirmation before an atomic write.
+- Added private session autosave plus `/sessions` list, resume, rename, and delete operations; credentials, balances, and temporary approvals are excluded.
 - Fixed history scrolling through Windows ADB terminals with a launcher-enabled alternate-scroll mode that leaves remote mouse capture disabled and maps terminal-generated Up/Down events to conversation scrolling; Linux keeps native mouse capture.
 - Completed the Android device validation matrix for root/non-root execution, mutation confirmation, command timeout cleanup, and fullscreen interactive programs with terminal/TUI restoration.
 - Fixed incomplete TUI frames after leaving `/shell` by explicitly invalidating ratatui's retained buffer before redrawing the restored alternate screen.

@@ -46,6 +46,8 @@ TUI 的视觉语义统一由 `UI_DESIGN.md` 约束。实现应以集中式 `Them
 |---|---|---|---|
 | `src/config` | `Config`、枚举、loader、wizard、分层校验 | 文件/缺省值/环境 → 可进入 TUI 的运行配置；完整 Provider 配置 → LLM 可用 | 不执行命令，不持有 UI 状态 |
 | `src/history` | `HistoryLog`、JSON Lines 事件与安全创建 | 交互事件 → 可刷新诊断日志 | 不记录 provider 凭据，不参与安全决策 |
+| `src/file_tools` | `FileToolExecutor`、结构化读取/搜索/补丁 | 任意可访问路径 → 有界结果或待确认 diff | 路径不设工作区边界；写入必须先确认，不调用 shell |
+| `src/sessions` | `SessionStore`、私有原子快照 | 完整对话 turn → 可恢复会话 | 不序列化配置、凭据、余额或任务审批；工具结果保持有界 |
 | `src/llm` | `LlmClient`、`TextDeltaSink`、统一消息/工具类型、两个 HTTP/SSE adapter、retry | `LlmRequest` → 文本增量 + `LlmResponse` | 不进行安全判断或执行工具 |
 | `src/provider_metadata` | `ProviderMetadataClient`、Provider 识别、模型列表与上下文元数据归一化 | Provider 配置 → `ModelMetadata` 列表 | 只读网络访问，不记录凭据/原始账户响应，不参与模型推理与安全判断 |
 | `src/provider_account` | `ProviderAccountClient`、余额结果归一化 | Provider 凭据 → 可显示余额 | 仅调用公开只读接口；不记录凭据、余额或原始响应，不参与推理、安全或执行 |
@@ -61,6 +63,10 @@ TUI 的视觉语义统一由 `UI_DESIGN.md` 约束。实现应以集中式 `Them
 ## Agent 执行流程
 
 只读操作在 balanced/risk_only 下自动执行；普通修改必须确认；Dangerous/Critical 需要二次确认。root 只是执行属性，不改变分类。审批界面提供固定编号与快捷键，可仅允许本次、拒绝、编辑或选择执行模式；对非 Root、非强确认且最高为 Mutating 的命令，还可在当前 Agent 任务内记住完整命令的精确许可。该许可不持久化、不按前缀匹配，Runner 会在每次复用前重新检查当前评估仍满足条件。拒绝、失败或超时都会生成明确的失败 Tool Result。
+
+审批面板按命令或 diff 的 Unicode 显示宽度和实际换行高度动态调整，最大范围受终端与输入区约束。超高内容在独立正文区通过滚轮或 PageUp/PageDown 浏览，编号选择、强确认和编辑输入固定在底部；布局与滚动不改变风险等级或确认语义。
+
+Agent 文件操作优先使用 `read_file`、`list_dir`、`search_text` 和 `apply_patch`，不依赖设备端 `sed` 或 shell 重定向。路径不设工作区沙箱：允许绝对路径、父目录组件并跟随符号链接；读取、遍历、匹配和文件大小仍有硬上限，最终 Tool Result 继续使用配置的模型输出上限。`apply_patch` 在内存中验证唯一替换并生成 diff，确认前不打开目标进行写入，每次调用均单独确认，批准后才原子替换。
 
 Runner 以一次完整模型判断及其零个或多个工具结果为一个 Step，并独立维护 Step、Tool Call、活跃运行时间、连续停滞与重复动作预算。Fast/Normal/Deep 预设分别为 20/40/10 分钟、50/100/30 分钟和 100/200/60 分钟；显式字段可逐项覆盖预设，但 `hard_max_agent_steps` 始终取更小值。模型请求受剩余任务时限约束；命令执行沿用执行器自身的 TERM/KILL/wait 超时链，并在其安全回收后立即检查任务时限，避免取消 Future 造成 PTY fd 或子进程泄漏。等待安全确认的时间不计入活跃时间。相同规范化命令连续得到相同结果三次后，下一次会在执行边界前拒绝；连续无新证据达到阈值时注入强制重新规划提示，达到终止阈值时停止。80%/90% Step 水位会要求模型收敛。所有预算检查均位于安全链之外且不能批准命令、降低风险、跳过确认或改变 root 策略。
 
@@ -131,6 +137,8 @@ Confirmation policy
 `/config` 与别名 `/setting` 使用单一 TUI 设置面板承载服务、模型与 Agent、执行与安全、界面和网络分类；其他分散配置命令不再暴露。两者属于严格本地命令，打开面板后不得进入模型上下文。服务分类与旧向导共享内置 Provider 预设，选择预设只联动 Endpoint，保留 API Key、模型和协议，自定义 Endpoint 显示为 Custom。Tab/Shift+Tab 只切分类，Up/Down 只移动字段，Left/Right 只调整当前值；保存后主循环重新加载配置和客户端。界面分类独立控制佛像与小火车 ASCII Art，并提供显式的日志清除操作；日志清除仅截断当前 JSONL 文件并恢复后续记录能力，不清理当前会话或改变安全链。
 
 Agent TUI 在输入分发边界保留 `/` 前缀命名空间：所有去除前导空白后以 `/` 开头的输入均为本地命令，已知命令执行本地动作，未知命令只产生本地提示。任何斜杠命令都不得写入模型用户历史或调用 LLM。
+
+每个已完成 Agent turn 自动保存到配置文件同目录的 `sessions/` 私有目录，文件以 `0600` 原子替换。`/sessions` 负责列表、恢复、重命名和删除；恢复只装载完整 turn，并重新应用上下文轮数和 Tool Result 上限。会话文档仅包含 provider-neutral 对话项，不包含 `Config`，因此 API Key、代理密码、余额和仅当前任务有效的审批许可不会落盘。
 
 设置编辑器在单次打开期间分别持有 Ollama 与 Custom 的 Endpoint 草稿；离开对应 Provider 前保存当前值，切回时恢复。其他内置 Provider 仍使用固定预设地址，编辑其地址会转入 Custom。
 

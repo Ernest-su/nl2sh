@@ -13,10 +13,11 @@ use crate::{
     agent::{can_remember_approval, AgentOutcome, AgentRunner, ConfirmationDecision, Confirmer},
     config::{Config, UiLanguage},
     history::HistoryLog,
-    llm::{ConversationItem, LlmClient, TextDeltaSink},
+    llm::{ConversationItem, LlmClient, Role, TextDeltaSink},
     provider_account::{build_account_client, AccountBalance},
     provider_metadata::{build_metadata_client, ModelMetadata},
     security::{RiskLevel, SecurityAssessment},
+    sessions::SessionStore,
     shell::{OutputSink, ShellExecutor},
 };
 use anyhow::{Context, Result};
@@ -163,6 +164,13 @@ async fn run_inner(
         popup: None,
     };
     let mut model_history: Vec<Vec<ConversationItem>> = Vec::new();
+    let session_store = SessionStore::open(
+        config
+            .source
+            .as_deref()
+            .unwrap_or_else(|| std::path::Path::new("config.toml")),
+    )?;
+    let mut session_name = SessionStore::default_name();
     let mut active: Option<Pin<Box<dyn Future<Output = Result<AgentOutcome>> + '_>>> = None;
     let mut balance_active: Option<BalanceFuture> = None;
     let balance_supported = provider_configured && build_account_client(config).is_ok();
@@ -411,6 +419,29 @@ async fn run_inner(
                     while model_history.len() > config.max_context_turns {
                         model_history.remove(0);
                     }
+                    let store = session_store.clone();
+                    let name = session_name.clone();
+                    let turns = model_history.clone();
+                    let tool_limit = config.model_tool_output_max_bytes;
+                    let secrets = vec![config.api_key.clone(), config.proxy_password.clone()];
+                    let save = tokio::task::spawn_blocking(move || {
+                        store.save_redacted(&name, &turns, tool_limit, &secrets)
+                    })
+                    .await
+                    .context("session autosave worker failed")?;
+                    if let Err(error) = save {
+                        history
+                            .lock()
+                            .map_err(|_| anyhow::anyhow!("TUI history lock is poisoned"))?
+                            .push(format!(
+                                "{} session autosave failed: {error:#}",
+                                if config.ascii_symbols {
+                                    "[WARN]"
+                                } else {
+                                    "⚠️"
+                                }
+                            ));
+                    }
                     let context = context_usage(
                         outcome.final_input_tokens,
                         config.effective_context_window(),
@@ -475,6 +506,14 @@ async fn run_inner(
         while event::poll(Duration::ZERO)? {
             let event = event::read()?;
             if let Event::Mouse(mouse) = event {
+                if let Some(pending) = confirmation.as_mut() {
+                    match mouse.kind {
+                        MouseEventKind::ScrollUp => pending.scroll_up(3),
+                        MouseEventKind::ScrollDown => pending.scroll_down(3),
+                        _ => {}
+                    }
+                    continue;
+                }
                 match mouse.kind {
                     MouseEventKind::ScrollUp => app.scroll_conversation_up(3),
                     MouseEventKind::ScrollDown => app.scroll_conversation_down(3),
@@ -784,6 +823,135 @@ async fn run_inner(
                         }
                         _ => {}
                     }
+                    if input.split_whitespace().next() == Some("/sessions") {
+                        log.record("local_command", "/sessions")?;
+                        let parts = input.split_whitespace().collect::<Vec<_>>();
+                        let action = parts.get(1).copied();
+                        let result: Result<String> = match action {
+                            None => {
+                                let store = session_store.clone();
+                                tokio::task::spawn_blocking(move || {
+                                    let sessions = store.list()?;
+                                    if sessions.is_empty() {
+                                        return Ok("No saved sessions.".into());
+                                    }
+                                    Ok(sessions
+                                        .into_iter()
+                                        .map(|item| {
+                                            format!(
+                                                "{}  {} turns  {}",
+                                                item.name, item.turns, item.updated_unix_secs
+                                            )
+                                        })
+                                        .collect::<Vec<_>>()
+                                        .join("\n"))
+                                })
+                                .await
+                                .context("session list worker failed")?
+                            }
+                            Some("resume") if parts.len() == 3 => {
+                                let store = session_store.clone();
+                                let name = parts[2].to_string();
+                                let worker_name = name.clone();
+                                let max_turns = config.max_context_turns;
+                                let tool_limit = config.model_tool_output_max_bytes;
+                                let loaded = tokio::task::spawn_blocking(move || {
+                                    store.load(&worker_name, max_turns, tool_limit)
+                                })
+                                .await
+                                .context("session load worker failed")?;
+                                match loaded {
+                                    Ok(turns) => {
+                                        model_history = turns;
+                                        session_name = name;
+                                        append_restored_history(
+                                            &history,
+                                            &model_history,
+                                            config.ascii_symbols,
+                                        )?;
+                                        app.input_history.clear();
+                                        Ok(localized_status(
+                                            config.ui_language,
+                                            "会话已恢复",
+                                            "session restored",
+                                        ))
+                                    }
+                                    Err(error) => Err(error),
+                                }
+                            }
+                            Some("rename") if parts.len() == 4 => {
+                                let store = session_store.clone();
+                                let old = parts[2].to_string();
+                                let new = parts[3].to_string();
+                                let worker_old = old.clone();
+                                let worker_new = new.clone();
+                                tokio::task::spawn_blocking(move || {
+                                    store.rename(&worker_old, &worker_new)
+                                })
+                                .await
+                                .context("session rename worker failed")??;
+                                if session_name == old {
+                                    session_name = new;
+                                }
+                                Ok(localized_status(
+                                    config.ui_language,
+                                    "会话已重命名",
+                                    "session renamed",
+                                ))
+                            }
+                            Some("delete") if parts.len() == 3 => {
+                                let store = session_store.clone();
+                                let name = parts[2].to_string();
+                                let was_current = session_name == name;
+                                tokio::task::spawn_blocking(move || store.delete(&name))
+                                    .await
+                                    .context("session delete worker failed")??;
+                                if was_current {
+                                    session_name = SessionStore::default_name();
+                                }
+                                Ok(localized_status(
+                                    config.ui_language,
+                                    "会话已删除",
+                                    "session deleted",
+                                ))
+                            }
+                            _ => Err(anyhow::anyhow!(
+                                "usage: /sessions [resume NAME|rename OLD NEW|delete NAME]"
+                            )),
+                        };
+                        app.status = match result {
+                            Ok(message) => {
+                                history
+                                    .lock()
+                                    .map_err(|_| anyhow::anyhow!("TUI history lock is poisoned"))?
+                                    .push(message);
+                                localized_status(
+                                    config.ui_language,
+                                    "会话操作完成",
+                                    "session operation completed",
+                                )
+                            }
+                            Err(error) => {
+                                history
+                                    .lock()
+                                    .map_err(|_| anyhow::anyhow!("TUI history lock is poisoned"))?
+                                    .push(format!(
+                                        "{} {error:#}",
+                                        if config.ascii_symbols {
+                                            "[ERROR]"
+                                        } else {
+                                            "❌"
+                                        }
+                                    ));
+                                localized_status(
+                                    config.ui_language,
+                                    "会话操作失败",
+                                    "session operation failed",
+                                )
+                            }
+                        };
+                        continue;
+                    }
                     if input.trim_start().starts_with('/') {
                         log.record("unknown_local_command", input.trim())?;
                         history
@@ -961,6 +1129,9 @@ impl UpdatePrompt {
             }
             .into(),
             lines,
+            footer: Vec::new(),
+            scroll: 0,
+            min_height: 11,
             dangerous: false,
             informational: true,
         }
@@ -1075,6 +1246,9 @@ impl SettingsEditor {
                 }
                 .into(),
                 lines,
+                footer: Vec::new(),
+                scroll: 0,
+                min_height: 11,
                 dangerous: false,
                 informational: true,
             };
@@ -1120,6 +1294,9 @@ impl SettingsEditor {
             }
             .into(),
             lines,
+            footer: Vec::new(),
+            scroll: 0,
+            min_height: 11,
             dangerous: false,
             informational: true,
         }
@@ -1694,6 +1871,47 @@ fn cycle_index(value: usize, count: usize, direction: i8) -> usize {
     }
 }
 
+fn append_restored_history(
+    history: &Arc<Mutex<Vec<String>>>,
+    turns: &[Vec<ConversationItem>],
+    ascii: bool,
+) -> Result<()> {
+    let mut visible = history
+        .lock()
+        .map_err(|_| anyhow::anyhow!("TUI history lock is poisoned"))?;
+    visible.clear();
+    for turn in turns {
+        for item in turn {
+            match item {
+                ConversationItem::Message(message) => match message.role {
+                    Role::User => visible.push(format!("> {}", message.content)),
+                    Role::Assistant => visible.push(format!(
+                        "{} {}",
+                        if ascii { "[AGENT]" } else { "🤖" },
+                        message.content
+                    )),
+                    Role::System | Role::Tool => {}
+                },
+                ConversationItem::Tools(round) => {
+                    for (index, result) in round.results.iter().enumerate() {
+                        let name = round
+                            .calls
+                            .get(index)
+                            .map_or("tool", |call| call.name.as_str());
+                        visible.push(format!(
+                            "{} {}\n{}",
+                            if ascii { "[TOOL]" } else { "🔧" },
+                            name,
+                            result.output
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 struct SessionTextSink {
     history: Arc<Mutex<Vec<String>>>,
     max_bytes: usize,
@@ -1782,6 +2000,7 @@ struct ConfirmationUi {
     text: String,
     approval: ConfirmationDecision,
     selection: usize,
+    scroll: u16,
     language: UiLanguage,
 }
 
@@ -1812,6 +2031,7 @@ impl ConfirmationUi {
             text: String::new(),
             approval: ConfirmationDecision::Approve,
             selection: 0,
+            scroll: 0,
             language,
         }
     }
@@ -1822,18 +2042,24 @@ impl ConfirmationUi {
                 UiLanguage::ZhCn => PopupView {
                     title: "安全确认".into(),
                     lines: vec!["正在关闭…".into()],
+                    footer: Vec::new(),
+                    scroll: 0,
+                    min_height: 3,
                     dangerous: false,
                     informational: false,
                 },
                 UiLanguage::En => PopupView {
                     title: "Confirmation".into(),
                     lines: vec!["Closing…".into()],
+                    footer: Vec::new(),
+                    scroll: 0,
+                    min_height: 3,
                     dangerous: false,
                     informational: false,
                 },
             };
         };
-        let mut lines = match self.language {
+        let lines = match self.language {
             UiLanguage::ZhCn => vec![
                 format!("命令：{}", request.command),
                 format!(
@@ -1861,25 +2087,30 @@ impl ConfirmationUi {
                 request.assessment.explanation.clone(),
             ],
         };
+        let mut footer = Vec::new();
         match self.stage {
-            ConfirmationStage::Initial => lines.extend(self.initial_option_lines(request)),
+            ConfirmationStage::Initial => footer.extend(self.initial_option_lines(request)),
             ConfirmationStage::Double => {
-                lines.push(match self.language {
+                footer.push(match self.language {
                     UiLanguage::ZhCn => "高风险操作：输入 YES 后按 Enter：".into(),
                     UiLanguage::En => "High risk: type YES, then Enter:".into(),
                 });
-                lines.push(self.text.clone());
+                footer.push(self.text.clone());
             }
             ConfirmationStage::Edit => {
-                lines.push(match self.language {
+                footer.push(match self.language {
                     UiLanguage::ZhCn => "编辑命令后按 Enter（执行前会重新分类）：".into(),
                     UiLanguage::En => {
                         "Edit command, then Enter (reclassified before execution):".into()
                     }
                 });
-                lines.push(self.text.clone());
+                footer.push(self.text.clone());
             }
         }
+        footer.push(match self.language {
+            UiLanguage::ZhCn => "PgUp/PgDn 或滚轮查看长内容".into(),
+            UiLanguage::En => "PgUp/PgDn or wheel scrolls long content".into(),
+        });
         PopupView {
             title: match self.language {
                 UiLanguage::ZhCn => "安全确认",
@@ -1887,6 +2118,9 @@ impl ConfirmationUi {
             }
             .into(),
             lines,
+            footer,
+            scroll: self.scroll,
+            min_height: 11,
             dangerous: matches!(
                 request.assessment.risk_level,
                 RiskLevel::Dangerous | RiskLevel::Critical
@@ -1896,6 +2130,17 @@ impl ConfirmationUi {
     }
 
     fn handle_key(&mut self, key: KeyEvent) -> bool {
+        match key.code {
+            KeyCode::PageUp => {
+                self.scroll = self.scroll.saturating_sub(5);
+                return false;
+            }
+            KeyCode::PageDown => {
+                self.scroll = self.scroll.saturating_add(5);
+                return false;
+            }
+            _ => {}
+        }
         match self.stage {
             ConfirmationStage::Initial => match key.code {
                 KeyCode::Up => {
@@ -1956,6 +2201,14 @@ impl ConfirmationUi {
                 _ => false,
             },
         }
+    }
+
+    fn scroll_up(&mut self, rows: u16) {
+        self.scroll = self.scroll.saturating_sub(rows);
+    }
+
+    fn scroll_down(&mut self, rows: u16) {
+        self.scroll = self.scroll.saturating_add(rows);
     }
 
     fn initial_option_lines(&self, request: &ConfirmRequest) -> Vec<String> {
@@ -2298,8 +2551,8 @@ mod tests {
     fn numbered_menu_supports_task_approval_and_reject_aliases() {
         let (mut ui, mut response) = request("touch /tmp/file");
         let view = ui.view();
-        assert!(view.lines.iter().any(|line| line.starts_with("> 1.")));
-        assert!(view.lines.iter().any(|line| line.contains("[a]")));
+        assert!(view.footer.iter().any(|line| line.starts_with("> 1.")));
+        assert!(view.footer.iter().any(|line| line.contains("[a]")));
         assert!(ui.handle_key(KeyEvent::new(KeyCode::Char('2'), KeyModifiers::NONE,)));
         assert_eq!(
             response.try_recv(),
@@ -2318,7 +2571,7 @@ mod tests {
     fn high_risk_menu_disables_always_allow() {
         let (mut ui, mut response) = request("rm -rf /");
         let view = ui.view();
-        assert!(view.lines.iter().any(|line| line.contains("不可用")));
+        assert!(view.footer.iter().any(|line| line.contains("不可用")));
         assert!(!ui.handle_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE,)));
         assert!(matches!(
             response.try_recv(),
@@ -2327,6 +2580,20 @@ mod tests {
 
         assert!(!ui.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE)));
         assert_eq!(ui.selection, 2);
+    }
+
+    #[test]
+    fn confirmation_content_scroll_does_not_change_selection() {
+        let (mut ui, _response) = request(&"long command line\n".repeat(40));
+        assert!(!ui.handle_key(KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE,)));
+        assert_eq!(ui.scroll, 5);
+        assert_eq!(ui.selection, 0);
+        ui.scroll_down(3);
+        ui.scroll_up(2);
+        assert_eq!(ui.scroll, 6);
+        let view = ui.view();
+        assert_eq!(view.scroll, 6);
+        assert!(view.footer.iter().any(|line| line.contains("PgUp/PgDn")));
     }
 
     #[test]

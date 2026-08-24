@@ -11,7 +11,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
     Frame,
 };
-use unicode_width::UnicodeWidthChar;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 fn title_line(app: &App, theme: Theme) -> Line<'static> {
     let separator = || Span::styled(" | ", theme.style(theme.text_muted));
@@ -348,41 +348,104 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         render_command_menu(f, app, areas[2], theme);
     }
     if let Some(popup) = &app.popup {
-        let popup_height = (popup.lines.len() as u16)
+        let all_lines = popup.lines.iter().chain(&popup.footer);
+        let desired_width = all_lines
+            .flat_map(|line| line.split('\n'))
+            .map(UnicodeWidthStr::width)
+            .chain(std::iter::once(UnicodeWidthStr::width(
+                popup.title.as_str(),
+            )))
+            .max()
+            .unwrap_or(1)
+            .saturating_add(4);
+        let available_width = f.area().width.saturating_sub(2).max(3) as usize;
+        let popup_width = desired_width.clamp(36.min(available_width), available_width) as u16;
+        let inner_width = popup_width.saturating_sub(2).max(1) as usize;
+        let body_rows = wrapped_popup_rows(&popup.lines, inner_width);
+        let footer_rows = wrapped_popup_rows(&popup.footer, inner_width);
+        let desired_height = body_rows
+            .saturating_add(footer_rows)
             .saturating_add(2)
-            .max(11)
-            .min(f.area().height.saturating_sub(2))
-            .max(3);
-        let area = bottom_left_rect(78, popup_height, areas[2].y, f.area());
+            .max(popup.min_height as usize);
+        let popup_height = desired_height
+            .min(areas[2].y.saturating_sub(f.area().y) as usize)
+            .max(3) as u16;
+        let area = ratatui::layout::Rect::new(
+            f.area().x,
+            areas[2].y.saturating_sub(popup_height),
+            popup_width.min(f.area().width),
+            popup_height,
+        );
         f.render_widget(Clear, area);
+        let color = popup_color(popup.dangerous, popup.informational, theme);
         f.render_widget(
-            Paragraph::new(Text::from(
-                popup
-                    .lines
-                    .iter()
-                    .map(|line| popup_line(line, popup.dangerous, theme))
-                    .collect::<Vec<_>>(),
-            ))
-            .style(popup_style(theme, theme.text_primary))
-            .wrap(Wrap { trim: false })
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .style(Style::default().bg(theme.background_alt))
-                    .border_style(popup_style(
-                        theme,
-                        popup_color(popup.dangerous, popup.informational, theme),
-                    ))
-                    .title(Line::styled(
-                        popup.title.as_str(),
-                        theme
-                            .bold(popup_color(popup.dangerous, popup.informational, theme))
-                            .bg(theme.background_alt),
-                    )),
-            ),
+            Block::default()
+                .borders(Borders::ALL)
+                .style(Style::default().bg(theme.background_alt))
+                .border_style(popup_style(theme, color))
+                .title(Line::styled(
+                    popup.title.as_str(),
+                    theme.bold(color).bg(theme.background_alt),
+                )),
             area,
         );
+        let inner = ratatui::layout::Rect::new(
+            area.x.saturating_add(1),
+            area.y.saturating_add(1),
+            area.width.saturating_sub(2),
+            area.height.saturating_sub(2),
+        );
+        let footer_height = (footer_rows as u16).min(inner.height.saturating_sub(1));
+        let body_area = ratatui::layout::Rect::new(
+            inner.x,
+            inner.y,
+            inner.width,
+            inner.height.saturating_sub(footer_height),
+        );
+        let footer_area =
+            ratatui::layout::Rect::new(inner.x, body_area.bottom(), inner.width, footer_height);
+        let max_scroll = body_rows.saturating_sub(body_area.height as usize);
+        let effective_scroll = popup.scroll.min(max_scroll.min(u16::MAX as usize) as u16);
+        f.render_widget(
+            Paragraph::new(Text::from(popup_render_lines(
+                &popup.lines,
+                popup.dangerous,
+                theme,
+            )))
+            .style(popup_style(theme, theme.text_primary))
+            .wrap(Wrap { trim: false })
+            .scroll((effective_scroll, 0)),
+            body_area,
+        );
+        if footer_height > 0 {
+            f.render_widget(
+                Paragraph::new(Text::from(popup_render_lines(
+                    &popup.footer,
+                    popup.dangerous,
+                    theme,
+                )))
+                .style(popup_style(theme, theme.text_primary))
+                .wrap(Wrap { trim: false }),
+                footer_area,
+            );
+        }
     }
+}
+
+fn popup_render_lines(lines: &[String], dangerous: bool, theme: Theme) -> Vec<Line<'static>> {
+    lines
+        .iter()
+        .flat_map(|line| line.split('\n'))
+        .map(|line| popup_line(line, dangerous, theme))
+        .collect()
+}
+
+fn wrapped_popup_rows(lines: &[String], width: usize) -> usize {
+    lines
+        .iter()
+        .flat_map(|line| line.split('\n'))
+        .map(|line| UnicodeWidthStr::width(line).max(1).div_ceil(width.max(1)))
+        .sum()
 }
 
 fn render_command_menu(f: &mut Frame, app: &App, input_area: ratatui::layout::Rect, theme: Theme) {
@@ -410,6 +473,7 @@ fn render_command_menu(f: &mut Frame, app: &App, input_area: ratatui::layout::Re
                 (UiLanguage::ZhCn, "/shell") => "进入普通终端（exit 返回）",
                 (UiLanguage::ZhCn, "/exit") => "安全退出",
                 (UiLanguage::ZhCn, "/help") => "显示帮助",
+                (UiLanguage::ZhCn, "/sessions") => "管理已保存会话",
                 (UiLanguage::ZhCn, "/update") => "检查版本更新",
                 (UiLanguage::En, "/balance") => "Query provider balance",
                 (UiLanguage::En, "/clear") => "Clear the current session",
@@ -418,6 +482,7 @@ fn render_command_menu(f: &mut Frame, app: &App, input_area: ratatui::layout::Re
                 (UiLanguage::En, "/shell") => "Open terminal (exit returns)",
                 (UiLanguage::En, "/exit") => "Quit safely",
                 (UiLanguage::En, "/help") => "Show help",
+                (UiLanguage::En, "/sessions") => "Manage saved sessions",
                 (UiLanguage::En, "/update") => "Check for updates",
                 _ => "",
             };
@@ -865,26 +930,6 @@ fn starts_with_any(value: &str, prefixes: &[&str]) -> bool {
     prefixes.iter().any(|prefix| value.starts_with(prefix))
 }
 
-fn bottom_left_rect(
-    percent_x: u16,
-    height: u16,
-    anchor_y: u16,
-    area: ratatui::layout::Rect,
-) -> ratatui::layout::Rect {
-    let width = area
-        .width
-        .saturating_mul(percent_x)
-        .saturating_div(100)
-        .max(3);
-    let height = height.min(anchor_y.saturating_sub(area.y)).max(3);
-    ratatui::layout::Rect::new(
-        area.x,
-        anchor_y.saturating_sub(height),
-        width.min(area.width),
-        height,
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1140,6 +1185,8 @@ mod tests {
                     "Command: touch /tmp/file".into(),
                     "Risk: Mutating".into(),
                     "Reclassified locally".into(),
+                ],
+                footer: vec![
                     "> 1. Allow once [y]".into(),
                     "  2. Always allow [a]".into(),
                     "  3. Reject [n/Esc]".into(),
@@ -1147,6 +1194,8 @@ mod tests {
                     "  5. Interactive [i]".into(),
                     "  6. UNIQUE_OPTION_RESIDUE".into(),
                 ],
+                scroll: 0,
+                min_height: 11,
                 dangerous: false,
                 informational: false,
             }),
@@ -1155,7 +1204,21 @@ mod tests {
 
         app.popup = Some(PopupView {
             title: "Security confirmation".into(),
-            lines: vec!["High risk: type YES, then Enter:".into(), "Y".into()],
+            lines: (0..30)
+                .map(|index| {
+                    if index == 0 {
+                        format!("Command: {}", "x".repeat(70))
+                    } else {
+                        format!("long approval content row {index}")
+                    }
+                })
+                .collect(),
+            footer: vec![
+                "High risk: type YES, then Enter:".into(),
+                "PINNED_CONFIRMATION_ACTION".into(),
+            ],
+            scroll: u16::MAX,
+            min_height: 11,
             dangerous: true,
             informational: false,
         });
@@ -1168,8 +1231,10 @@ mod tests {
             .map(|cell| cell.symbol())
             .collect::<String>();
         assert!(!rendered.contains("UNIQUE_OPTION_RESIDUE"));
+        assert!(rendered.contains("PINNED_CONFIRMATION_ACTION"));
+        assert!(rendered.contains("long approval content row 29"));
         let input_top = buffer.area.height.saturating_sub(4);
-        let area = bottom_left_rect(78, 11, input_top, buffer.area);
+        let area = ratatui::layout::Rect::new(0, 0, 78, input_top);
         assert_eq!(area.x, 0);
         assert_eq!(area.bottom(), input_top);
         for y in area.y..area.bottom() {

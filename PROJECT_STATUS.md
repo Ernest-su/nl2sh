@@ -4,6 +4,9 @@ Last Updated: 2026-08-24
 
 ## Recent Changes
 
+- 命令批准弹窗改为内容驱动的动态宽高：长命令和结构化 diff 超过终端可用高度时可用滚轮或 PageUp/PageDown 浏览，上方正文独立滚动，底部审批选项、强确认或编辑输入保持可见。
+- 新增结构化 `read_file`、`list_dir`、`search_text` 与 `apply_patch` Agent 工具：路径不设工作区边界并支持绝对路径、父目录和符号链接，读取/遍历/匹配/文件大小仍有界；补丁先展示 diff 并确认，再原子写入。
+- 新增私有会话快照与 `/sessions` 管理：已完成 turn 自动保存，支持列表、恢复、重命名和删除；恢复重新应用上下文与 Tool Result 上限，Provider 凭据、代理密码、余额和临时审批许可不进入会话文件。
 - Windows ADB 启动路径新增 alternate-scroll 兼容模式：不请求远端鼠标捕获，让 Windows Terminal 将滚轮转换为 Up/Down 事件，再由 TUI 滚动历史；Linux 路径保留原生鼠标捕获，命令候选菜单仍优先使用方向键导航。
 - Agent Runtime 新增独立 Step、Tool Call、活跃任务时长、连续停滞、重复动作和系统硬 Step 上限；默认 Normal 为 50 Step、100 Tool、30 分钟，另有 Fast/Deep 预设。确认等待不计时，所有命令仍完整经过安全分类和确认链。
 - 相同规范化命令连续产生相同结果三次后会在下一次执行前阻止；连续无进展会先强制重新规划再终止，80%/90% Step 水位提示模型优先收敛。任务结束状态和审计事件新增步骤、工具调用、活跃时长、停滞、重规划及限制原因摘要。
@@ -61,6 +64,9 @@ Last Updated: 2026-08-24
 
 ## Completed
 
+- 动态宽高、长内容可滚动且操作区固定的审批弹窗；Up/Down 仍只负责选项导航。
+- 结构化文件工具的无工作区路径限制、资源大小、唯一替换、确认前不写入和原子替换边界。
+- 会话自动保存与 `/sessions` 列表、恢复、重命名、删除；私有文件权限及敏感运行态排除。
 - `/shell` 退出后显式清除 ratatui 差分缓存，确保恢复 alternate screen 后完整重绘 TUI，而非只绘制差异导致界面缺失。
 - Provider 设置在面板会话内分别保留 Ollama 与 Custom 的 Endpoint 草稿，切换到其他内置服务商再返回时恢复此前输入。
 - 统一 TUI 设置面板的“服务”分类恢复内置 Provider 选择，复用向导中的 OpenAI、DeepSeek、Moonshot/Kimi、SiliconFlow、Ollama 与 Custom 预设；切换只回填 Endpoint，不覆盖 API Key、模型或协议。
@@ -134,6 +140,7 @@ Last Updated: 2026-08-24
 
 ## Verification Performed
 
+- 结构化文件工具、会话恢复与长内容审批布局：`cargo fmt --all -- --check`、`cargo check` 和 66 项库测试通过；全量 `cargo test` 的 CLI、Agent、取消、配置、日志、LLM mock、PTY、root、安全及 4 项 TUI 测试通过，既有 `agent_reply_remains_in_live_tui_until_ctrl_q` 仍因启动动画 ANSI 差分文本匹配超时。新增回归覆盖 Tool schema、绝对/父目录/符号链接路径、确认前不写入、原子替换、会话保存/恢复/重命名/删除、凭据脱敏，以及审批正文滚动与固定操作区。
 - Windows ADB 滚轮诊断确认：默认鼠标捕获模式下设备端只收到退出按键，滚轮事件未到达进程；禁用捕获后 Windows Terminal 稳定发送 Up/Down 事件。兼容实现的 `cargo fmt --all -- --check` 与 Linux 目标 `cargo check` 通过；新增单元测试覆盖 SGR 降级输入。`cargo test` 的 61 项库测试及其他非 TUI 测试通过，全量测试仅既有 `agent_reply_remains_in_live_tui_until_ctrl_q` 因启动动画 ANSI 差分文本匹配超时而失败。
 - `/shell` 返回完整重绘：`cargo fmt --all -- --check`、`cargo check` 和 `/shell` 伪终端回归通过；回归在 `exit` 后要求重新出现完整框架的 `Ctrl+Q` 提示，并继续验证安全退出与 shell 内容不写入日志。
 - Ollama/Custom Endpoint 草稿保留：`cargo fmt --all -- --check`、`cargo check` 与 8 项设置面板测试通过；新增回归覆盖自定义 Ollama 地址和 Custom 地址在切换其他 Provider 后分别恢复。

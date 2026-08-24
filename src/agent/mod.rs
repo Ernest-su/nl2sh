@@ -7,4 +7,4 @@ pub use context::ConversationContext;
 pub use policy::{can_remember_approval, ConfirmationDecision, Confirmer, StdioConfirmer};
 pub use runner::{android_shell_constraints, AgentOutcome, AgentRunner};
 pub use runtime::{LimitType, TaskStats, SYSTEM_HARD_MAX_AGENT_STEPS};
-pub use tools::{command_tool, ShellToolArgs};
+pub use tools::{builtin_tools, command_tool, ShellToolArgs};

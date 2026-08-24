@@ -41,7 +41,14 @@ pub struct App {
 #[derive(Clone)]
 pub struct PopupView {
     pub title: String,
+    /// Scrollable body lines.
     pub lines: Vec<String>,
+    /// Lines pinned above the popup's bottom border.
+    pub footer: Vec<String>,
+    /// Wrapped body row offset.
+    pub scroll: u16,
+    /// Stable minimum panel height across interaction stages.
+    pub min_height: u16,
     /// Whether the local assessment requires danger styling in addition to text.
     pub dangerous: bool,
     /// Whether this popup is informational rather than a security confirmation.
@@ -230,7 +237,15 @@ impl App {
 
     pub(crate) fn command_suggestions(&self) -> Vec<&'static str> {
         const COMMANDS: &[&str] = &[
-            "/balance", "/clear", "/config", "/exit", "/help", "/setting", "/shell", "/update",
+            "/balance",
+            "/clear",
+            "/config",
+            "/exit",
+            "/help",
+            "/setting",
+            "/shell",
+            "/update",
+            "/sessions",
         ];
         let query = self.input.text.trim();
         if !query.starts_with('/') || query.contains(char::is_whitespace) {

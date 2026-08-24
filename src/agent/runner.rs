@@ -1,13 +1,14 @@
 use super::runtime::{action_fingerprint, normalize_command, LimitType, TaskRuntime};
-use super::{command_tool, ConfirmationDecision, Confirmer, ConversationContext, ShellToolArgs};
+use super::{builtin_tools, ConfirmationDecision, Confirmer, ConversationContext, ShellToolArgs};
 use crate::{
     config::Config,
+    file_tools::FileToolExecutor,
     limits::truncate_text,
     llm::{
         ConversationItem, ConversationMessage, LlmClient, LlmRequest, Role, TextDeltaSink,
         ToolResult, ToolRound, Usage,
     },
-    security::assess,
+    security::{assess, MatchedRule, RiskLevel, SecurityAssessment},
     shell::CommandExecutor,
 };
 use anyhow::{bail, Context, Result};
@@ -93,6 +94,9 @@ impl AgentRunner<'_> {
         let mut history_turns_evicted = 0;
         let mut runtime = TaskRuntime::new();
         let mut action_history: HashMap<String, (u64, usize)> = HashMap::new();
+        let file_tools = FileToolExecutor::new(
+            &std::env::current_dir().context("cannot determine file-tool base directory")?,
+        )?;
         let effective_steps = self
             .config
             .max_agent_steps
@@ -121,7 +125,7 @@ impl AgentRunner<'_> {
             let request = LlmRequest {
                 model: self.config.model.clone(),
                 items,
-                tools: vec![command_tool()],
+                tools: builtin_tools(),
             };
             let remaining = Duration::from_secs(self.config.max_task_execution_time_secs)
                 .saturating_sub(runtime.active_time());
@@ -184,11 +188,11 @@ impl AgentRunner<'_> {
                 runtime.tool_calls_used += 1;
                 round_calls.push(call.clone());
                 if call.name != "execute_shell_command" {
-                    results.push(ToolResult {
-                        call_id: call.id,
-                        output: "unsupported tool".into(),
-                        success: false,
-                    });
+                    let result = self
+                        .run_file_tool(&file_tools, call.clone(), &mut runtime)
+                        .await;
+                    step_made_progress |= result.success;
+                    results.push(result);
                     continue;
                 }
                 let args: ShellToolArgs = serde_json::from_value(call.arguments)
@@ -398,6 +402,86 @@ impl AgentRunner<'_> {
         })
     }
 
+    async fn run_file_tool(
+        &self,
+        tools: &FileToolExecutor,
+        call: crate::llm::ToolCall,
+        runtime: &mut TaskRuntime,
+    ) -> ToolResult {
+        let call_id = call.id.clone();
+        let outcome: Result<String> = async {
+            match call.name.as_str() {
+                "read_file" => {
+                    let args = super::tools::parse_read_file(call.arguments)
+                        .context("invalid read_file arguments")?;
+                    let tools = tools.clone();
+                    tokio::task::spawn_blocking(move || tools.read_file(&args))
+                        .await.context("read_file worker failed")?
+                }
+                "list_dir" => {
+                    let args = super::tools::parse_list_dir(call.arguments)
+                        .context("invalid list_dir arguments")?;
+                    let tools = tools.clone();
+                    tokio::task::spawn_blocking(move || tools.list_dir(&args))
+                        .await.context("list_dir worker failed")?
+                }
+                "search_text" => {
+                    let args = super::tools::parse_search_text(call.arguments)
+                        .context("invalid search_text arguments")?;
+                    let tools = tools.clone();
+                    tokio::task::spawn_blocking(move || tools.search_text(&args))
+                        .await.context("search_text worker failed")?
+                }
+                "apply_patch" => {
+                    let args = super::tools::parse_apply_patch(call.arguments)
+                        .context("invalid apply_patch arguments")?;
+                    let tools_for_prepare = tools.clone();
+                    let patch = tokio::task::spawn_blocking(move || tools_for_prepare.prepare_patch(&args))
+                        .await.context("apply_patch prepare worker failed")??;
+                    let assessment = SecurityAssessment {
+                        risk_level: RiskLevel::Mutating,
+                        matched_rules: vec![MatchedRule { id: "structured-file-edit".into(), message: "Structured file modification".into() }],
+                        requires_confirmation: true,
+                        requires_double_confirmation: false,
+                        requires_root: false,
+                        explanation: "Structured file modification requires confirmation after reviewing the diff.".into(),
+                    };
+                    let confirmation_started = Instant::now();
+                    let decision = self.confirmer.confirm(&patch.diff, &assessment).await?;
+                    runtime.add_confirmation_time(confirmation_started.elapsed());
+                    match decision {
+                        ConfirmationDecision::Approve
+                        | ConfirmationDecision::ApproveForTask
+                        | ConfirmationDecision::ApproveCaptured
+                        | ConfirmationDecision::ApproveInteractive => {
+                            tokio::task::spawn_blocking(move || patch.apply())
+                                .await.context("apply_patch worker failed")??;
+                            Ok("Patch applied after user confirmed the displayed diff.".into())
+                        }
+                        ConfirmationDecision::Edit(_) => Ok("Patch not applied: edit is unavailable for structured diffs; request a new patch.".into()),
+                        ConfirmationDecision::Reject => Ok("Patch not applied: user rejected the displayed diff.".into()),
+                    }
+                }
+                _ => bail!("unsupported tool {}", call.name),
+            }
+        }.await;
+        match outcome {
+            Ok(output) => ToolResult {
+                call_id,
+                success: !output.starts_with("Patch not applied"),
+                output: truncate_text(&output, self.config.tool_output_max_bytes),
+            },
+            Err(error) => ToolResult {
+                call_id,
+                output: truncate_text(
+                    &format!("Tool failed: {error:#}"),
+                    self.config.tool_output_max_bytes,
+                ),
+                success: false,
+            },
+        }
+    }
+
     /// Owned-history variant suitable for a UI-managed background future.
     pub async fn run_with_history_owned(
         &self,
@@ -420,7 +504,7 @@ impl AgentRunner<'_> {
 
 fn system_prompt(runtime: Option<&str>) -> String {
     let mut system = format!(
-        "You are an Android shell agent. Use execute_shell_command for evidence. Never claim unexecuted results. {} Write the final answer in the user's language for a human reader. Summarize conclusions instead of dumping raw tool protocol output. Use a concise Markdown table when comparing multiple items or presenting repeated structured fields; otherwise use clear concise text.",
+        "You are an Android shell agent. Prefer read_file, list_dir, search_text, and apply_patch for file work; do not use sed, shell redirection, or echo to edit files. Use execute_shell_command for other evidence. Never claim unexecuted results. {} Write the final answer in the user's language for a human reader. Summarize conclusions instead of dumping raw tool protocol output. Use a concise Markdown table when comparing multiple items or presenting repeated structured fields; otherwise use clear concise text.",
         android_shell_constraints()
     );
     if let Some(runtime) = runtime {
