@@ -269,7 +269,7 @@ fn popup_line(line: &str, dangerous: bool, theme: Theme) -> Line<'static> {
     Line::styled(line.to_owned(), popup_style(theme, color))
 }
 
-pub fn draw(f: &mut Frame, app: &App) {
+pub fn draw(f: &mut Frame, app: &mut App) {
     let theme = Theme::detect();
     f.render_widget(
         Block::default().style(Style::default().bg(theme.background)),
@@ -297,6 +297,7 @@ pub fn draw(f: &mut Frame, app: &App) {
     let visible_rows = areas[1].height.saturating_sub(2) as usize;
     let rendered_rows = lines.len();
     let bottom = rendered_rows.saturating_sub(visible_rows);
+    app.conversation_scroll = app.conversation_scroll.min(bottom);
     let scroll = bottom
         .saturating_sub(app.conversation_scroll.min(bottom))
         .min(u16::MAX as usize) as u16;
@@ -926,7 +927,7 @@ mod tests {
             provider_balance: None,
             popup: None,
         };
-        terminal.draw(|frame| draw(frame, &app))?;
+        terminal.draw(|frame| draw(frame, &mut app))?;
         let buffer = terminal.backend().buffer();
         let row = |y| {
             (0..100)
@@ -946,7 +947,7 @@ mod tests {
         assert_eq!(buffer[(99, 10)].symbol(), " ");
 
         app.input.set("/".into());
-        terminal.draw(|frame| draw(frame, &app))?;
+        terminal.draw(|frame| draw(frame, &mut app))?;
         let menu = terminal
             .backend()
             .buffer()
@@ -1150,7 +1151,7 @@ mod tests {
                 informational: false,
             }),
         };
-        terminal.draw(|frame| draw(frame, &app))?;
+        terminal.draw(|frame| draw(frame, &mut app))?;
 
         app.popup = Some(PopupView {
             title: "Security confirmation".into(),
@@ -1158,7 +1159,7 @@ mod tests {
             dangerous: true,
             informational: false,
         });
-        terminal.draw(|frame| draw(frame, &app))?;
+        terminal.draw(|frame| draw(frame, &mut app))?;
 
         let buffer = terminal.backend().buffer();
         let rendered = buffer
@@ -1218,7 +1219,7 @@ mod tests {
             provider_balance: None,
             popup: None,
         };
-        terminal.draw(|frame| draw(frame, &app))?;
+        terminal.draw(|frame| draw(frame, &mut app))?;
         let rendered = terminal
             .backend()
             .buffer()
@@ -1229,7 +1230,7 @@ mod tests {
         assert!(rendered.contains("LAST_MARKER"));
 
         app.conversation_scroll = u16::MAX as usize;
-        terminal.draw(|frame| draw(frame, &app))?;
+        terminal.draw(|frame| draw(frame, &mut app))?;
         let rendered_top = terminal
             .backend()
             .buffer()

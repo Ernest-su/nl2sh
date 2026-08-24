@@ -184,6 +184,8 @@ async fn run_inner(
     let mut last_train_frame = Instant::now();
     let mut last_gradient_frame = Instant::now();
     let mut fragmented_arrow = super::events::FragmentedArrowFilter::default();
+    let windows_scroll = super::terminal::windows_scroll_fallback();
+    let mut windows_scroll_filter = super::events::WindowsScrollFilter::default();
 
     loop {
         if settings_editor.is_some()
@@ -246,7 +248,12 @@ async fn run_inner(
                         .as_ref()
                         .map(|editor| editor.view(app.cursor_visible))
                 });
-            terminal.terminal().draw(|frame| ui::draw(frame, &app))?;
+            if windows_scroll && active.is_none() {
+                apply_windows_scroll_action(&mut app, windows_scroll_filter.take_expired());
+            }
+            terminal
+                .terminal()
+                .draw(|frame| ui::draw(frame, &mut app))?;
         }
 
         let mut completed = None;
@@ -620,6 +627,11 @@ async fn run_inner(
                 }
                 continue;
             }
+            if active.is_some() && windows_scroll && matches!(key.code, KeyCode::Up | KeyCode::Down)
+            {
+                apply_windows_scroll_action(&mut app, windows_scroll_filter.push(key.code));
+                continue;
+            }
             if active.is_some() {
                 continue;
             }
@@ -826,6 +838,9 @@ async fn run_inner(
                 }
                 (KeyCode::Up, _) if app.command_menu_visible() => app.select_previous_command(),
                 (KeyCode::Down, _) if app.command_menu_visible() => app.select_next_command(),
+                (KeyCode::Up | KeyCode::Down, _) if windows_scroll => {
+                    apply_windows_scroll_action(&mut app, windows_scroll_filter.push(key.code))
+                }
                 (KeyCode::Up, _) => app.previous_input(),
                 (KeyCode::Down, _) => app.next_input(),
                 (KeyCode::Left, _) => app.input.move_left(),
@@ -834,10 +849,30 @@ async fn run_inner(
                 (KeyCode::End, _) => app.input.move_end(),
                 (KeyCode::Backspace, _) => app.input.backspace(),
                 (KeyCode::Delete, _) => app.input.delete(),
-                (KeyCode::Char(character), _) => app.input.push(character),
+                (KeyCode::Char(character), _) => match app.input.push(character) {
+                    Some(super::input::SgrMouseReport::ScrollUp) => app.scroll_conversation_up(3),
+                    Some(super::input::SgrMouseReport::ScrollDown) => {
+                        app.scroll_conversation_down(3)
+                    }
+                    _ => {}
+                },
                 _ => {}
             }
         }
+    }
+}
+
+fn apply_windows_scroll_action(app: &mut App, action: Option<super::events::WindowsScrollAction>) {
+    match action {
+        Some(super::events::WindowsScrollAction::ScrollUp(rows)) => {
+            app.scroll_conversation_up(rows)
+        }
+        Some(super::events::WindowsScrollAction::ScrollDown(rows)) => {
+            app.scroll_conversation_down(rows)
+        }
+        Some(super::events::WindowsScrollAction::InputHistoryUp) => app.previous_input(),
+        Some(super::events::WindowsScrollAction::InputHistoryDown) => app.next_input(),
+        None => {}
     }
 }
 

@@ -118,7 +118,12 @@ fn run_inner(options: TuiOptions, mut history: Vec<String>) -> Result<Option<Str
     let mut last_cursor_blink = Instant::now();
     let mut last_train_frame = Instant::now();
     let mut fragmented_arrow = events::FragmentedArrowFilter::default();
+    let windows_scroll = super::terminal::windows_scroll_fallback();
+    let mut windows_scroll_filter = events::WindowsScrollFilter::default();
     loop {
+        if windows_scroll {
+            apply_windows_scroll_action(&mut app, windows_scroll_filter.take_expired());
+        }
         if last_cursor_blink.elapsed() >= Duration::from_millis(500) {
             app.cursor_visible = !app.cursor_visible;
             last_cursor_blink = Instant::now();
@@ -128,7 +133,7 @@ fn run_inner(options: TuiOptions, mut history: Vec<String>) -> Result<Option<Str
             app.advance_welcome_train(viewport_width);
             last_train_frame = Instant::now();
         }
-        term.terminal().draw(|f| ui::draw(f, &app))?;
+        term.terminal().draw(|f| ui::draw(f, &mut app))?;
         if let Some(event) = events::next()? {
             match event {
                 Event::Mouse(mouse) => match mouse.kind {
@@ -167,6 +172,12 @@ fn run_inner(options: TuiOptions, mut history: Vec<String>) -> Result<Option<Str
                         (KeyCode::Down, _) if app.command_menu_visible() => {
                             app.select_next_command()
                         }
+                        (KeyCode::Up | KeyCode::Down, _) if windows_scroll => {
+                            apply_windows_scroll_action(
+                                &mut app,
+                                windows_scroll_filter.push(k.code),
+                            )
+                        }
                         (KeyCode::Up, _) => app.previous_input(),
                         (KeyCode::Down, _) => app.next_input(),
                         (KeyCode::Left, _) => app.input.move_left(),
@@ -175,13 +186,31 @@ fn run_inner(options: TuiOptions, mut history: Vec<String>) -> Result<Option<Str
                         (KeyCode::End, _) => app.input.move_end(),
                         (KeyCode::Backspace, _) => app.input.backspace(),
                         (KeyCode::Delete, _) => app.input.delete(),
-                        (KeyCode::Char(c), _) => app.input.push(c),
+                        (KeyCode::Char(c), _) => match app.input.push(c) {
+                            Some(super::input::SgrMouseReport::ScrollUp) => {
+                                app.scroll_conversation_up(3)
+                            }
+                            Some(super::input::SgrMouseReport::ScrollDown) => {
+                                app.scroll_conversation_down(3)
+                            }
+                            _ => {}
+                        },
                         _ => {}
                     }
                 }
                 _ => {}
             }
         }
+    }
+}
+
+fn apply_windows_scroll_action(app: &mut App, action: Option<events::WindowsScrollAction>) {
+    match action {
+        Some(events::WindowsScrollAction::ScrollUp(rows)) => app.scroll_conversation_up(rows),
+        Some(events::WindowsScrollAction::ScrollDown(rows)) => app.scroll_conversation_down(rows),
+        Some(events::WindowsScrollAction::InputHistoryUp) => app.previous_input(),
+        Some(events::WindowsScrollAction::InputHistoryDown) => app.next_input(),
+        None => {}
     }
 }
 

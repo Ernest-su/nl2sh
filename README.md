@@ -83,7 +83,7 @@ android-run-windows.bat
 
 仓库内置 `.github/workflows/release.yml`。推送 `v*` tag（如 `git tag v0.2.0 && git push origin v0.2.0`）会触发 GitHub Actions：并行交叉编译 `aarch64-linux-android`（arm64-v8a）与 `armv7-linux-androideabi`（armeabi-v7a），再把两种程序分别放入 `bin/arm64-v8a/` 和 `bin/armeabi-v7a/`，连同 Linux/BAT 启动脚本、`config.toml.example` 和 `使用说明.md` 合并为一份 `nl2sh-android.tar.gz` 与 `nl2sh-android.zip`，并附带 `SHA256SUMS` 发布到对应 tag 的 GitHub Release。Actions 页的 `workflow_dispatch` 可手动触发并生成草稿 Release（tag 通过输入指定）。
 
-下载统一发布包并完整解压后，Linux 直接运行 `./android-run-linux.sh`，Windows 双击 `android-run-windows.bat`。没有设备时脚本提示输入网络 ADB 地址，单设备自动选择，多设备按编号选择；随后自动检测 ABI，并完成 root adbd/`su` 回退部署。
+下载统一发布包并完整解压后，Linux 直接运行 `./android-run-linux.sh`，Windows 双击 `android-run-windows.bat`。没有设备时脚本提示输入网络 ADB 地址，单设备自动选择，多设备按编号选择；随后自动检测 ABI，并完成 root adbd/`su` 回退部署。Windows 启动脚本还会启用 alternate-scroll 兼容模式：不请求远端鼠标捕获，由 Windows Terminal 将滚轮转换成 Up/Down 输入，再由 nl2sh 滚动历史；Linux 路径继续使用原生鼠标事件。
 
 需要在本地生成与 GitHub Release 相同目录结构的统一 ZIP 时，先配置 Android NDK，然后运行对应宿主脚本：
 

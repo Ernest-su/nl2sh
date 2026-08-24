@@ -4,6 +4,7 @@ Last Updated: 2026-08-24
 
 ## Recent Changes
 
+- Windows ADB 启动路径新增 alternate-scroll 兼容模式：不请求远端鼠标捕获，让 Windows Terminal 将滚轮转换为 Up/Down 事件，再由 TUI 滚动历史；Linux 路径保留原生鼠标捕获，命令候选菜单仍优先使用方向键导航。
 - Agent Runtime 新增独立 Step、Tool Call、活跃任务时长、连续停滞、重复动作和系统硬 Step 上限；默认 Normal 为 50 Step、100 Tool、30 分钟，另有 Fast/Deep 预设。确认等待不计时，所有命令仍完整经过安全分类和确认链。
 - 相同规范化命令连续产生相同结果三次后会在下一次执行前阻止；连续无进展会先强制重新规划再终止，80%/90% Step 水位提示模型优先收敛。任务结束状态和审计事件新增步骤、工具调用、活跃时长、停滞、重规划及限制原因摘要。
 - LLM 协议默认改为可省略配置的 `auto`：首次请求优先 Responses，仅在尚未输出内容的协议结构不匹配时回退 Chat Completions 并缓存；401、429、5xx、超时和部分流式输出错误不会误触发切换，显式协议仍可强制覆盖。
@@ -133,6 +134,7 @@ Last Updated: 2026-08-24
 
 ## Verification Performed
 
+- Windows ADB 滚轮诊断确认：默认鼠标捕获模式下设备端只收到退出按键，滚轮事件未到达进程；禁用捕获后 Windows Terminal 稳定发送 Up/Down 事件。兼容实现的 `cargo fmt --all -- --check` 与 Linux 目标 `cargo check` 通过；新增单元测试覆盖 SGR 降级输入。`cargo test` 的 61 项库测试及其他非 TUI 测试通过，全量测试仅既有 `agent_reply_remains_in_live_tui_until_ctrl_q` 因启动动画 ANSI 差分文本匹配超时而失败。
 - `/shell` 返回完整重绘：`cargo fmt --all -- --check`、`cargo check` 和 `/shell` 伪终端回归通过；回归在 `exit` 后要求重新出现完整框架的 `Ctrl+Q` 提示，并继续验证安全退出与 shell 内容不写入日志。
 - Ollama/Custom Endpoint 草稿保留：`cargo fmt --all -- --check`、`cargo check` 与 8 项设置面板测试通过；新增回归覆盖自定义 Ollama 地址和 Custom 地址在切换其他 Provider 后分别恢复。
 - TUI 内置 Provider 恢复：`cargo fmt --all -- --check`、`cargo check`、59 项库测试及其余非 TUI 集成测试通过；新增回归覆盖预设识别、Endpoint 联动、Custom 编辑，以及 API Key、模型和协议不被覆盖。全量 `cargo test` 仅既有 `agent_reply_remains_in_live_tui_until_ctrl_q` 因启动动画 ANSI 差分文本匹配超时。

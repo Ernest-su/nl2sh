@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fixed history scrolling through Windows ADB terminals with a launcher-enabled alternate-scroll mode that leaves remote mouse capture disabled and maps terminal-generated Up/Down events to conversation scrolling; Linux keeps native mouse capture.
 - Completed the Android device validation matrix for root/non-root execution, mutation confirmation, command timeout cleanup, and fullscreen interactive programs with terminal/TUI restoration.
 - Fixed incomplete TUI frames after leaving `/shell` by explicitly invalidating ratatui's retained buffer before redrawing the restored alternate screen.
 - TUI Settings now keeps separate in-session Endpoint drafts for Ollama and Custom, restoring each value after switching through other Provider presets.
