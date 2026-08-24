@@ -213,9 +213,9 @@ Android 真机建议依次验证：启动/退出后终端恢复；`id` 和 `getp
 
 ## 已知限制
 
-- 已通过 Android NDK r28c、API 26 的 AArch64/ARMv7 release 交叉编译，并在 API 34 ARMv7 设备完成 Agent、PTY 和 TUI 基础 smoke；root 提权及全屏程序仍待扩展验证。
+- 已通过 Android NDK r28c、API 26 的 AArch64/ARMv7 release 交叉编译，并完成真机 root/非 root、修改确认、命令超时和全屏交互程序验证矩阵。
 - Agent TUI 在 LLM 和捕获式命令期间保持同一 frame；全屏交互程序需要临时挂起 TUI，结束后自动恢复。
-- 交互 PTY 已支持双向桥接和 resize，但尚未在 Android 真机的各类全屏应用上验证。
+- 交互 PTY 已支持双向桥接和 resize，并已完成 Android 真机全屏程序验证；未覆盖的终端或应用实现仍可能存在兼容差异。
 - Responses 对话适配覆盖常见 function call 结构，不保证所有兼容厂商的扩展字段。
 
 ## 支持项目

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Completed the Android device validation matrix for root/non-root execution, mutation confirmation, command timeout cleanup, and fullscreen interactive programs with terminal/TUI restoration.
 - Fixed incomplete TUI frames after leaving `/shell` by explicitly invalidating ratatui's retained buffer before redrawing the restored alternate screen.
 - TUI Settings now keeps separate in-session Endpoint drafts for Ollama and Custom, restoring each value after switching through other Provider presets.
 - Restored built-in Provider selection inside the unified TUI Settings panel, sharing the OpenAI, DeepSeek, Moonshot/Kimi, SiliconFlow, Ollama, and Custom presets with the legacy wizard while preserving API keys, models, and protocol choices.

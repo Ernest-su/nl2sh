@@ -54,9 +54,9 @@ Last Updated: 2026-08-24
 - Build status: 0.2.0 的 `cargo check --all-targets` 与 Linux release 构建通过。
 - Test status: 0.2.0 的单元、Agent loop 与非 TUI 集成测试通过；两个依赖原始 ANSI 文本连续匹配的伪终端测试受启动动画差分输出影响，发布前需修复。
 - Android cross-compile status: 0.2.0 已使用 NDK r28c、API 26 成功构建 `aarch64-linux-android` 与 `armv7-linux-androideabi` release 产物。
-- Android device validation: 已在 API 34 `armeabi-v7a` 设备完成部署、Agent/PTY 和 TUI smoke test。
+- Android device validation: 已完成真机 root/非 root、修改确认、命令超时和全屏交互程序验证矩阵。
 - CI release workflow: 已添加 `.github/workflows/release.yml`，在推送 `v*` tag 时用 GitHub Actions 并行交叉编译 `aarch64-linux-android` 与 `armv7-linux-androideabi`，将两个程序放入统一包的 ABI 子目录，并与自动选择设备/ABI 的 Linux/Windows BAT 启动脚本、`config.toml.example`、`使用说明.md` 打包为单一 `.tar.gz`/`.zip`，附带 SHA256 校验和发布到 GitHub Release；`workflow_dispatch` 可手动触发草稿发布。
-- Known blockers: 尚未验证真实 root 提权、修改确认、超时和全屏交互程序；CI workflow 尚未在真实 GitHub Actions 上运行验证。
+- Known blockers: CI workflow 尚未在真实 GitHub Actions 上运行验证。
 
 ## Completed
 
@@ -110,14 +110,15 @@ Last Updated: 2026-08-24
 - MIT `LICENSE` 已纳入仓库；Cargo 版本为 0.2.0。
 - 实时 TUI、捕获式工具结果、发给模型的 Tool Result、JSONL 单事件和单文件均有可配置上限；截断会插入明确标记。
 - TUI 输出与历史生命周期已从 session 控制器拆为独立模块，同时保留新的审批菜单和任务级精确命令许可。
+- 真机 root/非 root、修改确认、命令超时和全屏交互程序验证矩阵已完成，覆盖提权与确认链、超时回收，以及全屏程序退出后的终端恢复和 TUI 重绘。
 
 ## In Progress
 
-- 扩展真机 smoke test，覆盖 root 提权、修改确认、超时和全屏交互程序。
+- 观察 `v0.2.0` GitHub Actions，确认双 ABI 归档与 Release 发布流程。
 
 ## Pending / Known Issues
 
-- PTY 已在 API 34 ARMv7 真机执行只读命令；不同 su/fullscreen 程序仍可能需要兼容调整。
+- 真机矩阵已覆盖 root/非 root、超时和全屏交互程序；未覆盖的设备、su 或终端实现仍可能存在兼容差异。
 - 源码编译启动脚本仅自动映射 `arm64-v8a` 与 `armeabi-v7a`；其他设备 ABI 会明确拒绝，显式 `RUST_TARGET` 与设备不匹配时也会停止。
 - Agent TUI 在 LLM 和捕获式命令执行期间保持同一 ratatui frame；全屏交互命令会临时挂起 TUI，退出后恢复并完整重绘。
 - 新主题已完成渲染与样式测试，仍需在不同 adb shell 宿主的 TrueColor/ANSI 256、窄屏和实际电视显示效果下做真机可读性验证。
@@ -171,6 +172,5 @@ Last Updated: 2026-08-24
 
 ## Next Steps
 
-1. 在 root 与非 root 设备补测确认、提权、超时和全屏程序。
-2. 根据真机结果优化窄屏布局和全屏交互程序切换。
-3. 观察 `v0.2.0` GitHub Actions，确认双 ABI 归档与 Release 发布成功。
+1. 根据真机结果继续优化窄屏布局和全屏交互程序切换。
+2. 观察 `v0.2.0` GitHub Actions，确认双 ABI 归档与 Release 发布成功。

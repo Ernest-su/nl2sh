@@ -1,6 +1,6 @@
 # Project Plan
 
-状态以 2026-08-22 的工作区和实际验证为准；0.2.0 为当前发布版本；未完成项不会机械勾选。
+状态以 2026-08-24 的工作区和实际验证为准；0.2.0 为当前发布版本；未完成项不会机械勾选。
 
 ## Phase 0 项目初始化与工程基线 — 完成
 
@@ -62,28 +62,28 @@
 
 风险：启发式 parser 不可能覆盖全部 shell 语法。
 
-## Phase 7 PTY 执行器 — 基本完成
+## Phase 7 PTY 执行器 — 完成
 
 - [x] 抽象边界、pipeline fallback、进程组、超时 TERM/KILL、wait。
 - [x] openpty/setsid/controlling terminal、非阻塞 master、resize、ANSI 过滤。
 - [x] Android NDK r28c、API 26、AArch64/ARMv7 release 交叉编译。
 - [x] API 34 ARMv7 真机 Agent、PTY、TUI 基础 smoke test。
-- [ ] 真机 root、修改确认、超时及全屏交互验证。
+- [x] 真机 root、修改确认、超时及全屏交互验证。
 
 验收：Unix smoke 与 Android 真机。风险：Bionic PTY 差异。
 
-## Phase 8 Android root 与 su — 基本完成
+## Phase 8 Android root 与 su — 完成
 
 - [x] geteuid、su probe、Root/SuAvailable/Normal、auto/normal/root。
 - [x] 参数化 `su -c` 和 mock root 测试。
-- [ ] Android 主流 Magisk/su 实现真机验证。
+- [x] Android 主流 Magisk/su 实现真机验证。
 
-## Phase 9 交互式命令终端切换 — 进行中
+## Phase 9 交互式命令终端切换 — 完成
 
 - [x] 已知交互命令检测、双向 PTY、信号/resize、raw mode RAII。
-- [ ] Android 全屏程序真机验证及 TUI 内完整状态回放。
+- [x] Android 全屏程序真机验证及 TUI 内完整状态回放。
 
-## Phase 10 测试、文档和 Android 验证 — 进行中
+## Phase 10 测试、文档和 Android 验证 — 完成
 
 - [x] 配置、安全、root、LLM mock、Agent loop 测试和核心文档。
 - [x] timeout、失败、Agent interruption 和 PTY smoke 覆盖。
@@ -91,7 +91,7 @@
 - [x] 真实伪终端中的单轮 Agent TUI 保活与 Ctrl+Q 退出测试。
 - [x] NDK r28c/API 26 cross-build。
 - [x] API 34 ARMv7 Android device 基础 smoke。
-- [ ] 多设备 root/交互完整 smoke。
+- [x] 多设备 root/交互完整 smoke。
 
 ## Phase 11 0.1.0 发布基线 — 完成
 
@@ -108,7 +108,7 @@
 - [x] 在启动欢迎页和 `/help` 显示项目支持、在线赞赏链接与纯文本终端祝福图，不引入图片或二维码渲染。
 - [x] 增加 `/exit` 安全退出命令和每任务一次的低敏感 Android 运行环境摘要。
 - [ ] 增加普通 PR CI 质量门禁。
-- [ ] 完成 root/非 root 真机安全矩阵。
+- [x] 完成 root/非 root 真机安全矩阵。
 - [x] 准备 0.2.0 版本、双 ABI 发布工作流与本地交叉编译验证；标签发布状态由 GitHub Actions 最终结果确认。
 
 ## Phase 13 Provider 可观测性与发现 — 完成

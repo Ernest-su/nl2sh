@@ -72,7 +72,7 @@ Command 模式使用严格 system prompt，仅接受第一条清理后的非空�
 
 设计边界为 `CommandExecutor → pty/pipeline → process`。pipeline 分别捕获 stdout/stderr，子进程成为独立进程组，超时和信号针对组发送，随后 `wait` 防止 zombie。PTY 中 stdout/stderr 本来会合并；任意输出在进入 ratatui 前必须过滤破坏屏幕状态的 ANSI 控制序列。
 
-`pty` 使用 `nix::openpty` 创建 master/slave，通过 `setsid` 与 `TIOCSCTTY` 让 slave 成为 controlling terminal，并把三个标准流连接到 slave。master 以非阻塞方式读取，因此 PTY 下 stdout/stderr 合并；结果进入 Agent 前通过保守 ANSI filter。交互模式启用本地 raw mode，轮询 stdin 写入 master，把 master 原始输出写向本地终端，并用 `TIOCGWINSZ/TIOCSWINSZ` 同步尺寸。退出、超时或 Ctrl+C 后恢复本地终端并 wait 子进程。pipeline 是无 PTY fallback，保留分离 stdout/stderr。未使用 portable-pty；Android Bionic 兼容仍需交叉编译与真机验证。
+`pty` 使用 `nix::openpty` 创建 master/slave，通过 `setsid` 与 `TIOCSCTTY` 让 slave 成为 controlling terminal，并把三个标准流连接到 slave。master 以非阻塞方式读取，因此 PTY 下 stdout/stderr 合并；结果进入 Agent 前通过保守 ANSI filter。交互模式启用本地 raw mode，轮询 stdin 写入 master，把 master 原始输出写向本地终端，并用 `TIOCGWINSZ/TIOCSWINSZ` 同步尺寸。退出、超时或 Ctrl+C 后恢复本地终端并 wait 子进程。pipeline 是无 PTY fallback，保留分离 stdout/stderr。未使用 portable-pty；Android Bionic 路径已完成交叉编译及 root/非 root、超时和全屏交互真机验证，仍需持续关注未覆盖设备与终端实现的兼容差异。
 
 ## Android root
 
