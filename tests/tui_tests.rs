@@ -120,7 +120,7 @@ async fn missing_config_enters_tui_and_config_command_runs_setup() -> anyhow::Re
     wait_for_text(&mut process.master, "Ctrl+Q", Duration::from_secs(3)).await?;
 
     let loaded = nl2sh::config::load_unvalidated(Some(&config))?;
-    assert_eq!(loaded.max_agent_steps, 24);
+    assert_eq!(loaded.max_agent_steps, 50);
     assert_eq!(loaded.max_context_turns, 16);
     assert!(process.child.try_wait()?.is_none());
     process.master.write_all(b"/exit\r")?;

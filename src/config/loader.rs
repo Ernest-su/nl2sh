@@ -1,4 +1,4 @@
-use super::Config;
+use super::{AgentMode, Config};
 use anyhow::{Context, Result};
 use std::{
     env, fs,
@@ -60,6 +60,24 @@ fn load_from_unvalidated(path: &Path) -> Result<Config> {
         .with_context(|| format!("cannot read config {}", path.display()))?;
     let mut config: Config =
         toml::from_str(&text).with_context(|| format!("invalid config {}", path.display()))?;
+    let document: toml::Value =
+        toml::from_str(&text).with_context(|| format!("invalid config {}", path.display()))?;
+    if document.get("agent_mode").is_some() {
+        let mode: AgentMode = config.agent_mode;
+        let explicit_steps = config.max_agent_steps;
+        let explicit_tools = config.max_tool_calls;
+        let explicit_time = config.max_task_execution_time_secs;
+        config.apply_agent_mode(mode);
+        if document.get("max_agent_steps").is_some() {
+            config.max_agent_steps = explicit_steps;
+        }
+        if document.get("max_tool_calls").is_some() {
+            config.max_tool_calls = explicit_tools;
+        }
+        if document.get("max_task_execution_time_secs").is_some() {
+            config.max_task_execution_time_secs = explicit_time;
+        }
+    }
     if let Ok(key) = env::var("NL2SH_API_KEY") {
         config.api_key = key;
     }

@@ -1,3 +1,4 @@
+use super::runtime::{action_fingerprint, normalize_command, LimitType, TaskRuntime};
 use super::{command_tool, ConfirmationDecision, Confirmer, ConversationContext, ShellToolArgs};
 use crate::{
     config::Config,
@@ -10,7 +11,11 @@ use crate::{
     shell::CommandExecutor,
 };
 use anyhow::{bail, Context, Result};
-use std::collections::HashSet;
+use std::{
+    collections::{HashMap, HashSet},
+    time::{Duration, Instant},
+};
+use tokio::time::timeout;
 /// Dependencies for one bounded Agent tool loop.
 pub struct AgentRunner<'a> {
     /// Validated policy and provider configuration.
@@ -29,6 +34,10 @@ pub struct AgentOutcome {
     pub final_text: String,
     /// Count of completed LLM requests.
     pub steps: usize,
+    /// Tool calls admitted during the task.
+    pub tool_calls: usize,
+    /// Task lifecycle counters and optional termination limit.
+    pub stats: super::TaskStats,
     /// Complete current interaction, including inseparable tool rounds.
     pub transcript: Vec<ConversationItem>,
     /// Token usage accumulated across every model request in this task.
@@ -82,18 +91,54 @@ impl AgentRunner<'_> {
         let mut usage = Usage::default();
         let mut final_input_tokens = None;
         let mut history_turns_evicted = 0;
-        for step in 1..=self.config.max_agent_steps {
+        let mut runtime = TaskRuntime::new();
+        let mut action_history: HashMap<String, (u64, usize)> = HashMap::new();
+        let effective_steps = self
+            .config
+            .max_agent_steps
+            .min(self.config.hard_max_agent_steps)
+            .min(super::SYSTEM_HARD_MAX_AGENT_STEPS);
+        let mut stopped_by = None;
+        for step in 1..=effective_steps {
+            if runtime.active_time()
+                >= Duration::from_secs(self.config.max_task_execution_time_secs)
+            {
+                stopped_by = Some(LimitType::ExecutionTime);
+                break;
+            }
             let mut items = ctx.items();
             items.extend(current.clone());
+            if step.saturating_mul(10) >= effective_steps.saturating_mul(8) {
+                items.push(ConversationItem::Message(ConversationMessage::new(
+                    Role::System,
+                    if step.saturating_mul(10) >= effective_steps.saturating_mul(9) {
+                        "Task budget is at least 90% used. Stop low-value exploration, validate the best available solution, and conclude with remaining blockers."
+                    } else {
+                        "Task budget is at least 80% used. Prioritize completion and avoid unnecessary exploration."
+                    },
+                )));
+            }
             let request = LlmRequest {
                 model: self.config.model.clone(),
                 items,
                 tools: vec![command_tool()],
             };
-            let response = if let Some(sink) = text_sink {
-                self.llm.complete_stream(request, sink).await?
-            } else {
-                self.llm.complete(request).await?
+            let remaining = Duration::from_secs(self.config.max_task_execution_time_secs)
+                .saturating_sub(runtime.active_time());
+            let response = timeout(remaining, async {
+                if let Some(sink) = text_sink {
+                    self.llm.complete_stream(request, sink).await
+                } else {
+                    self.llm.complete(request).await
+                }
+            })
+            .await;
+            let response = match response {
+                Ok(result) => result?,
+                Err(_) => {
+                    stopped_by = Some(LimitType::ExecutionTime);
+                    break;
+                }
             };
             usage.accumulate(&response.usage);
             final_input_tokens = response.usage.input_tokens;
@@ -104,6 +149,7 @@ impl AgentRunner<'_> {
                 history_turns_evicted += ctx.trim_for_observed_usage(observed, budget);
             }
             if response.tool_calls.is_empty() {
+                runtime.steps_used = step;
                 let final_text = response
                     .text
                     .unwrap_or_else(|| "Agent returned no text.".into());
@@ -118,6 +164,8 @@ impl AgentRunner<'_> {
                 return Ok(AgentOutcome {
                     final_text,
                     steps: step,
+                    tool_calls: runtime.tool_calls_used,
+                    stats: runtime.stats(None),
                     transcript,
                     usage,
                     final_input_tokens,
@@ -126,7 +174,15 @@ impl AgentRunner<'_> {
             }
             let calls = response.tool_calls;
             let mut results = Vec::new();
+            let mut round_calls = Vec::new();
+            let mut step_made_progress = false;
             'tool_calls: for call in calls.iter().cloned() {
+                if runtime.tool_calls_used >= self.config.max_tool_calls {
+                    stopped_by = Some(LimitType::ToolCalls);
+                    break 'tool_calls;
+                }
+                runtime.tool_calls_used += 1;
+                round_calls.push(call.clone());
                 if call.name != "execute_shell_command" {
                     results.push(ToolResult {
                         call_id: call.id,
@@ -149,7 +205,10 @@ impl AgentRunner<'_> {
                     {
                         break assessment;
                     }
-                    match self.confirmer.confirm(&command, &assessment).await? {
+                    let confirmation_started = Instant::now();
+                    let decision = self.confirmer.confirm(&command, &assessment).await?;
+                    runtime.add_confirmation_time(confirmation_started.elapsed());
+                    match decision {
                         ConfirmationDecision::Approve => break assessment,
                         ConfirmationDecision::ApproveForTask => {
                             if super::can_remember_approval(&assessment) {
@@ -181,6 +240,31 @@ impl AgentRunner<'_> {
                         }
                     }
                 };
+                let normalized = normalize_command(&command);
+                if action_history
+                    .get(&normalized)
+                    .is_some_and(|(_, repeats)| *repeats >= self.config.max_same_action_retries)
+                {
+                    results.push(ToolResult {
+                        call_id: call.id,
+                        output: format!(
+                            "executed_command={command}\nREPEATED_ACTION_BLOCKED: identical command and result reached the retry limit; change strategy."
+                        ),
+                        success: false,
+                    });
+                    continue;
+                }
+                let remaining = Duration::from_secs(self.config.max_task_execution_time_secs)
+                    .saturating_sub(runtime.active_time());
+                if remaining.is_zero() {
+                    stopped_by = Some(LimitType::ExecutionTime);
+                    results.push(ToolResult {
+                        call_id: call.id,
+                        output: "Not executed: active task time limit was reached.".into(),
+                        success: false,
+                    });
+                    break 'tool_calls;
+                }
                 let execution = self
                     .executor
                     .execute(
@@ -191,6 +275,17 @@ impl AgentRunner<'_> {
                         }),
                     )
                     .await;
+                if let Ok(execution_result) = &execution {
+                    let fingerprint = action_fingerprint(&command, execution_result);
+                    let repeats = action_history
+                        .get(&normalized)
+                        .filter(|(previous, _)| *previous == fingerprint)
+                        .map_or(1, |(_, count)| count.saturating_add(1));
+                    step_made_progress |= repeats == 1;
+                    action_history.insert(normalized, (fingerprint, repeats));
+                } else {
+                    step_made_progress = true;
+                }
                 let mut result = match execution {
                     Ok(x) if x.interrupted => {
                         bail!("agent interrupted during command execution")
@@ -217,10 +312,19 @@ impl AgentRunner<'_> {
                     },
                 };
                 result.output = truncate_text(&result.output, self.config.tool_output_max_bytes);
-                results.push(result)
+                results.push(result);
+                if runtime.active_time()
+                    >= Duration::from_secs(self.config.max_task_execution_time_secs)
+                {
+                    stopped_by = Some(LimitType::ExecutionTime);
+                    break 'tool_calls;
+                }
+            }
+            if round_calls.is_empty() {
+                break;
             }
             transcript.push(ConversationItem::Tools(ToolRound {
-                calls: calls.clone(),
+                calls: round_calls.clone(),
                 results: results.clone(),
             }));
             let model_results = results
@@ -232,13 +336,47 @@ impl AgentRunner<'_> {
                 })
                 .collect();
             current.push(ConversationItem::Tools(ToolRound {
-                calls,
+                calls: round_calls,
                 results: model_results,
             }));
+            runtime.steps_used = step;
+            if matches!(
+                stopped_by,
+                Some(LimitType::ExecutionTime | LimitType::ToolCalls)
+            ) {
+                break;
+            }
+            if step_made_progress {
+                runtime.stalled_steps = 0;
+            } else {
+                runtime.stalled_steps = runtime.stalled_steps.saturating_add(1);
+                if runtime.stalled_steps >= self.config.abort_after_stalled_steps {
+                    stopped_by = Some(LimitType::Stalled);
+                    break;
+                }
+                if runtime.stalled_steps == self.config.replan_after_stalled_steps {
+                    runtime.replans = runtime.replans.saturating_add(1);
+                    current.push(ConversationItem::Message(ConversationMessage::new(
+                        Role::System,
+                        "REPLAN REQUIRED: the recent steps produced no new evidence. Summarize known evidence, explain why the current strategy stalled, and choose a materially different next action.",
+                    )));
+                }
+            }
         }
+        let limit = stopped_by.unwrap_or_else(|| {
+            if self.config.max_agent_steps > effective_steps {
+                LimitType::SystemHardStep
+            } else {
+                LimitType::Step
+            }
+        });
         let final_text = format!(
-            "Agent stopped after reaching the maximum of {} steps; the last tool results were retained.",
-            self.config.max_agent_steps
+            "Agent stopped because the {:?} maximum limit was reached (steps {}/{}, tool calls {}/{}); completed evidence and the last tool results were retained.",
+            limit,
+            runtime.steps_used,
+            effective_steps,
+            runtime.tool_calls_used,
+            self.config.max_tool_calls
         );
         current.push(ConversationItem::Message(ConversationMessage::new(
             Role::Assistant,
@@ -250,7 +388,9 @@ impl AgentRunner<'_> {
         )));
         Ok(AgentOutcome {
             final_text,
-            steps: self.config.max_agent_steps,
+            steps: runtime.steps_used,
+            tool_calls: runtime.tool_calls_used,
+            stats: runtime.stats(Some(limit)),
             transcript,
             usage,
             final_input_tokens,

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Agent tasks now enforce independent step, tool-call, active-time, stalled-progress, repeated-action, and hard-step budgets. Fast/Normal/Deep presets are available; confirmation waits are excluded from active time, while safety classification and confirmation remain mandatory.
+- Repeated normalized commands with unchanged results are blocked before a fourth execution, stalled rounds force replanning before termination, and 80%/90% step warnings ask the model to converge. Task summaries now expose steps, tool calls, active duration, replans, and the terminating limit.
 - 设置面板文本字段新增 UTF-8 安全的 Left/Right/Home/End 光标移动，插入、Backspace 和 Delete 均围绕当前光标执行，密码字段保持掩码。
 - 在统一设置面板的“模型与智能体”Tab 恢复后台模型发现；可在 TUI 内拉取、选择并回填模型及 Provider 元数据，失败时保留手工输入。
 - 修复部分 adb 终端丢失 CSI 前缀后将 `<35;46;8M` 一类 SGR 鼠标报告写入主输入框或设置字段的问题。

@@ -12,7 +12,14 @@ proxy_password = ""
 proxy_bypass = "localhost,127.0.0.1,::1"
 
 max_context_turns = 16
-max_agent_steps = 24
+agent_mode = "normal" # fast, normal, or deep; explicit limits below remain authoritative
+max_agent_steps = 50
+max_tool_calls = 100
+max_task_execution_time_secs = 1800
+replan_after_stalled_steps = 6
+abort_after_stalled_steps = 12
+max_same_action_retries = 3
+hard_max_agent_steps = 200
 llm_retry_count = 3
 llm_retry_base_delay_ms = 500
 llm_request_timeout_secs = 60

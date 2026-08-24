@@ -74,6 +74,19 @@ pub enum UiLanguage {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
+/// Preset task budget profile. Explicit limit fields remain authoritative.
+pub enum AgentMode {
+    /// Short diagnostics and simple changes.
+    Fast,
+    #[default]
+    /// General Android and development work.
+    Normal,
+    /// Long debugging and build/fix/test loops.
+    Deep,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
 /// Explicit outbound proxy protocol.
 pub enum ProxyType {
     #[default]
@@ -120,6 +133,20 @@ pub struct Config {
     pub max_context_turns: usize,
     /// Maximum model/tool iterations per request.
     pub max_agent_steps: usize,
+    /// Named budget profile used as a user-facing hint.
+    pub agent_mode: AgentMode,
+    /// Maximum tool calls attempted during one task.
+    pub max_tool_calls: usize,
+    /// Maximum active wall-clock seconds, excluding confirmation waits.
+    pub max_task_execution_time_secs: u64,
+    /// Consecutive stalled steps before forcing a strategy change.
+    pub replan_after_stalled_steps: usize,
+    /// Consecutive stalled steps before ending the task.
+    pub abort_after_stalled_steps: usize,
+    /// Maximum executions of the same command with the same result.
+    pub max_same_action_retries: usize,
+    /// Built-in absolute step ceiling applied after user configuration.
+    pub hard_max_agent_steps: usize,
     /// Number of retries after the initial LLM attempt.
     pub llm_retry_count: u32,
     /// Initial exponential retry delay.
@@ -196,7 +223,14 @@ impl Default for Config {
             proxy_bypass: "localhost,127.0.0.1,::1".into(),
             skipped_update_version: None,
             max_context_turns: 16,
-            max_agent_steps: 24,
+            max_agent_steps: 50,
+            agent_mode: AgentMode::Normal,
+            max_tool_calls: 100,
+            max_task_execution_time_secs: 1800,
+            replan_after_stalled_steps: 6,
+            abort_after_stalled_steps: 12,
+            max_same_action_retries: 3,
+            hard_max_agent_steps: 200,
             llm_retry_count: 3,
             llm_retry_base_delay_ms: 500,
             llm_request_timeout_secs: 60,
@@ -223,6 +257,19 @@ impl Default for Config {
 }
 
 impl Config {
+    /// Applies the standard Fast, Normal, or Deep task budget as one atomic preset.
+    pub fn apply_agent_mode(&mut self, mode: AgentMode) {
+        self.agent_mode = mode;
+        let (steps, tools, seconds) = match mode {
+            AgentMode::Fast => (20, 40, 600),
+            AgentMode::Normal => (50, 100, 1800),
+            AgentMode::Deep => (100, 200, 3600),
+        };
+        self.max_agent_steps = steps;
+        self.max_tool_calls = tools;
+        self.max_task_execution_time_secs = seconds;
+    }
+
     /// Validates URLs, bounds, enum-like rule values, and provider key needs.
     pub fn validate(&self) -> Result<()> {
         self.validate_runtime()?;
@@ -250,8 +297,22 @@ impl Config {
         if self.model.trim().is_empty() {
             bail!("model must not be empty")
         }
-        if self.max_context_turns == 0 || self.max_agent_steps == 0 {
-            bail!("context turns and agent steps must be positive")
+        if self.max_context_turns == 0
+            || self.max_agent_steps == 0
+            || self.max_tool_calls == 0
+            || self.max_task_execution_time_secs == 0
+            || self.replan_after_stalled_steps == 0
+            || self.abort_after_stalled_steps == 0
+            || self.max_same_action_retries == 0
+            || self.hard_max_agent_steps == 0
+        {
+            bail!("context, step, tool, time, stall, retry, and hard limits must be positive")
+        }
+        if self.replan_after_stalled_steps >= self.abort_after_stalled_steps {
+            bail!("replan_after_stalled_steps must be less than abort_after_stalled_steps")
+        }
+        if self.hard_max_agent_steps > crate::agent::SYSTEM_HARD_MAX_AGENT_STEPS {
+            bail!("hard_max_agent_steps cannot exceed the system hard limit")
         }
         if self.model_context_window == Some(0) || self.model_max_output_tokens == Some(0) {
             bail!("model token limits must be positive when configured")

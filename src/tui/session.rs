@@ -410,16 +410,20 @@ async fn run_inner(
                     );
                     app.status = match config.ui_language {
                         UiLanguage::ZhCn => format!(
-                            "空闲；上次 {} 步，Token 输入 {} / 输出 {} / 总计 {}，上下文 {}",
+                            "空闲；上次 {} 步 / {} 次工具 / {} 秒，Token 输入 {} / 输出 {} / 总计 {}，上下文 {}",
                             outcome.steps,
+                            outcome.tool_calls,
+                            outcome.stats.active_time.as_secs(),
                             usage_value(outcome.usage.input_tokens),
                             usage_value(outcome.usage.output_tokens),
                             usage_value(outcome.usage.total_tokens()),
                             context
                         ),
                         UiLanguage::En => format!(
-                            "idle; last {} steps, tokens in {} / out {} / total {}, context {}",
+                            "idle; last {} steps / {} tools / {}s, tokens in {} / out {} / total {}, context {}",
                             outcome.steps,
+                            outcome.tool_calls,
+                            outcome.stats.active_time.as_secs(),
                             usage_value(outcome.usage.input_tokens),
                             usage_value(outcome.usage.output_tokens),
                             usage_value(outcome.usage.total_tokens()),
@@ -1059,9 +1063,9 @@ impl SettingsEditor {
                 ),
                 (
                     if zh {
-                        "最大步骤（推荐 24）"
+                        "最大步骤（Normal 推荐 50）"
                     } else {
-                        "Max steps (recommended 24)"
+                        "Max steps (Normal recommends 50)"
                     },
                     self.config.max_agent_steps.to_string(),
                 ),
