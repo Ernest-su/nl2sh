@@ -90,6 +90,8 @@ async fn main() -> Result<()> {
                 model: cfg.model.clone(),
                 root: root.clone(),
                 ascii: cfg.ascii_symbols,
+                show_buddha_ascii_art: cfg.show_buddha_ascii_art,
+                show_train_ascii_art: cfg.show_train_ascii_art,
                 language: cfg.ui_language,
                 api_type: format!("{:?}", cfg.api_type),
                 mode: match (cfg.ui_language, cli.mode) {
@@ -123,7 +125,11 @@ async fn main() -> Result<()> {
             ui_history
                 .lock()
                 .map_err(|_| anyhow::anyhow!("TUI history lock is poisoned"))?
-                .extend(tui::help_history(cfg.ui_language, cfg.ascii_symbols));
+                .extend(tui::help_history(
+                    cfg.ui_language,
+                    cfg.ascii_symbols,
+                    cfg.show_buddha_ascii_art,
+                ));
             continue;
         }
         if instruction.trim() == "/clear" {

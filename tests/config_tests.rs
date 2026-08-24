@@ -14,12 +14,29 @@ fn normal_toml_and_defaults() -> anyhow::Result<()> {
     )?;
     let cfg = load_from(&path)?;
     assert_eq!(cfg.model, "local");
-    assert_eq!(cfg.api_type, ApiType::Responses);
+    assert_eq!(cfg.api_type, ApiType::Auto);
     assert_eq!(cfg.max_agent_steps, 24);
     assert_eq!(cfg.max_context_turns, 16);
     assert_eq!(cfg.model_tool_output_max_bytes, 128 * 1024);
     assert_eq!(cfg.history_log_max_bytes, 10 * 1024 * 1024);
     assert_eq!(cfg.ui_language, UiLanguage::ZhCn);
+    assert!(cfg.show_buddha_ascii_art);
+    assert!(cfg.show_train_ascii_art);
+    Ok(())
+}
+
+#[test]
+fn automatic_api_type_is_defaulted_and_omitted_when_saved() -> anyhow::Result<()> {
+    let encoded = toml::to_string(&Config::default())?;
+    assert!(!encoded.lines().any(|line| line.starts_with("api_type")));
+    let decoded: Config = toml::from_str(&encoded)?;
+    assert_eq!(decoded.api_type, ApiType::Auto);
+
+    let forced = toml::to_string(&Config {
+        api_type: ApiType::ChatCompletions,
+        ..Config::default()
+    })?;
+    assert!(forced.contains("api_type = \"chat_completions\""));
     Ok(())
 }
 

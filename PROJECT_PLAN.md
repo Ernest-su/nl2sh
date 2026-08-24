@@ -41,6 +41,7 @@
 - [x] 两个 HTTP adapter 和 function tool 映射。
 - [x] rustls、认证省略、timeout、可重试状态和退避。
 - [x] Ctrl+C 取消请求/退避和增量 command output sink。
+- [x] 默认自动协商 Responses/Chat Completions，仅对协议不匹配安全回退并缓存结果。
 - [ ] 更多兼容厂商响应变体。
 
 验收：wiremock 文本/tool/错误测试。风险：兼容 endpoint 方言。

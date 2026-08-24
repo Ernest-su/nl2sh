@@ -4,6 +4,8 @@ Last Updated: 2026-08-24
 
 ## Recent Changes
 
+- LLM 协议默认改为可省略配置的 `auto`：首次请求优先 Responses，仅在尚未输出内容的协议结构不匹配时回退 Chat Completions 并缓存；401、429、5xx、超时和部分流式输出错误不会误触发切换，显式协议仍可强制覆盖。
+- 设置面板“界面”分类新增清除审计日志操作，以及默认开启、互相独立的佛像与小火车 ASCII Art 开关；清除后当前进程可继续写入新日志。
 - 设置面板文本字段现在维护独立 UTF-8 光标，支持 Left/Right/Home/End 定位编辑；切换字段或分类时同步到新字段末尾，密码掩码光标仍与原始字符位置一致。
 - 统一设置面板的“模型与智能体”Tab 新增在线模型列表操作，后台复用 Provider 元数据客户端，成功后在面板内选择并回填模型、上下文窗口和最大输出 Token，失败不覆盖当前手工配置。
 - 输入边界现在同时过滤完整 `[<b;x;yM/m` 和 adb 丢失 CSI 后的 `<b;x;yM/m` SGR 鼠标报告，并覆盖主输入框与设置文本字段。
@@ -123,6 +125,8 @@ Last Updated: 2026-08-24
 
 ## Verification Performed
 
+- LLM 自动协议协商：`cargo fmt --all -- --check`、`cargo check`、`cargo clippy --all-targets -- -D warnings` 与 NDK r28/API 26 AArch64 release 构建通过；58 项库测试、CLI、Agent loop、取消、配置、日志、10 项 LLM mock、PTY、root 与安全测试通过。回归覆盖 Responses 成功、结构不匹配回退并缓存 Chat Completions、SSE 回退、部分文本后禁止重放，以及 503 不误判；全量 `cargo test` 的 4 项 TUI 伪终端测试中 3 项通过，既有启动动画原始 ANSI 文本匹配用例 `agent_reply_remains_in_live_tui_until_ctrl_q` 仍超时。
+- 设置面板日志与 ASCII Art 开关：`cargo fmt --all -- --check`、`cargo check`、`cargo clippy --all-targets -- -D warnings` 通过；58 项库测试、CLI、Agent、配置、日志、LLM mock、PTY、root 与安全测试通过。全量 `cargo test` 的 4 项 TUI 伪终端测试中 3 项通过，既有启动动画原始 ANSI 文本匹配用例 `agent_reply_remains_in_live_tui_until_ctrl_q` 仍超时。
 - 设置入口与焦点修复：`cargo fmt --all -- --check`、`cargo check`、`cargo clippy --all-targets -- -D warnings`、53 项库测试和 `/config` 伪终端回归通过；回归确认 `/config` 只记录为本地命令、不作为用户消息提交，并覆盖设置文本字段边界/光标及命令候选收敛。
 - 自更新与统一设置：`cargo fmt --all -- --check`、`cargo check`、`cargo clippy --all-targets -- -D warnings`、53 项库测试及非 TUI 集成测试通过；三个配置伪终端用例已迁移到设置面板并通过，一个既有启动动画原始 ANSI 连续匹配用例仍超时。
 

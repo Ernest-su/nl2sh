@@ -102,6 +102,8 @@ async fn run_inner(
     let history = Arc::new(Mutex::new(i18n::startup_history(
         config.ui_language,
         config.ascii_symbols,
+        config.show_buddha_ascii_art,
+        config.show_train_ascii_art,
     )));
     let output: Arc<dyn OutputSink> = Arc::new(SessionOutput {
         history: history.clone(),
@@ -139,7 +141,7 @@ async fn run_inner(
         history: snapshot(&history)?,
         conversation_scroll: 0,
         tool_results_expanded: false,
-        welcome_train_frame: Some(0),
+        welcome_train_frame: config.show_train_ascii_art.then_some(0),
         model: config.model.clone(),
         root,
         ascii: config.ascii_symbols,
@@ -566,6 +568,22 @@ async fn run_inner(
                             "fetching model list in background",
                         );
                     }
+                    SettingsAction::ClearLog => match log.clear() {
+                        Ok(()) => {
+                            app.status = localized_status(
+                                config.ui_language,
+                                "审计日志已清除",
+                                "audit log cleared",
+                            );
+                        }
+                        Err(_) => {
+                            app.status = localized_status(
+                                config.ui_language,
+                                "清除审计日志失败",
+                                "failed to clear audit log",
+                            );
+                        }
+                    },
                     SettingsAction::Cancel => {
                         settings_editor = None;
                         app.status = localized_status(
@@ -676,6 +694,7 @@ async fn run_inner(
                                 .extend(i18n::help_history(
                                     config.ui_language,
                                     config.ascii_symbols,
+                                    config.show_buddha_ascii_art,
                                 ));
                             app.conversation_scroll = 0;
                             continue;
@@ -892,6 +911,7 @@ struct SettingsEditor {
 enum SettingsAction {
     Continue,
     FetchModels,
+    ClearLog,
     Cancel,
     Save,
 }
@@ -913,7 +933,7 @@ impl SettingsEditor {
     }
 
     fn field_count(&self) -> usize {
-        [3, 6, 6, 4, 6][self.tab]
+        [3, 6, 6, 7, 6][self.tab]
     }
 
     fn view(&self, cursor_visible: bool) -> PopupView {
@@ -1115,6 +1135,30 @@ impl SettingsEditor {
                 ),
                 (
                     if zh {
+                        "佛像 ASCII Art"
+                    } else {
+                        "Buddha ASCII art"
+                    },
+                    self.config.show_buddha_ascii_art.to_string(),
+                ),
+                (
+                    if zh {
+                        "小火车 ASCII Art"
+                    } else {
+                        "Train ASCII art"
+                    },
+                    self.config.show_train_ascii_art.to_string(),
+                ),
+                (
+                    if zh {
+                        "清除审计日志"
+                    } else {
+                        "Clear audit log"
+                    },
+                    if zh { "Enter 清除" } else { "Enter to clear" }.into(),
+                ),
+                (
+                    if zh {
                         "实时输出上限 bytes"
                     } else {
                         "Live output bytes"
@@ -1246,6 +1290,7 @@ impl SettingsEditor {
             KeyCode::Enter if self.tab == 1 && self.selected == 5 && !self.loading_models => {
                 SettingsAction::FetchModels
             }
+            KeyCode::Enter if self.tab == 3 && self.selected == 4 => SettingsAction::ClearLog,
             KeyCode::Backspace if self.is_text_field() => {
                 if let Some((previous, _)) = self.selected_text()[..self.text_cursor]
                     .char_indices()
@@ -1360,11 +1405,11 @@ impl SettingsEditor {
         use crate::config::{ApiType, ConfirmPolicy, ExecuteUserMode, ProxyType, SecurityLevel};
         match (self.tab, self.selected) {
             (0, 2) => {
-                self.config.api_type = if self.config.api_type == ApiType::Responses {
-                    ApiType::ChatCompletions
-                } else {
-                    ApiType::Responses
-                }
+                self.config.api_type = cycle3(
+                    self.config.api_type,
+                    [ApiType::Auto, ApiType::Responses, ApiType::ChatCompletions],
+                    direction,
+                )
             }
             (1, 1) => adjust_optional(&mut self.config.model_context_window, direction, 1024),
             (1, 2) => adjust_optional(&mut self.config.model_max_output_tokens, direction, 1024),
@@ -1418,13 +1463,15 @@ impl SettingsEditor {
                 }
             }
             (3, 1) => self.config.ascii_symbols = !self.config.ascii_symbols,
-            (3, 2) => adjust_usize_step(
+            (3, 2) => self.config.show_buddha_ascii_art = !self.config.show_buddha_ascii_art,
+            (3, 3) => self.config.show_train_ascii_art = !self.config.show_train_ascii_art,
+            (3, 5) => adjust_usize_step(
                 &mut self.config.ui_live_output_max_bytes,
                 direction,
                 1024,
                 256,
             ),
-            (3, 3) => {
+            (3, 6) => {
                 adjust_usize_step(&mut self.config.tool_output_max_bytes, direction, 1024, 256)
             }
             (4, 0) => self.config.proxy_enabled = !self.config.proxy_enabled,
@@ -1892,6 +1939,29 @@ mod tests {
         editor.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
         assert_eq!(editor.tab, 2);
         assert_eq!(editor.selected, 0);
+    }
+
+    #[test]
+    fn settings_ascii_art_switches_are_independent_and_log_clear_is_an_action() {
+        let mut editor = SettingsEditor::new(&Config::default(), 3);
+        assert!(editor.config.show_buddha_ascii_art);
+        assert!(editor.config.show_train_ascii_art);
+
+        editor.selected = 2;
+        editor.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
+        assert!(!editor.config.show_buddha_ascii_art);
+        assert!(editor.config.show_train_ascii_art);
+
+        editor.selected = 3;
+        editor.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
+        assert!(!editor.config.show_buddha_ascii_art);
+        assert!(!editor.config.show_train_ascii_art);
+
+        editor.selected = 4;
+        assert!(matches!(
+            editor.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+            SettingsAction::ClearLog
+        ));
     }
 
     #[test]

@@ -7,11 +7,19 @@ use url::Url;
 #[serde(rename_all = "snake_case")]
 /// Supported OpenAI-compatible wire protocol.
 pub enum ApiType {
+    #[default]
+    /// Negotiates the protocol on the first request and caches the result.
+    Auto,
     /// `/chat/completions` messages protocol.
     ChatCompletions,
-    #[default]
     /// `/responses` item protocol.
     Responses,
+}
+
+impl ApiType {
+    fn is_auto(&self) -> bool {
+        *self == Self::Auto
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -92,6 +100,7 @@ pub struct Config {
     /// API base URL, normally ending in `/v1`.
     pub endpoint: String,
     /// Selected API wire protocol.
+    #[serde(skip_serializing_if = "ApiType::is_auto")]
     pub api_type: ApiType,
     /// Master proxy switch. Disabling it preserves all proxy fields.
     pub proxy_enabled: bool,
@@ -131,6 +140,10 @@ pub struct Config {
     pub enable_pty: bool,
     /// Replaces Emoji labels with ASCII labels.
     pub ascii_symbols: bool,
+    /// Shows the Buddha ASCII art in startup and help content.
+    pub show_buddha_ascii_art: bool,
+    /// Plays the one-shot ASCII train animation on startup.
+    pub show_train_ascii_art: bool,
     /// Terminal interface language; Simplified Chinese is the default.
     pub ui_language: UiLanguage,
     /// JSON Lines interaction log, relative to the configuration directory by default.
@@ -174,7 +187,7 @@ impl Default for Config {
             model_context_window: None,
             model_max_output_tokens: None,
             endpoint: "https://api.openai.com/v1".into(),
-            api_type: ApiType::Responses,
+            api_type: ApiType::Auto,
             proxy_enabled: false,
             proxy_type: ProxyType::Http,
             proxy_address: String::new(),
@@ -194,6 +207,8 @@ impl Default for Config {
             execute_user_mode: ExecuteUserMode::Auto,
             enable_pty: true,
             ascii_symbols: false,
+            show_buddha_ascii_art: true,
+            show_train_ascii_art: true,
             ui_language: UiLanguage::ZhCn,
             history_log_file: PathBuf::from("nl2sh.log"),
             ui_live_output_max_bytes: 256 * 1024,

@@ -147,7 +147,7 @@ cp config.toml.example config.toml
 
 配置优先级为 CLI 参数、`NL2SH_API_KEY`、`config.toml`、字段默认值。CLI 可用 `--endpoint`、`--model`、`--api-type` 覆盖 provider 设置；覆盖后统一校验，因此可以修正文件中的对应无效值。空 API Key 适用于本地服务，此时不会发送空 Authorization header。不要提交真实 key。
 
-`api_type` 可选 `responses` 或 `chat_completions`。兼容服务对协议的支持并不一致，nl2sh 不会因一次业务错误擅自切换协议。
+`api_type` 默认是 `auto`，因此配置文件可省略该字段。首次请求优先使用 Responses；仅当端点不存在、明确不支持，或在尚未输出任何内容时返回不兼容结构，才回退 Chat Completions，并在当前进程缓存成功协议。鉴权、限流、5xx、超时和已经产生流式内容后的错误不会触发切换。遇到特殊兼容服务时仍可显式设置 `responses` 或 `chat_completions`，也可用 `--api-type` 临时强制覆盖。
 
 `model_context_window` 和 `model_max_output_tokens` 是可选的 Token 限额覆盖；省略上下文窗口时，nl2sh 优先使用 Provider 元数据，再使用内置的保守模型注册表。OpenAI、DeepSeek、SiliconFlow 使用各自的 OpenAI 风格模型列表，Ollama 使用原生 `/api/tags` 与 `/api/show` 读取本地模型及上下文。状态栏的上下文百分比使用最后一次模型请求的输入 Token 除以已知窗口估算，未知时显示 `?`。实际输入 Token 达到上下文安全水位后，Agent 会按观测用量动态淘汰最旧的完整历史轮次；system instruction、当前轮次和完整 Tool Calling round 不会被拆分，`max_context_turns` 仍是硬上限。
 
@@ -159,9 +159,9 @@ cp config.toml.example config.toml
 - `normal`：永不自动调用 `su`。
 - `root`：UID 非 0 时必须通过 `su`，失败时不静默降级。
 
-`history_log_file` 默认为 `nl2sh.log`，相对路径按 `config.toml` 所在目录解析。日志采用逐行 JSON，记录用户输入、命令、输出、结果和错误并在每条记录后刷新；新文件权限为 `0600`。日志可能包含命令输出中的设备信息，排查完成后应按实际保密要求保管或清理，但不会写入 API Key。\n\n输出资源默认受限：实时 TUI 为 256 KiB、单个捕获流为 1 MiB、单个发给模型的 Tool Result 为 128 KiB、单条日志事件为 256 KiB、单个日志文件为 10 MiB。对应配置项为 `ui_live_output_max_bytes`、`tool_output_max_bytes`、`model_tool_output_max_bytes`、`history_log_event_max_bytes` 和 `history_log_max_bytes`。所有内容截断都会插入 `NL2SH ... TRUNCATED` 标记；日志达到文件上限后停止追加，不会静默形成不完整记录。
+`history_log_file` 默认为 `nl2sh.log`，相对路径按 `config.toml` 所在目录解析。日志采用逐行 JSON，记录用户输入、命令、输出、结果和错误并在每条记录后刷新；新文件权限为 `0600`。日志可能包含命令输出中的设备信息，排查完成后应按实际保密要求保管或清理，但不会写入 API Key。设置面板“界面”分类中的“清除审计日志”可用 Enter 截断当前日志，清除后本次进程仍会继续记录新事件。\n\n输出资源默认受限：实时 TUI 为 256 KiB、单个捕获流为 1 MiB、单个发给模型的 Tool Result 为 128 KiB、单条日志事件为 256 KiB、单个日志文件为 10 MiB。对应配置项为 `ui_live_output_max_bytes`、`tool_output_max_bytes`、`model_tool_output_max_bytes`、`history_log_event_max_bytes` 和 `history_log_max_bytes`。所有内容截断都会插入 `NL2SH ... TRUNCATED` 标记；日志达到文件上限后停止追加，不会静默形成不完整记录。
 
-`ui_language` 控制终端界面语言，可选 `zh_cn` 或 `en`，默认 `zh_cn`。使用 `/config` 或其别名 `/setting` 打开统一设置面板；原 `/provider`、`/model`、`/models`、`/proxy` 命令已移除。Tab/Shift+Tab 切分类，Up/Down 选字段，Left/Right 调整当前值，Ctrl+S 保存；面板接管键盘焦点，当前文本字段具有输入边界、背景和闪烁光标。最大步骤和轮次显示推荐值 24/16。
+`ui_language` 控制终端界面语言，可选 `zh_cn` 或 `en`，默认 `zh_cn`。使用 `/config` 或其别名 `/setting` 打开统一设置面板；原 `/provider`、`/model`、`/models`、`/proxy` 命令已移除。Tab/Shift+Tab 切分类，Up/Down 选字段，Left/Right 调整当前值，Ctrl+S 保存；面板接管键盘焦点，当前文本字段具有输入边界、背景和闪烁光标。最大步骤和轮次显示推荐值 24/16。`show_buddha_ascii_art` 与 `show_train_ascii_art` 分别控制佛像和启动小火车，默认均为 `true`，可在“界面”分类中独立关闭。
 
 设置面板的“网络”Tab 支持 HTTP/HTTPS CONNECT、SOCKS5 和推荐的 SOCKS5H（由代理解析 DNS），以及可选用户名、密码和绕过列表。总开关关闭时保留其他代理字段。代理设置统一用于模型请求、模型发现、余额和更新检查；密码掩码显示，不进入对话或审计日志。
 

@@ -17,6 +17,9 @@
 
 ### Added
 
+- API protocol now defaults to automatic negotiation: Responses is preferred, safe protocol mismatches fall back to Chat Completions, and the successful dialect is cached without treating authentication, rate-limit, 5xx, timeout, or partial-stream failures as negotiation signals.
+- The unified Settings UI now provides an audit-log clear action and independent, default-on switches for the Buddha and startup-train ASCII art.
+
 - Agent tasks now accumulate provider-reported input/output token usage across every tool-calling step and show the task totals in the TUI status line.
 - A `/models` flow now fetches the current provider's model list with a visible network-loading message and falls back to manual model entry without logging credentials or raw account responses.
 - Provider metadata is normalized behind a dedicated client for OpenAI, DeepSeek, SiliconFlow, and Ollama; known or user-overridden context windows drive an estimated context-usage percentage in the TUI.

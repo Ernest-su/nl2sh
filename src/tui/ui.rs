@@ -531,6 +531,7 @@ fn conversation_lines(app: &App, width: usize, theme: Theme) -> Vec<Line<'_>> {
     for entry in &app.history {
         if let Some(art) = entry.strip_prefix(super::i18n::BUDDHA_ART_PREFIX) {
             lines.extend(buddha_art_lines(art, theme));
+        } else if entry == super::i18n::WELCOME_TRAIN_ANCHOR {
             if let Some(frame) = app.welcome_train_frame {
                 lines.extend(welcome_train_lines(frame, width, theme));
             }

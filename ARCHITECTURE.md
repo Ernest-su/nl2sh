@@ -88,7 +88,7 @@ nl2sh
 
 LLM、模型发现、Ollama 元数据和余额查询必须通过 `src/network` 构造客户端，以保证代理开关、认证、绕过和超时一致。显式关闭代理时调用 `no_proxy`，不隐式继承宿主环境；HTTP、SOCKS5 与 SOCKS5H 均保持 Provider HTTPS 的端到端 TLS。代理配置弹窗只展示密码掩码，保存后原子替换配置并重建客户端。
 
-`LlmClient::complete` 是业务唯一入口。Chat adapter 映射 messages、function tools、tool_calls；Responses adapter 映射 input、function tool、function_call 和 function_call_output。`ConversationItem` 把文本与完整 `ToolRound` 按真实顺序保存，因此截断只删除完整 user/tool/assistant turn，不会产生孤立 tool output。统一类型还包括 `ConversationMessage`、`ToolDefinition`、`ToolCall`、`ToolResult`、`Usage`、`FinishReason`。新增 provider 只需实现 trait，不能把供应商 JSON 泄漏到 Agent。
+`LlmClient::complete` 是业务唯一入口。Chat adapter 映射 messages、function tools、tool_calls；Responses adapter 映射 input、function tool、function_call 和 function_call_output。默认 `auto` 协议在首次真实请求优先尝试 Responses，仅在 404/405、明确的端点不支持或尚未产生内容的响应结构不匹配时回退 Chat Completions，并在当前 client 生命周期缓存成功协议；鉴权、限流、5xx、超时和已产生流式内容后的错误不得触发协议切换。显式协议配置与 CLI 覆盖仍强制使用指定 adapter。`ConversationItem` 把文本与完整 `ToolRound` 按真实顺序保存，因此截断只删除完整 user/tool/assistant turn，不会产生孤立 tool output。统一类型还包括 `ConversationMessage`、`ToolDefinition`、`ToolCall`、`ToolResult`、`Usage`、`FinishReason`。新增 provider 只需实现 trait，不能把供应商 JSON 泄漏到 Agent。
 
 ## 安全架构
 
@@ -124,6 +124,6 @@ Confirmation policy
 
 启动更新检查是只读后台任务，失败不阻塞 TUI；仅在发现更高版本且匹配本机 ABI 时提示。立即更新会先恢复终端，再下载裸二进制及 SHA-256，校验通过后在当前目录原子替换。跳过版本写入配置，普通暂不更新不持久化。
 
-`/config` 与别名 `/setting` 使用单一 TUI 设置面板承载服务、模型与 Agent、执行与安全、界面和网络分类；其他分散配置命令不再暴露。两者属于严格本地命令，打开面板后不得进入模型上下文。Tab/Shift+Tab 只切分类，Up/Down 只移动字段，Left/Right 只调整当前值；保存后主循环重新加载配置和客户端。
+`/config` 与别名 `/setting` 使用单一 TUI 设置面板承载服务、模型与 Agent、执行与安全、界面和网络分类；其他分散配置命令不再暴露。两者属于严格本地命令，打开面板后不得进入模型上下文。Tab/Shift+Tab 只切分类，Up/Down 只移动字段，Left/Right 只调整当前值；保存后主循环重新加载配置和客户端。界面分类独立控制佛像与小火车 ASCII Art，并提供显式的日志清除操作；日志清除仅截断当前 JSONL 文件并恢复后续记录能力，不清理当前会话或改变安全链。
 
 Agent TUI 在输入分发边界保留 `/` 前缀命名空间：所有去除前导空白后以 `/` 开头的输入均为本地命令，已知命令执行本地动作，未知命令只产生本地提示。任何斜杠命令都不得写入模型用户历史或调用 LLM。

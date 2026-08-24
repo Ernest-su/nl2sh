@@ -55,6 +55,10 @@ pub struct TuiOptions {
     pub root: String,
     /// Enables ASCII-only UI labels.
     pub ascii: bool,
+    /// Shows the Buddha ASCII art in welcome/help content.
+    pub show_buddha_ascii_art: bool,
+    /// Plays the startup train ASCII animation.
+    pub show_train_ascii_art: bool,
     /// Language used for interface labels and startup help.
     pub language: UiLanguage,
     /// API dialect label.
@@ -81,7 +85,12 @@ fn run_inner(options: TuiOptions, mut history: Vec<String>) -> Result<Option<Str
     let mut term = TerminalGuard::enter()?;
     let show_welcome_train = history.is_empty();
     if show_welcome_train {
-        history = i18n::startup_history(options.language, options.ascii);
+        history = i18n::startup_history(
+            options.language,
+            options.ascii,
+            options.show_buddha_ascii_art,
+            options.show_train_ascii_art,
+        );
     }
     let mut app = App {
         input: Input::default(),
@@ -93,7 +102,7 @@ fn run_inner(options: TuiOptions, mut history: Vec<String>) -> Result<Option<Str
         history,
         conversation_scroll: 0,
         tool_results_expanded: false,
-        welcome_train_frame: show_welcome_train.then_some(0),
+        welcome_train_frame: (show_welcome_train && options.show_train_ascii_art).then_some(0),
         model: options.model,
         root: options.root,
         ascii: options.ascii,

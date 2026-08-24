@@ -93,10 +93,10 @@ pub fn run_wizard(path: &Path) -> Result<()> {
     let api = prompt(
         label(
             ui_language,
-            "API 类型 (responses/chat_completions)",
-            "API type (responses/chat_completions)",
+            "API 类型 (auto/responses/chat_completions)",
+            "API type (auto/responses/chat_completions)",
         ),
-        "responses",
+        "auto",
     )?;
     let confirm = prompt(
         label(
@@ -117,6 +117,7 @@ pub fn run_wizard(path: &Path) -> Result<()> {
     let api_type = parse(
         &api,
         &[
+            ("auto", ApiType::Auto),
             ("responses", ApiType::Responses),
             ("chat_completions", ApiType::ChatCompletions),
         ],
@@ -192,20 +193,22 @@ pub fn run_configure(path: &Path) -> Result<()> {
     }
     cfg.model = prompt(label(cfg.ui_language, "模型", "Model"), &cfg.model)?;
     let default_api = match cfg.api_type {
+        ApiType::Auto => "auto",
         ApiType::Responses => "responses",
         ApiType::ChatCompletions => "chat_completions",
     };
     let api = prompt(
         label(
             cfg.ui_language,
-            "API 类型 (responses/chat_completions)",
-            "API type (responses/chat_completions)",
+            "API 类型 (auto/responses/chat_completions)",
+            "API type (auto/responses/chat_completions)",
         ),
         default_api,
     )?;
     cfg.api_type = parse(
         &api,
         &[
+            ("auto", ApiType::Auto),
             ("responses", ApiType::Responses),
             ("chat_completions", ApiType::ChatCompletions),
         ],
@@ -235,20 +238,22 @@ pub fn run_provider_configure(path: &Path) -> Result<()> {
         cfg.api_key = api_key;
     }
     let default_api = match cfg.api_type {
+        ApiType::Auto => "auto",
         ApiType::Responses => "responses",
         ApiType::ChatCompletions => "chat_completions",
     };
     let api = prompt(
         label(
             cfg.ui_language,
-            "API 类型 (responses/chat_completions)",
-            "API type (responses/chat_completions)",
+            "API 类型 (auto/responses/chat_completions)",
+            "API type (auto/responses/chat_completions)",
         ),
         default_api,
     )?;
     cfg.api_type = parse(
         &api,
         &[
+            ("auto", ApiType::Auto),
             ("responses", ApiType::Responses),
             ("chat_completions", ApiType::ChatCompletions),
         ],
