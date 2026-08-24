@@ -1,8 +1,13 @@
 # Project Status
 
-Last Updated: 2026-08-23
+Last Updated: 2026-08-24
 
 ## Recent Changes
+
+- 修复 `/config` 本地命令打开面板后继续落入 Agent 提交流程的问题；设置面板打开时主输入框失焦，当前文本字段显示独立输入边界、背景和闪烁光标。
+- 配置入口收敛为 `/config` 和别名 `/setting`，移除 `/provider`、`/model`、`/models`、`/proxy` 的候选与 Agent TUI 路由。
+- 新增 `nl2sh update`、`/update` 与启动后台检查：按 Android ABI 获取 GitHub Release 裸二进制，经独立 SHA-256 校验后原子替换；提示支持立即更新、暂不更新和跳过此版本。
+- 配置命令统一进入分类 TUI 设置面板；Tab/Shift+Tab 切分类，Up/Down 切字段，Left/Right 调整当前值，最大步骤与轮次显示推荐值 24/16。
 
 - 支持余额接口时，Agent TUI 会在启动后及每 60 秒静默刷新，最近一次成功余额常驻顶栏，失败保留旧值；手工 `/balance` 立即刷新，余额仍只存在内存且不进入对话、配置或审计历史。
 - 新增 `/proxy` Agent TUI 配置弹窗，支持 HTTP CONNECT、SOCKS5/SOCKS5H、认证和绕过列表；总开关关闭时保留配置。LLM、模型发现、Ollama 元数据和余额查询统一使用同一代理策略，密码仅掩码显示且不进入日志或模型上下文。
@@ -113,6 +118,9 @@ Last Updated: 2026-08-23
 - Android 使用 `/system/bin/sh`，非 Android 开发主机条件使用 `/bin/sh`。
 
 ## Verification Performed
+
+- 设置入口与焦点修复：`cargo fmt --all -- --check`、`cargo check`、`cargo clippy --all-targets -- -D warnings`、53 项库测试和 `/config` 伪终端回归通过；回归确认 `/config` 只记录为本地命令、不作为用户消息提交，并覆盖设置文本字段边界/光标及命令候选收敛。
+- 自更新与统一设置：`cargo fmt --all -- --check`、`cargo check`、`cargo clippy --all-targets -- -D warnings`、53 项库测试及非 TUI 集成测试通过；三个配置伪终端用例已迁移到设置面板并通过，一个既有启动动画原始 ANSI 连续匹配用例仍超时。
 
 - 代理弹窗方向键修复：WSL2 `cargo fmt --all -- --check`、`cargo check` 与 49 项库测试通过，新增独立 Esc 延迟释放及碎片 CSI/SS3 方向键回归覆盖。
 - `/proxy` 代理配置：WSL2 `cargo check`、48 项库测试及除 2 个既有动画时序用例外的全部 target 测试通过；Android API 34 ARMv7 release 构建与真机 PTY 验证弹窗打开、类型切换、Esc 取消、保存后热重载及终端恢复正常，配置文件保持 `0600`。启用 SOCKS 后 strip 二进制为 2,530,264 bytes，比此前增加 23,480 bytes（约 0.94%）。

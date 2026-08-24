@@ -405,21 +405,17 @@ fn render_command_menu(f: &mut Frame, app: &App, input_area: ratatui::layout::Re
                 (UiLanguage::ZhCn, "/balance") => "查询 Provider 余额",
                 (UiLanguage::ZhCn, "/clear") => "清空当前会话",
                 (UiLanguage::ZhCn, "/config") => "重新配置模型服务",
+                (UiLanguage::ZhCn, "/setting") => "打开设置（/config 别名）",
                 (UiLanguage::ZhCn, "/exit") => "安全退出",
                 (UiLanguage::ZhCn, "/help") => "显示帮助",
-                (UiLanguage::ZhCn, "/model") => "配置模型",
-                (UiLanguage::ZhCn, "/models") => "在线选择模型",
-                (UiLanguage::ZhCn, "/provider") => "配置 API 服务",
-                (UiLanguage::ZhCn, "/proxy") => "配置网络代理",
+                (UiLanguage::ZhCn, "/update") => "检查版本更新",
                 (UiLanguage::En, "/balance") => "Query provider balance",
                 (UiLanguage::En, "/clear") => "Clear the current session",
                 (UiLanguage::En, "/config") => "Reconfigure the model provider",
+                (UiLanguage::En, "/setting") => "Open Settings (/config alias)",
                 (UiLanguage::En, "/exit") => "Quit safely",
                 (UiLanguage::En, "/help") => "Show help",
-                (UiLanguage::En, "/model") => "Configure the model",
-                (UiLanguage::En, "/models") => "Fetch and select a model",
-                (UiLanguage::En, "/provider") => "Configure the API provider",
-                (UiLanguage::En, "/proxy") => "Configure network proxy",
+                (UiLanguage::En, "/update") => "Check for updates",
                 _ => "",
             };
             let style = if index == selected {
@@ -482,7 +478,11 @@ fn input_editor_line(app: &App, width: usize, theme: Theme) -> Line<'static> {
         used += character_width;
     }
     let base = theme.style(theme.text_primary).bg(theme.background_alt);
-    let cursor = if app.cursor_visible { "│" } else { " " };
+    let cursor = if app.cursor_visible && app.popup.is_none() {
+        "│"
+    } else {
+        " "
+    };
     Line::from(vec![
         Span::styled("> ", theme.style(theme.accent).bg(theme.background_alt)),
         Span::styled(before, base),
@@ -955,8 +955,8 @@ mod tests {
         assert!(menu.contains("/clear"));
         assert!(menu.contains("/exit"));
         assert!(menu.contains("/help"));
-        assert!(menu.contains("/model"));
-        assert!(menu.contains("/provider"));
+        assert!(menu.contains("/setting"));
+        assert!(!menu.contains("/provider"));
         assert!(terminal
             .backend()
             .buffer()

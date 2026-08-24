@@ -50,6 +50,7 @@ TUI 的视觉语义统一由 `UI_DESIGN.md` 约束。实现应以集中式 `Them
 | `src/provider_metadata` | `ProviderMetadataClient`、Provider 识别、模型列表与上下文元数据归一化 | Provider 配置 → `ModelMetadata` 列表 | 只读网络访问，不记录凭据/原始账户响应，不参与模型推理与安全判断 |
 | `src/provider_account` | `ProviderAccountClient`、余额结果归一化 | Provider 凭据 → 可显示余额 | 仅调用公开只读接口；不记录凭据、余额或原始响应，不参与推理、安全或执行 |
 | `src/network` | 统一 rustls HTTP Client、HTTP/SOCKS 代理、认证和绕过策略 | `Config` → `reqwest::Client` | 代理凭据不得进入日志、错误详情或模型上下文；关闭总开关不清理配置 |
+| `src/update` | GitHub Release 发现、版本/ABI 选择、SHA-256 校验与原子替换 | Release 元数据与 Android ABI → 已校验的新可执行文件 | 不执行模型输出；不接受跨 ABI 或无校验资产 |
 | `src/agent` | `AgentRunner`、上下文完整交互单元、工具 schema、`Confirmer` | 用户任务 → Tool Loop / 最终文本 | 不得绕过 security 和 confirmer |
 | `src/security` | normalize、side-effect 分类、内置/自定义规则、`SecurityAssessment` | 原始命令 → 风险和确认要求 | 不依赖 TUI、LLM 或执行器 |
 | `src/shell` | `CommandExecutor`、root invocation、process group、pipeline/PTY 边界 | 已批准命令 → `ExecutionResult` | 不自行降低风险或批准命令 |
@@ -118,3 +119,9 @@ Confirmation policy
 - 新配置来源：在 loader 合并并记录优先级，再统一 validate。
 - 新 UI：仅依赖 Agent/trait API，不访问 provider JSON。
 - 新 shell parser：输出规范化 command segments，保持 `SecurityAssessment` API。
+
+## 更新与设置
+
+启动更新检查是只读后台任务，失败不阻塞 TUI；仅在发现更高版本且匹配本机 ABI 时提示。立即更新会先恢复终端，再下载裸二进制及 SHA-256，校验通过后在当前目录原子替换。跳过版本写入配置，普通暂不更新不持久化。
+
+`/config` 与别名 `/setting` 使用单一 TUI 设置面板承载服务、模型与 Agent、执行与安全、界面和网络分类；其他分散配置命令不再暴露。两者属于严格本地命令，打开面板后不得进入模型上下文。Tab/Shift+Tab 只切分类，Up/Down 只移动字段，Left/Right 只调整当前值；保存后主循环重新加载配置和客户端。

@@ -1,7 +1,7 @@
 mod cli;
 use anyhow::{Context, Result};
 use clap::Parser;
-use cli::{Cli, Mode};
+use cli::{Cli, Command, Mode};
 use nl2sh::{
     agent::{
         android_shell_constraints, AgentRunner, ConfirmationDecision, Confirmer, StdioConfirmer,
@@ -20,14 +20,14 @@ async fn main() -> Result<()> {
         Some(p) => p.clone(),
         None => config::default_config_path()?,
     };
-    if cli.init {
-        return config::run_wizard(&path);
-    }
     let mut cfg = load_runtime_config(&path, &cli)?;
+    if matches!(cli.command, Some(Command::Update)) {
+        return run_update(&cfg).await;
+    }
     let mut provider_configured = cfg.provider_is_configured();
     if cli.instruction.is_some() && !provider_configured {
         anyhow::bail!(
-            "model provider is not configured; start nl2sh without an instruction and use /config or /provider"
+            "model provider is not configured; start nl2sh without an instruction and use /config or /setting"
         )
     }
     let history_log = HistoryLog::open_with_limits(
@@ -64,6 +64,11 @@ async fn main() -> Result<()> {
             .await?
             {
                 tui::SessionExit::Quit => return Ok(()),
+                tui::SessionExit::Update(release) => {
+                    nl2sh::update::install(&cfg, &release).await?;
+                    println!("已更新到 v{}，请重新启动 nl2sh。", release.version);
+                    return Ok(());
+                }
                 tui::SessionExit::Configure(target) => {
                     run_configure_target(&path, target).await?;
                     cfg = load_runtime_config(&path, &cli)?;
@@ -134,8 +139,8 @@ async fn main() -> Result<()> {
                 .lock()
                 .map_err(|_| anyhow::anyhow!("TUI history lock is poisoned"))?
                 .push(match cfg.ui_language {
-                    config::UiLanguage::ZhCn => "⚠️ 尚未配置模型服务，请先使用 /config 或 /provider；可用 /model 单独修改模型。".into(),
-                    config::UiLanguage::En => "[WARN] Provider is not configured. Use /config or /provider first; /model changes only the model.".into(),
+                    config::UiLanguage::ZhCn => "⚠️ 尚未配置模型服务，请使用 /config 或 /setting 打开设置面板。".into(),
+                    config::UiLanguage::En => "[WARN] Provider is not configured. Use /config or /setting to open Settings.".into(),
                 });
             continue;
         }
@@ -193,6 +198,20 @@ async fn main() -> Result<()> {
     }
 }
 
+async fn run_update(cfg: &config::Config) -> Result<()> {
+    println!("正在检查更新 / Checking for updates…");
+    let Some(release) = nl2sh::update::check(cfg).await? else {
+        println!(
+            "已是最新版本 / Already up to date: {}",
+            env!("CARGO_PKG_VERSION")
+        );
+        return Ok(());
+    };
+    nl2sh::update::install(cfg, &release).await?;
+    println!("已更新到 v{}，请重新启动 nl2sh。", release.version);
+    Ok(())
+}
+
 fn load_runtime_config(path: &std::path::Path, cli: &Cli) -> Result<config::Config> {
     let mut cfg = config::load_or_default_unvalidated(path)?;
     if let Some(endpoint) = cli.endpoint.clone() {
@@ -216,10 +235,7 @@ fn load_runtime_config(path: &std::path::Path, cli: &Cli) -> Result<config::Conf
 
 fn config_target(input: &str) -> Option<tui::ConfigTarget> {
     match input {
-        "/config" => Some(tui::ConfigTarget::All),
-        "/provider" => Some(tui::ConfigTarget::Provider),
-        "/model" => Some(tui::ConfigTarget::Model),
-        "/models" => Some(tui::ConfigTarget::Models),
+        "/config" | "/setting" => Some(tui::ConfigTarget::All),
         "/balance" => Some(tui::ConfigTarget::Balance),
         _ => None,
     }

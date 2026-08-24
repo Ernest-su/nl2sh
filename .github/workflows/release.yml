@@ -84,11 +84,29 @@ jobs:
       - name: Verify binary ABI
         run: file "target/${{ matrix.target }}/release/nl2sh"
 
+      - name: Prepare self-update asset
+        run: |
+          set -euo pipefail
+          case "${{ matrix.target }}" in
+            aarch64-linux-android) ABI="arm64-v8a" ;;
+            armv7-linux-androideabi) ABI="armeabi-v7a" ;;
+          esac
+          ASSET="nl2sh-android-${ABI}"
+          cp "target/${{ matrix.target }}/release/nl2sh" "${ASSET}"
+          sha256sum -- "${ASSET}" > "${ASSET}.sha256"
+
       - name: Upload compiled binary
         uses: actions/upload-artifact@v4
         with:
           name: binary-${{ matrix.target }}
           path: target/${{ matrix.target }}/release/nl2sh
+
+      - name: Upload self-update assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: update-${{ matrix.target }}
+          path: |
+            nl2sh-android-*
 
   package:
     name: Assemble combined Android package
@@ -175,3 +193,7 @@ jobs:
             artifacts/**/*.tar.gz
             artifacts/**/*.zip
             artifacts/**/SHA256SUMS
+            artifacts/**/nl2sh-android-arm64-v8a
+            artifacts/**/nl2sh-android-arm64-v8a.sha256
+            artifacts/**/nl2sh-android-armeabi-v7a
+            artifacts/**/nl2sh-android-armeabi-v7a.sha256

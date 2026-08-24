@@ -105,6 +105,8 @@ pub struct Config {
     pub proxy_password: String,
     /// Comma-separated hosts which bypass the proxy.
     pub proxy_bypass: String,
+    /// Release version suppressed by the user in the update prompt.
+    pub skipped_update_version: Option<String>,
     /// Maximum complete text interaction units retained.
     pub max_context_turns: usize,
     /// Maximum model/tool iterations per request.
@@ -179,6 +181,7 @@ impl Default for Config {
             proxy_username: String::new(),
             proxy_password: String::new(),
             proxy_bypass: "localhost,127.0.0.1,::1".into(),
+            skipped_update_version: None,
             max_context_turns: 16,
             max_agent_steps: 24,
             llm_retry_count: 3,

@@ -192,15 +192,7 @@ impl App {
 
     pub(crate) fn command_suggestions(&self) -> Vec<&'static str> {
         const COMMANDS: &[&str] = &[
-            "/balance",
-            "/clear",
-            "/config",
-            "/exit",
-            "/help",
-            "/model",
-            "/models",
-            "/provider",
-            "/proxy",
+            "/balance", "/clear", "/config", "/exit", "/help", "/setting", "/update",
         ];
         let query = self.input.text.trim();
         if !query.starts_with('/') || query.contains(char::is_whitespace) {
@@ -384,9 +376,9 @@ mod tests {
         assert!(!app.complete_selected_command());
 
         app.input.set("/p".into());
-        assert_eq!(app.command_suggestions(), vec!["/provider", "/proxy"]);
+        assert!(app.command_suggestions().is_empty());
         app.input.set("/m".into());
-        assert_eq!(app.command_suggestions(), vec!["/model", "/models"]);
+        assert!(app.command_suggestions().is_empty());
         app.input.set("/e".into());
         assert_eq!(app.command_suggestions(), vec!["/exit"]);
     }

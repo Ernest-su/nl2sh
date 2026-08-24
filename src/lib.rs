@@ -20,3 +20,5 @@ pub mod security;
 pub mod shell;
 /// Ratatui/crossterm terminal input interface.
 pub mod tui;
+/// Signed-by-checksum GitHub Release discovery and self-update support.
+pub mod update;

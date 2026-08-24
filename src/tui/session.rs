@@ -39,14 +39,19 @@ use std::{
 use tokio::sync::{mpsc, oneshot};
 
 const BALANCE_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
+type BalanceFuture = Pin<Box<dyn Future<Output = Result<Vec<AccountBalance>>> + Send>>;
+type UpdateFuture =
+    Pin<Box<dyn Future<Output = Result<Option<crate::update::UpdateRelease>>> + Send>>;
 
 /// Reason a live Agent TUI session returned to its caller.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SessionExit {
     /// The user requested a normal exit.
     Quit,
     /// The user requested a configuration flow.
     Configure(ConfigTarget),
+    /// Install a release selected from the startup update prompt.
+    Update(crate::update::UpdateRelease),
 }
 
 /// Configuration section selected by a local slash command.
@@ -146,8 +151,8 @@ async fn run_inner(
         } else {
             localized_status(
                 config.ui_language,
-                "尚未配置模型服务；使用 /config、/provider 或 /model",
-                "provider not configured; use /config, /provider, or /model",
+                "尚未配置模型服务；使用 /config 或 /setting",
+                "provider not configured; use /config or /setting",
             )
         },
         provider_balance: None,
@@ -155,14 +160,18 @@ async fn run_inner(
     };
     let mut model_history: Vec<Vec<ConversationItem>> = Vec::new();
     let mut active: Option<Pin<Box<dyn Future<Output = Result<AgentOutcome>> + '_>>> = None;
-    let mut balance_active: Option<
-        Pin<Box<dyn Future<Output = Result<Vec<AccountBalance>>> + Send>>,
-    > = None;
+    let mut balance_active: Option<BalanceFuture> = None;
     let balance_supported = provider_configured && build_account_client(config).is_ok();
     let mut balance_manual = false;
     let mut last_balance_refresh: Option<Instant> = None;
     let mut confirmation: Option<ConfirmationUi> = None;
-    let mut proxy_editor: Option<ProxyEditor> = None;
+    let mut settings_editor: Option<SettingsEditor> = None;
+    let update_config = config.clone();
+    let mut update_check: Option<UpdateFuture> = Some(Box::pin(async move {
+        crate::update::check(&update_config).await
+    }));
+    let mut update_prompt: Option<UpdatePrompt> = None;
+    let mut update_manual = false;
     let mut quit_after_cancel = false;
     let mut cancel_signal_pending = false;
     let mut was_suspended = false;
@@ -172,14 +181,11 @@ async fn run_inner(
     let mut fragmented_arrow = super::events::FragmentedArrowFilter::default();
 
     loop {
-        if proxy_editor.is_some() && fragmented_arrow.take_expired_escape(Duration::from_millis(35))
+        if settings_editor.is_some()
+            && fragmented_arrow.take_expired_escape(Duration::from_millis(35))
         {
-            proxy_editor = None;
-            app.status = localized_status(
-                config.ui_language,
-                "代理配置未修改",
-                "proxy configuration unchanged",
-            );
+            settings_editor = None;
+            app.status = localized_status(config.ui_language, "设置未修改", "settings unchanged");
         }
         if balance_supported
             && active.is_none()
@@ -229,7 +235,12 @@ async fn run_inner(
             app.popup = confirmation
                 .as_ref()
                 .map(ConfirmationUi::view)
-                .or_else(|| proxy_editor.as_ref().map(ProxyEditor::view));
+                .or_else(|| update_prompt.as_ref().map(UpdatePrompt::view))
+                .or_else(|| {
+                    settings_editor
+                        .as_ref()
+                        .map(|editor| editor.view(app.cursor_visible))
+                });
             terminal.terminal().draw(|frame| ui::draw(frame, &app))?;
         }
 
@@ -304,6 +315,41 @@ async fn run_inner(
                 Ok(_) | Err(_) => {}
             }
             balance_manual = false;
+        }
+
+        if let Some(check) = update_check.as_mut() {
+            if let Ok(result) = tokio::time::timeout(Duration::ZERO, check.as_mut()).await {
+                update_check = None;
+                match result {
+                    Ok(Some(release))
+                        if update_manual
+                            || config.skipped_update_version.as_deref()
+                                != Some(&release.version) =>
+                    {
+                        update_prompt = Some(UpdatePrompt {
+                            release,
+                            selected: 0,
+                            language: config.ui_language,
+                        });
+                    }
+                    Ok(_) if update_manual => {
+                        app.status = localized_status(
+                            config.ui_language,
+                            "已是最新版本",
+                            "already up to date",
+                        );
+                    }
+                    Err(_) if update_manual => {
+                        app.status = localized_status(
+                            config.ui_language,
+                            "更新检查失败",
+                            "update check failed",
+                        );
+                    }
+                    Ok(_) | Err(_) => {}
+                }
+                update_manual = false;
+            }
         }
 
         if let Some(result) = completed {
@@ -434,23 +480,50 @@ async fn run_inner(
                 }
                 continue;
             }
-            if let Some(editor) = proxy_editor.as_mut() {
+            if let Some(prompt) = update_prompt.as_mut() {
+                let Some(key) = fragmented_arrow.normalize(key) else {
+                    continue;
+                };
+                match prompt.handle_key(key) {
+                    UpdateAction::Continue => {}
+                    UpdateAction::No => {
+                        update_prompt = None;
+                        app.status =
+                            localized_status(config.ui_language, "本次暂不更新", "update deferred");
+                    }
+                    UpdateAction::Yes => return Ok(SessionExit::Update(prompt.release.clone())),
+                    UpdateAction::Skip => {
+                        let mut updated = config.clone();
+                        updated.skipped_update_version = Some(prompt.release.version.clone());
+                        if let Some(path) = updated.source.clone() {
+                            crate::config::save_config(&path, &updated)?;
+                        }
+                        update_prompt = None;
+                        app.status = localized_status(
+                            config.ui_language,
+                            "已跳过此版本",
+                            "this version will be skipped",
+                        );
+                    }
+                }
+                continue;
+            }
+            if let Some(editor) = settings_editor.as_mut() {
                 let Some(key) = fragmented_arrow.normalize(key) else {
                     continue;
                 };
                 match editor.handle_key(key) {
-                    ProxyEditorAction::Continue => {}
-                    ProxyEditorAction::Cancel => {
-                        proxy_editor = None;
+                    SettingsAction::Continue => {}
+                    SettingsAction::Cancel => {
+                        settings_editor = None;
                         app.status = localized_status(
                             config.ui_language,
-                            "代理配置未修改",
-                            "proxy configuration unchanged",
+                            "设置未修改",
+                            "settings unchanged",
                         );
                     }
-                    ProxyEditorAction::Save => {
-                        let mut updated = config.clone();
-                        editor.apply(&mut updated);
+                    SettingsAction::Save => {
+                        let updated = editor.config.clone();
                         let Some(path) = updated.source.clone() else {
                             app.status = localized_status(
                                 config.ui_language,
@@ -464,8 +537,8 @@ async fn run_inner(
                             Err(_) => {
                                 app.status = localized_status(
                                     config.ui_language,
-                                    "代理配置无效或保存失败",
-                                    "invalid proxy configuration or save failed",
+                                    "设置无效或保存失败",
+                                    "invalid settings or save failed",
                                 );
                             }
                         }
@@ -496,16 +569,13 @@ async fn run_inner(
                             log.record("local_command", "/exit")?;
                             return Ok(SessionExit::Quit);
                         }
-                        "/config" => return Ok(SessionExit::Configure(ConfigTarget::All)),
-                        "/provider" => return Ok(SessionExit::Configure(ConfigTarget::Provider)),
-                        "/model" => return Ok(SessionExit::Configure(ConfigTarget::Model)),
-                        "/models" => return Ok(SessionExit::Configure(ConfigTarget::Models)),
-                        "/proxy" => {
-                            proxy_editor = Some(ProxyEditor::new(config));
+                        "/config" | "/setting" => {
+                            log.record("local_command", input.trim())?;
+                            settings_editor = Some(SettingsEditor::new(config, 0));
                             app.status = localized_status(
                                 config.ui_language,
-                                "正在配置网络代理",
-                                "configuring network proxy",
+                                "配置设置",
+                                "configuring settings",
                             );
                             continue;
                         }
@@ -531,6 +601,18 @@ async fn run_inner(
                                 "fetching provider balance",
                             );
                             continue;
+                        }
+                        "/update" => {
+                            let update_config = config.clone();
+                            update_check = Some(Box::pin(async move {
+                                crate::update::check(&update_config).await
+                            }));
+                            update_manual = true;
+                            app.status = localized_status(
+                                config.ui_language,
+                                "正在检查更新",
+                                "checking for updates",
+                            );
                         }
                         "/help" => {
                             log.record("local_command", "/help")?;
@@ -568,8 +650,8 @@ async fn run_inner(
                                 .lock()
                                 .map_err(|_| anyhow::anyhow!("TUI history lock is poisoned"))?
                                 .push(match config.ui_language {
-                                    UiLanguage::ZhCn => "⚠️ 尚未配置模型服务，请先使用 /config 或 /provider；可用 /model 单独修改模型。".into(),
-                                    UiLanguage::En => "[WARN] Provider is not configured. Use /config or /provider first; /model changes only the model.".into(),
+                            UiLanguage::ZhCn => "⚠️ 尚未配置模型服务，请使用 /config 或 /setting 打开设置面板。".into(),
+                            UiLanguage::En => "[WARN] Provider is not configured. Use /config or /setting to open Settings.".into(),
                                 });
                             app.status = localized_status(
                                 config.ui_language,
@@ -629,172 +711,517 @@ fn format_balances(balances: &[AccountBalance]) -> String {
         .join(" / ")
 }
 
-struct ProxyEditor {
-    enabled: bool,
-    proxy_type: crate::config::ProxyType,
-    address: String,
-    username: String,
-    password: String,
-    bypass: String,
+const SETTINGS_TABS_ZH: [&str; 5] = ["服务", "模型与智能体", "执行与安全", "界面", "网络"];
+const SETTINGS_TABS_EN: [&str; 5] = [
+    "Provider",
+    "Model & Agent",
+    "Execution",
+    "Interface",
+    "Network",
+];
+
+struct UpdatePrompt {
+    release: crate::update::UpdateRelease,
     selected: usize,
     language: UiLanguage,
 }
 
-enum ProxyEditorAction {
+enum UpdateAction {
     Continue,
-    Cancel,
-    Save,
+    Yes,
+    No,
+    Skip,
 }
 
-impl ProxyEditor {
-    fn new(config: &Config) -> Self {
-        Self {
-            enabled: config.proxy_enabled,
-            proxy_type: config.proxy_type,
-            address: config.proxy_address.clone(),
-            username: config.proxy_username.clone(),
-            password: config.proxy_password.clone(),
-            bypass: config.proxy_bypass.clone(),
-            selected: 0,
-            language: config.ui_language,
-        }
-    }
-
+impl UpdatePrompt {
     fn view(&self) -> PopupView {
-        let marker = |index| if self.selected == index { ">" } else { " " };
-        let kind = match self.proxy_type {
-            crate::config::ProxyType::Http => "HTTP/HTTPS CONNECT",
-            crate::config::ProxyType::Socks5 => "SOCKS5 (local DNS)",
-            crate::config::ProxyType::Socks5h => "SOCKS5H (proxy DNS, recommended)",
+        let choices = match self.language {
+            UiLanguage::ZhCn => ["Yes  立即更新", "No   暂不更新", "跳过本次版本"],
+            UiLanguage::En => ["Yes  Update now", "No   Not now", "Skip this version"],
         };
-        let password = if self.password.is_empty() {
-            String::new()
-        } else {
-            "*".repeat(self.password.chars().count())
-        };
-        let (title, enabled, labels, help) = match self.language {
-            UiLanguage::ZhCn => (
-                "网络代理配置",
-                if self.enabled {
-                    "启用"
-                } else {
-                    "关闭（保留配置）"
-                },
-                [
-                    "总开关",
-                    "类型",
-                    "地址 host:port",
-                    "用户名",
-                    "密码",
-                    "绕过列表",
-                ],
-                "↑/↓ 选择；←/→ 切换；输入编辑；Delete 清空；Enter 下一项/保存；Esc 取消",
-            ),
-            UiLanguage::En => (
-                "Network proxy configuration",
-                if self.enabled {
-                    "enabled"
-                } else {
-                    "off (settings retained)"
-                },
-                [
-                    "Master switch",
-                    "Type",
-                    "Address host:port",
-                    "Username",
-                    "Password",
-                    "Bypass list",
-                ],
-                "Up/Down select; Left/Right toggle; type to edit; Delete clears; Enter next/save; Esc cancel",
-            ),
-        };
-        let values = [
-            enabled,
-            kind,
-            &self.address,
-            &self.username,
-            &password,
-            &self.bypass,
+        let mut lines = vec![
+            match self.language {
+                UiLanguage::ZhCn => format!(
+                    "发现新版本 v{}（当前 v{}）",
+                    self.release.version,
+                    env!("CARGO_PKG_VERSION")
+                ),
+                UiLanguage::En => format!(
+                    "Version v{} is available (current v{})",
+                    self.release.version,
+                    env!("CARGO_PKG_VERSION")
+                ),
+            },
+            String::new(),
         ];
-        let mut lines = labels
-            .into_iter()
-            .zip(values)
-            .enumerate()
-            .map(|(index, (label, value))| format!("{} {label}: {value}", marker(index)))
-            .collect::<Vec<_>>();
+        lines.extend(choices.into_iter().enumerate().map(|(index, choice)| {
+            format!(
+                "{} {choice}",
+                if index == self.selected { ">" } else { " " }
+            )
+        }));
         lines.push(String::new());
-        lines.push(help.into());
+        lines.push(
+            match self.language {
+                UiLanguage::ZhCn => "↑/↓ 选择，Enter 确认",
+                UiLanguage::En => "Up/Down select, Enter confirms",
+            }
+            .into(),
+        );
         PopupView {
-            title: title.into(),
+            title: match self.language {
+                UiLanguage::ZhCn => "版本更新",
+                UiLanguage::En => "Update available",
+            }
+            .into(),
             lines,
             dangerous: false,
             informational: true,
         }
     }
 
-    fn handle_key(&mut self, key: KeyEvent) -> ProxyEditorAction {
+    fn handle_key(&mut self, key: KeyEvent) -> UpdateAction {
         match key.code {
-            KeyCode::Esc => ProxyEditorAction::Cancel,
             KeyCode::Up => {
-                self.selected = self.selected.checked_sub(1).unwrap_or(5);
-                ProxyEditorAction::Continue
+                self.selected = self.selected.checked_sub(1).unwrap_or(2);
+                UpdateAction::Continue
             }
-            KeyCode::Down | KeyCode::Tab => {
-                self.selected = (self.selected + 1) % 6;
-                ProxyEditorAction::Continue
+            KeyCode::Down => {
+                self.selected = (self.selected + 1) % 3;
+                UpdateAction::Continue
             }
-            KeyCode::Left | KeyCode::Right | KeyCode::Char(' ') if self.selected < 2 => {
-                if self.selected == 0 {
-                    self.enabled = !self.enabled;
+            KeyCode::Char('y' | 'Y') => UpdateAction::Yes,
+            KeyCode::Char('n' | 'N') | KeyCode::Esc => UpdateAction::No,
+            KeyCode::Enter => match self.selected {
+                0 => UpdateAction::Yes,
+                1 => UpdateAction::No,
+                _ => UpdateAction::Skip,
+            },
+            _ => UpdateAction::Continue,
+        }
+    }
+}
+
+struct SettingsEditor {
+    config: Config,
+    tab: usize,
+    selected: usize,
+}
+
+enum SettingsAction {
+    Continue,
+    Cancel,
+    Save,
+}
+
+impl SettingsEditor {
+    fn new(config: &Config, tab: usize) -> Self {
+        Self {
+            config: config.clone(),
+            tab: tab.min(4),
+            selected: 0,
+        }
+    }
+
+    fn field_count(&self) -> usize {
+        [3, 5, 6, 4, 6][self.tab]
+    }
+
+    fn view(&self, cursor_visible: bool) -> PopupView {
+        let tabs = match self.config.ui_language {
+            UiLanguage::ZhCn => SETTINGS_TABS_ZH,
+            UiLanguage::En => SETTINGS_TABS_EN,
+        };
+        let tab_line = tabs
+            .iter()
+            .enumerate()
+            .map(|(index, tab)| {
+                if index == self.tab {
+                    format!("[{tab}]")
                 } else {
-                    self.proxy_type = match self.proxy_type {
-                        crate::config::ProxyType::Http => crate::config::ProxyType::Socks5,
-                        crate::config::ProxyType::Socks5 => crate::config::ProxyType::Socks5h,
-                        crate::config::ProxyType::Socks5h => crate::config::ProxyType::Http,
-                    };
+                    tab.to_string()
                 }
-                ProxyEditorAction::Continue
+            })
+            .collect::<Vec<_>>()
+            .join("  ");
+        let mut lines = vec![tab_line, String::new()];
+        for (index, (label, value)) in self.fields().into_iter().enumerate() {
+            let marker = if index == self.selected { ">" } else { " " };
+            if index == self.selected && self.is_text_field() {
+                let cursor = if cursor_visible { "│" } else { " " };
+                lines.push(format!("{marker} {label}: ┌ {value}{cursor} ┐"));
+            } else {
+                lines.push(format!("{marker} {label}: {value}"));
             }
-            KeyCode::Enter if self.selected == 5 => ProxyEditorAction::Save,
-            KeyCode::Enter => {
-                self.selected += 1;
-                ProxyEditorAction::Continue
+        }
+        lines.push(String::new());
+        lines.push(match self.config.ui_language {
+            UiLanguage::ZhCn => "Tab/Shift+Tab 分类；↑/↓ 字段；←/→ 调整；输入编辑；Ctrl+S 保存；Esc 取消".into(),
+            UiLanguage::En => "Tab/Shift+Tab category; Up/Down field; Left/Right adjust; type to edit; Ctrl+S save; Esc cancel".into(),
+        });
+        PopupView {
+            title: match self.config.ui_language {
+                UiLanguage::ZhCn => "设置",
+                UiLanguage::En => "Settings",
             }
-            KeyCode::Backspace if self.selected >= 2 => {
-                self.selected_text_mut().pop();
-                ProxyEditorAction::Continue
+            .into(),
+            lines,
+            dangerous: false,
+            informational: true,
+        }
+    }
+
+    fn fields(&self) -> Vec<(&'static str, String)> {
+        let zh = self.config.ui_language == UiLanguage::ZhCn;
+        match self.tab {
+            0 => vec![
+                (
+                    if zh { "API 地址" } else { "API endpoint" },
+                    self.config.endpoint.clone(),
+                ),
+                (
+                    "API Key",
+                    if self.config.api_key.is_empty() {
+                        String::new()
+                    } else {
+                        "*".repeat(self.config.api_key.chars().count())
+                    },
+                ),
+                (
+                    if zh { "协议" } else { "Protocol" },
+                    format!("{:?}", self.config.api_type),
+                ),
+            ],
+            1 => vec![
+                (if zh { "模型" } else { "Model" }, self.config.model.clone()),
+                (
+                    if zh {
+                        "上下文窗口"
+                    } else {
+                        "Context window"
+                    },
+                    optional_number(self.config.model_context_window),
+                ),
+                (
+                    if zh {
+                        "最大输出 Token"
+                    } else {
+                        "Max output tokens"
+                    },
+                    optional_number(self.config.model_max_output_tokens),
+                ),
+                (
+                    if zh {
+                        "最大步骤（推荐 24）"
+                    } else {
+                        "Max steps (recommended 24)"
+                    },
+                    self.config.max_agent_steps.to_string(),
+                ),
+                (
+                    if zh {
+                        "最大轮次（推荐 16）"
+                    } else {
+                        "Max turns (recommended 16)"
+                    },
+                    self.config.max_context_turns.to_string(),
+                ),
+            ],
+            2 => vec![
+                (
+                    if zh { "确认策略" } else { "Confirmation" },
+                    format!("{:?}", self.config.execute_confirm_policy),
+                ),
+                (
+                    if zh { "安全级别" } else { "Security" },
+                    format!("{:?}", self.config.security_level),
+                ),
+                (
+                    if zh { "执行用户" } else { "Execution user" },
+                    format!("{:?}", self.config.execute_user_mode),
+                ),
+                (
+                    if zh {
+                        "命令超时秒"
+                    } else {
+                        "Command timeout sec"
+                    },
+                    self.config.execute_timeout_secs.to_string(),
+                ),
+                (
+                    if zh {
+                        "交互超时秒（0=关闭）"
+                    } else {
+                        "Interactive timeout (0=off)"
+                    },
+                    self.config.interactive_execute_timeout_secs.to_string(),
+                ),
+                ("PTY", self.config.enable_pty.to_string()),
+            ],
+            3 => vec![
+                (
+                    if zh { "语言" } else { "Language" },
+                    format!("{:?}", self.config.ui_language),
+                ),
+                (
+                    if zh { "ASCII 符号" } else { "ASCII symbols" },
+                    self.config.ascii_symbols.to_string(),
+                ),
+                (
+                    if zh {
+                        "实时输出上限 bytes"
+                    } else {
+                        "Live output bytes"
+                    },
+                    self.config.ui_live_output_max_bytes.to_string(),
+                ),
+                (
+                    if zh {
+                        "工具输出上限 bytes"
+                    } else {
+                        "Tool output bytes"
+                    },
+                    self.config.tool_output_max_bytes.to_string(),
+                ),
+            ],
+            _ => vec![
+                (
+                    if zh { "代理开关" } else { "Proxy enabled" },
+                    self.config.proxy_enabled.to_string(),
+                ),
+                (
+                    if zh { "代理类型" } else { "Proxy type" },
+                    format!("{:?}", self.config.proxy_type),
+                ),
+                (
+                    if zh {
+                        "地址 host:port"
+                    } else {
+                        "Address host:port"
+                    },
+                    self.config.proxy_address.clone(),
+                ),
+                (
+                    if zh { "用户名" } else { "Username" },
+                    self.config.proxy_username.clone(),
+                ),
+                (
+                    if zh { "密码" } else { "Password" },
+                    if self.config.proxy_password.is_empty() {
+                        String::new()
+                    } else {
+                        "*".repeat(self.config.proxy_password.chars().count())
+                    },
+                ),
+                (
+                    if zh { "绕过列表" } else { "Bypass list" },
+                    self.config.proxy_bypass.clone(),
+                ),
+            ],
+        }
+    }
+
+    fn handle_key(&mut self, key: KeyEvent) -> SettingsAction {
+        match key.code {
+            KeyCode::Esc => SettingsAction::Cancel,
+            KeyCode::Tab => {
+                self.tab = if key.modifiers.contains(KeyModifiers::SHIFT) {
+                    self.tab.checked_sub(1).unwrap_or(4)
+                } else {
+                    (self.tab + 1) % 5
+                };
+                self.selected = 0;
+                SettingsAction::Continue
             }
-            KeyCode::Delete if self.selected >= 2 => {
-                self.selected_text_mut().clear();
-                ProxyEditorAction::Continue
+            KeyCode::BackTab => {
+                self.tab = self.tab.checked_sub(1).unwrap_or(4);
+                self.selected = 0;
+                SettingsAction::Continue
+            }
+            KeyCode::Up => {
+                self.selected = self
+                    .selected
+                    .checked_sub(1)
+                    .unwrap_or(self.field_count() - 1);
+                SettingsAction::Continue
+            }
+            KeyCode::Down => {
+                self.selected = (self.selected + 1) % self.field_count();
+                SettingsAction::Continue
+            }
+            KeyCode::Left => {
+                self.adjust(-1);
+                SettingsAction::Continue
+            }
+            KeyCode::Right | KeyCode::Char(' ') if !self.is_text_field() => {
+                self.adjust(1);
+                SettingsAction::Continue
+            }
+            KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                SettingsAction::Save
+            }
+            KeyCode::Backspace if self.is_text_field() => {
+                self.text_mut().pop();
+                SettingsAction::Continue
+            }
+            KeyCode::Delete if self.is_text_field() => {
+                self.text_mut().clear();
+                SettingsAction::Continue
             }
             KeyCode::Char(character)
-                if self.selected >= 2 && !key.modifiers.contains(KeyModifiers::CONTROL) =>
+                if self.is_text_field() && !key.modifiers.contains(KeyModifiers::CONTROL) =>
             {
-                self.selected_text_mut().push(character);
-                ProxyEditorAction::Continue
+                self.text_mut().push(character);
+                SettingsAction::Continue
             }
-            _ => ProxyEditorAction::Continue,
+            _ => SettingsAction::Continue,
         }
     }
 
-    fn selected_text_mut(&mut self) -> &mut String {
-        match self.selected {
-            2 => &mut self.address,
-            3 => &mut self.username,
-            4 => &mut self.password,
-            _ => &mut self.bypass,
+    fn is_text_field(&self) -> bool {
+        matches!((self.tab, self.selected), (0, 0 | 1) | (1, 0) | (4, 2..=5))
+    }
+    fn text_mut(&mut self) -> &mut String {
+        match (self.tab, self.selected) {
+            (0, 0) => &mut self.config.endpoint,
+            (0, 1) => &mut self.config.api_key,
+            (1, 0) => &mut self.config.model,
+            (4, 2) => &mut self.config.proxy_address,
+            (4, 3) => &mut self.config.proxy_username,
+            (4, 4) => &mut self.config.proxy_password,
+            _ => &mut self.config.proxy_bypass,
         }
     }
 
-    fn apply(&self, config: &mut Config) {
-        config.proxy_enabled = self.enabled;
-        config.proxy_type = self.proxy_type;
-        config.proxy_address = self.address.trim().into();
-        config.proxy_username = self.username.clone();
-        config.proxy_password = self.password.clone();
-        config.proxy_bypass = self.bypass.trim().into();
+    fn adjust(&mut self, direction: i8) {
+        use crate::config::{ApiType, ConfirmPolicy, ExecuteUserMode, ProxyType, SecurityLevel};
+        match (self.tab, self.selected) {
+            (0, 2) => {
+                self.config.api_type = if self.config.api_type == ApiType::Responses {
+                    ApiType::ChatCompletions
+                } else {
+                    ApiType::Responses
+                }
+            }
+            (1, 1) => adjust_optional(&mut self.config.model_context_window, direction, 1024),
+            (1, 2) => adjust_optional(&mut self.config.model_max_output_tokens, direction, 1024),
+            (1, 3) => adjust_usize(&mut self.config.max_agent_steps, direction),
+            (1, 4) => adjust_usize(&mut self.config.max_context_turns, direction),
+            (2, 0) => {
+                self.config.execute_confirm_policy = cycle3(
+                    self.config.execute_confirm_policy,
+                    [
+                        ConfirmPolicy::Always,
+                        ConfirmPolicy::RiskOnly,
+                        ConfirmPolicy::Never,
+                    ],
+                    direction,
+                )
+            }
+            (2, 1) => {
+                self.config.security_level = cycle3(
+                    self.config.security_level,
+                    [
+                        SecurityLevel::Strict,
+                        SecurityLevel::Balanced,
+                        SecurityLevel::Unsafe,
+                    ],
+                    direction,
+                )
+            }
+            (2, 2) => {
+                self.config.execute_user_mode = cycle3(
+                    self.config.execute_user_mode,
+                    [
+                        ExecuteUserMode::Auto,
+                        ExecuteUserMode::Normal,
+                        ExecuteUserMode::Root,
+                    ],
+                    direction,
+                )
+            }
+            (2, 3) => adjust_u64(&mut self.config.execute_timeout_secs, direction, 1),
+            (2, 4) => adjust_u64_allow_zero(
+                &mut self.config.interactive_execute_timeout_secs,
+                direction,
+                1,
+            ),
+            (2, 5) => self.config.enable_pty = !self.config.enable_pty,
+            (3, 0) => {
+                self.config.ui_language = if self.config.ui_language == UiLanguage::ZhCn {
+                    UiLanguage::En
+                } else {
+                    UiLanguage::ZhCn
+                }
+            }
+            (3, 1) => self.config.ascii_symbols = !self.config.ascii_symbols,
+            (3, 2) => adjust_usize_step(
+                &mut self.config.ui_live_output_max_bytes,
+                direction,
+                1024,
+                256,
+            ),
+            (3, 3) => {
+                adjust_usize_step(&mut self.config.tool_output_max_bytes, direction, 1024, 256)
+            }
+            (4, 0) => self.config.proxy_enabled = !self.config.proxy_enabled,
+            (4, 1) => {
+                self.config.proxy_type = cycle3(
+                    self.config.proxy_type,
+                    [ProxyType::Http, ProxyType::Socks5, ProxyType::Socks5h],
+                    direction,
+                )
+            }
+            _ => {}
+        }
     }
+}
+
+fn optional_number(value: Option<u64>) -> String {
+    value.map_or_else(|| "auto".into(), |value| value.to_string())
+}
+fn adjust_optional(value: &mut Option<u64>, direction: i8, step: u64) {
+    *value = if direction > 0 {
+        Some(value.unwrap_or(0).saturating_add(step).max(step))
+    } else {
+        value.and_then(|v| (v > step).then_some(v - step))
+    };
+}
+fn adjust_usize(value: &mut usize, direction: i8) {
+    *value = if direction > 0 {
+        value.saturating_add(1)
+    } else {
+        value.saturating_sub(1).max(1)
+    };
+}
+fn adjust_u64(value: &mut u64, direction: i8, step: u64) {
+    *value = if direction > 0 {
+        value.saturating_add(step)
+    } else {
+        value.saturating_sub(step).max(1)
+    };
+}
+fn adjust_u64_allow_zero(value: &mut u64, direction: i8, step: u64) {
+    *value = if direction > 0 {
+        value.saturating_add(step)
+    } else {
+        value.saturating_sub(step)
+    };
+}
+fn adjust_usize_step(value: &mut usize, direction: i8, step: usize, minimum: usize) {
+    *value = if direction > 0 {
+        value.saturating_add(step)
+    } else {
+        value.saturating_sub(step).max(minimum)
+    };
+}
+fn cycle3<T: Copy + PartialEq>(value: T, values: [T; 3], direction: i8) -> T {
+    let index = values.iter().position(|item| *item == value).unwrap_or(0);
+    values[if direction > 0 {
+        (index + 1) % 3
+    } else {
+        index.checked_sub(1).unwrap_or(2)
+    }]
 }
 
 struct SessionTextSink {
@@ -1170,23 +1597,38 @@ mod tests {
     }
 
     #[test]
-    fn proxy_editor_masks_password_and_preserves_fields_when_disabled() {
-        let mut config = Config {
+    fn settings_editor_masks_password_and_preserves_fields_when_disabled() {
+        let config = Config {
             proxy_enabled: true,
             proxy_address: "proxy.example:1080".into(),
             proxy_username: "user".into(),
             proxy_password: "secret".into(),
             ..Config::default()
         };
-        let mut editor = ProxyEditor::new(&config);
-        editor.enabled = false;
-        let view = editor.view();
+        let mut editor = SettingsEditor::new(&config, 4);
+        editor.config.proxy_enabled = false;
+        editor.selected = 4;
+        let view = editor.view(true);
         assert!(view.lines.iter().any(|line| line.contains("******")));
         assert!(!view.lines.iter().any(|line| line.contains("secret")));
-        editor.apply(&mut config);
-        assert!(!config.proxy_enabled);
-        assert_eq!(config.proxy_address, "proxy.example:1080");
-        assert_eq!(config.proxy_password, "secret");
+        assert!(view
+            .lines
+            .iter()
+            .any(|line| line.contains("┌") && line.contains('│') && line.contains("┐")));
+        assert!(!editor.config.proxy_enabled);
+        assert_eq!(editor.config.proxy_address, "proxy.example:1080");
+        assert_eq!(editor.config.proxy_password, "secret");
+    }
+
+    #[test]
+    fn settings_tabs_and_arrows_have_separate_navigation_roles() {
+        let mut editor = SettingsEditor::new(&Config::default(), 1);
+        editor.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        assert_eq!(editor.tab, 1);
+        assert_eq!(editor.selected, 1);
+        editor.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        assert_eq!(editor.tab, 2);
+        assert_eq!(editor.selected, 0);
     }
     use crate::{config::Config, security::assess};
 

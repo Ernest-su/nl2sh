@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- 修复 `/config` 打开设置后仍被提交给模型的问题；设置面板接管输入焦点并显示独立输入边界、背景和闪烁光标。
+- 移除 `/provider`、`/model`、`/models`、`/proxy`，统一使用 `/config` 或其别名 `/setting`。
+- 新增 `update`/`/update` 和启动后台版本检查；按 ABI 下载、SHA-256 校验并原子替换，支持暂不更新或跳过指定版本。
+- 将 Provider、模型、Agent、安全、界面和代理配置整合为多 Tab TUI 设置面板，最大步骤/轮次显示推荐值 24/16。
+
 格式基于 Keep a Changelog。
 
 ## [Unreleased]

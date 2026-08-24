@@ -114,40 +114,14 @@ async fn missing_config_enters_tui_and_config_command_runs_setup() -> anyhow::Re
         wait_for_text_capture(&mut process.master, "Ctrl+Q", Duration::from_secs(3)).await?;
     assert!(!initial.contains("界面语言"));
     assert!(!initial.contains("API Key"));
-    process.master.write_all(b"diagnose device\r")?;
-    wait_for_text(
-        &mut process.master,
-        "尚未配置模型服务",
-        Duration::from_secs(3),
-    )
-    .await?;
     process.master.write_all(b"/config\r")?;
-    wait_for_text(&mut process.master, "界面语言", Duration::from_secs(3)).await?;
-    process.master.write_all(b"\r")?;
-    wait_for_text(
-        &mut process.master,
-        "选择 API 服务商",
-        Duration::from_secs(3),
-    )
-    .await?;
-    // Select the built-in Ollama endpoint.
-    process.master.write_all(b"\x1b[B\x1b[B\x1b[B\x1b[B\r")?;
-    wait_for_text(&mut process.master, "API Key", Duration::from_secs(3)).await?;
-    // API Key uses normal echoed input, then accept the remaining defaults.
-    process.master.write_all(b"visible-test-key\r")?;
-    let echoed = wait_for_text_capture(
-        &mut process.master,
-        "visible-test-key",
-        Duration::from_secs(3),
-    )
-    .await?;
-    assert!(echoed.contains("visible-test-key"));
-    process.master.write_all(b"\r\r\r\r")?;
+    wait_for_text(&mut process.master, "Ctrl+S", Duration::from_secs(3)).await?;
+    process.master.write_all(&[0x13])?;
     wait_for_text(&mut process.master, "Ctrl+Q", Duration::from_secs(3)).await?;
 
-    let loaded = nl2sh::config::load_from(&config)?;
-    assert_eq!(loaded.endpoint, "http://127.0.0.1:11434/v1");
-    assert_eq!(loaded.api_key, "visible-test-key");
+    let loaded = nl2sh::config::load_unvalidated(Some(&config))?;
+    assert_eq!(loaded.max_agent_steps, 24);
+    assert_eq!(loaded.max_context_turns, 16);
     assert!(process.child.try_wait()?.is_none());
     process.master.write_all(b"/exit\r")?;
     assert!(timeout(Duration::from_secs(3), process.child.wait())
@@ -158,15 +132,18 @@ async fn missing_config_enters_tui_and_config_command_runs_setup() -> anyhow::Re
 }
 
 #[tokio::test]
-async fn model_command_can_create_partial_config_without_startup_wizard() -> anyhow::Result<()> {
+async fn setting_alias_can_create_partial_config_without_startup_wizard() -> anyhow::Result<()> {
     let directory = tempdir()?;
     let config = directory.path().join("model-only.toml");
     let mut process = spawn_tui(&config)?;
 
     wait_for_text(&mut process.master, "Ctrl+Q", Duration::from_secs(3)).await?;
-    process.master.write_all(b"/model\r")?;
-    wait_for_text(&mut process.master, "模型", Duration::from_secs(3)).await?;
-    process.master.write_all(b"model-from-tui\r\r\r")?;
+    process.master.write_all(b"/setting\r")?;
+    process.master.write_all(b"\t")?;
+    wait_for_text(&mut process.master, "Ctrl+S", Duration::from_secs(3)).await?;
+    process.master.write_all(&[0x7f; 11])?;
+    process.master.write_all(b"model-from-tui")?;
+    process.master.write_all(&[0x13])?;
     wait_for_text(&mut process.master, "Ctrl+Q", Duration::from_secs(3)).await?;
 
     let loaded = nl2sh::config::load_unvalidated(Some(&config))?;
@@ -190,28 +167,11 @@ async fn slash_config_reconfigures_and_returns_to_tui() -> anyhow::Result<()> {
     let mut process = spawn_tui(&config)?;
     wait_for_text(&mut process.master, "Ctrl+Q", Duration::from_secs(3)).await?;
     process.master.write_all(b"/config\r")?;
-    wait_for_text(&mut process.master, "界面语言", Duration::from_secs(3)).await?;
-    process.master.write_all(b"\r")?;
-    wait_for_text(
-        &mut process.master,
-        "选择 API 服务商",
-        Duration::from_secs(3),
-    )
-    .await?;
-    process.master.write_all(b"\r")?;
-    wait_for_text(
-        &mut process.master,
-        "自定义 API Base URL",
-        Duration::from_secs(3),
-    )
-    .await?;
-    process.master.write_all(b"\r")?;
-    wait_for_text(&mut process.master, "API Key", Duration::from_secs(3)).await?;
-    process.master.write_all(b"\r")?;
-    wait_for_text(&mut process.master, "模型", Duration::from_secs(3)).await?;
-    process.master.write_all(b"reconfigured-model\r")?;
-    wait_for_text(&mut process.master, "API 类型", Duration::from_secs(3)).await?;
-    process.master.write_all(b"\r")?;
+    wait_for_text(&mut process.master, "Ctrl+S", Duration::from_secs(3)).await?;
+    process.master.write_all(b"\t")?;
+    process.master.write_all(&[0x7f; 13])?;
+    process.master.write_all(b"reconfigured-model")?;
+    process.master.write_all(&[0x13])?;
     wait_for_text(
         &mut process.master,
         "reconfigured-model",
@@ -223,6 +183,11 @@ async fn slash_config_reconfigures_and_returns_to_tui() -> anyhow::Result<()> {
     assert_eq!(loaded.model, "reconfigured-model");
     assert_eq!(loaded.endpoint, "http://127.0.0.1:9999/v1");
     assert_eq!(loaded.api_key, "existing-key");
+    let log = std::fs::read_to_string(directory.path().join("nl2sh.log"))?;
+    assert!(log.contains("local_command"));
+    assert!(!log
+        .lines()
+        .any(|line| line.contains("\"kind\":\"user\"") && line.contains("/config")));
     assert!(process.child.try_wait()?.is_none());
     process.master.write_all(&[0x11])?;
     assert!(timeout(Duration::from_secs(3), process.child.wait())

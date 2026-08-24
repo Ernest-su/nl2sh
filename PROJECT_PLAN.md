@@ -118,3 +118,9 @@
 - [x] `/balance` 通过公开 Bearer Token 接口查询 DeepSeek 与 SiliconFlow 余额；结果不进入日志或模型上下文，其他 Provider 明确降级为不支持。
 - [x] 支持余额的 Provider 在 TUI 定时刷新并常驻显示；按模型窗口、输出预留和实际输入 Token 动态收缩完整历史轮次。
 - [x] `/proxy` TUI 弹窗配置 HTTP/SOCKS 代理；统一所有 Provider 网络客户端，总开关关闭时保留代理字段。
+
+## Phase 14 自更新与统一设置 — 完成
+
+- [x] `update` 命令按 Android ABI 获取最新 GitHub Release，校验 SHA-256 后原子替换可执行文件。
+- [x] 每次 Agent TUI 启动后台检查更新，并提供立即更新、暂不更新和跳过此版本。
+- [x] 配置命令统一进入分类 Tab 设置面板；最大 Agent 步数和上下文轮次显示推荐值 24/16。
