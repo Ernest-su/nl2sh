@@ -169,6 +169,10 @@ cp config.toml.example config.toml
 
 ## 使用
 
+TUI 将所有去除前导空白后以 `/` 开头的输入保留为本地命令；未知斜杠命令只显示本地提示，不会发送给 LLM。
+
+设置面板的“模型与智能体”Tab 提供“在线模型列表”，选中后按 Enter 会在后台从当前 Provider 拉取模型；成功后使用 Up/Down 和 Enter 选择并回填模型元数据，失败时保留手工输入。
+
 ```bash
 nl2sh                         # TUI Agent 模式
 nl2sh "列出 /data 最大的十个文件" # 单次 Agent 请求

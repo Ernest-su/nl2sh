@@ -183,11 +183,17 @@ async fn slash_config_reconfigures_and_returns_to_tui() -> anyhow::Result<()> {
     assert_eq!(loaded.model, "reconfigured-model");
     assert_eq!(loaded.endpoint, "http://127.0.0.1:9999/v1");
     assert_eq!(loaded.api_key, "existing-key");
+    process.master.write_all(b"/not-a-command\r")?;
+    tokio::time::sleep(Duration::from_millis(100)).await;
     let log = std::fs::read_to_string(directory.path().join("nl2sh.log"))?;
     assert!(log.contains("local_command"));
+    assert!(log.contains("unknown_local_command"));
     assert!(!log
         .lines()
         .any(|line| line.contains("\"kind\":\"user\"") && line.contains("/config")));
+    assert!(!log
+        .lines()
+        .any(|line| line.contains("\"kind\":\"user\"") && line.contains("/not-a-command")));
     assert!(process.child.try_wait()?.is_none());
     process.master.write_all(&[0x11])?;
     assert!(timeout(Duration::from_secs(3), process.child.wait())

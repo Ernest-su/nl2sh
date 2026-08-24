@@ -134,6 +134,22 @@ async fn main() -> Result<()> {
             model_history.clear();
             continue;
         }
+        if instruction.trim_start().starts_with('/') {
+            ui_history
+                .lock()
+                .map_err(|_| anyhow::anyhow!("TUI history lock is poisoned"))?
+                .push(match cfg.ui_language {
+                    config::UiLanguage::ZhCn => format!(
+                        "⚠️ 未知本地命令：{}。输入 /help 查看可用命令。",
+                        instruction.trim()
+                    ),
+                    config::UiLanguage::En => format!(
+                        "[WARN] Unknown local command: {}. Use /help to list commands.",
+                        instruction.trim()
+                    ),
+                });
+            continue;
+        }
         if !provider_configured {
             ui_history
                 .lock()

@@ -15,6 +15,7 @@ use crate::{
     history::HistoryLog,
     llm::{ConversationItem, LlmClient, TextDeltaSink},
     provider_account::{build_account_client, AccountBalance},
+    provider_metadata::{build_metadata_client, ModelMetadata},
     security::{RiskLevel, SecurityAssessment},
     shell::{OutputSink, ShellExecutor},
 };
@@ -42,6 +43,7 @@ const BALANCE_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
 type BalanceFuture = Pin<Box<dyn Future<Output = Result<Vec<AccountBalance>>> + Send>>;
 type UpdateFuture =
     Pin<Box<dyn Future<Output = Result<Option<crate::update::UpdateRelease>>> + Send>>;
+type ModelListFuture = Pin<Box<dyn Future<Output = Result<Vec<ModelMetadata>>> + Send>>;
 
 /// Reason a live Agent TUI session returned to its caller.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -172,6 +174,7 @@ async fn run_inner(
     }));
     let mut update_prompt: Option<UpdatePrompt> = None;
     let mut update_manual = false;
+    let mut model_list_active: Option<ModelListFuture> = None;
     let mut quit_after_cancel = false;
     let mut cancel_signal_pending = false;
     let mut was_suspended = false;
@@ -352,6 +355,40 @@ async fn run_inner(
             }
         }
 
+        if let Some(future) = model_list_active.as_mut() {
+            if let Ok(result) = tokio::time::timeout(Duration::ZERO, future.as_mut()).await {
+                model_list_active = None;
+                if let Some(editor) = settings_editor.as_mut() {
+                    editor.loading_models = false;
+                    match result {
+                        Ok(models) if !models.is_empty() => {
+                            editor.models = models;
+                            editor.model_pick = Some(0);
+                            app.status = localized_status(
+                                config.ui_language,
+                                "请选择在线模型",
+                                "select an online model",
+                            );
+                        }
+                        Ok(_) => {
+                            editor.model_error = Some(localized_status(
+                                config.ui_language,
+                                "Provider 未返回模型",
+                                "provider returned no models",
+                            ));
+                        }
+                        Err(_) => {
+                            editor.model_error = Some(localized_status(
+                                config.ui_language,
+                                "模型列表拉取失败，可继续手工输入",
+                                "model discovery failed; manual input remains available",
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+
         if let Some(result) = completed {
             active = None;
             confirmation = None;
@@ -514,6 +551,21 @@ async fn run_inner(
                 };
                 match editor.handle_key(key) {
                     SettingsAction::Continue => {}
+                    SettingsAction::FetchModels => {
+                        let metadata_config = editor.config.clone();
+                        editor.loading_models = true;
+                        editor.model_error = None;
+                        model_list_active = Some(Box::pin(async move {
+                            build_metadata_client(&metadata_config)
+                                .list_models(&metadata_config)
+                                .await
+                        }));
+                        app.status = localized_status(
+                            config.ui_language,
+                            "正在后台拉取模型列表",
+                            "fetching model list in background",
+                        );
+                    }
                     SettingsAction::Cancel => {
                         settings_editor = None;
                         app.status = localized_status(
@@ -603,6 +655,7 @@ async fn run_inner(
                             continue;
                         }
                         "/update" => {
+                            log.record("local_command", "/update")?;
                             let update_config = config.clone();
                             update_check = Some(Box::pin(async move {
                                 crate::update::check(&update_config).await
@@ -613,6 +666,7 @@ async fn run_inner(
                                 "正在检查更新",
                                 "checking for updates",
                             );
+                            continue;
                         }
                         "/help" => {
                             log.record("local_command", "/help")?;
@@ -642,6 +696,28 @@ async fn run_inner(
                             continue;
                         }
                         _ => {}
+                    }
+                    if input.trim_start().starts_with('/') {
+                        log.record("unknown_local_command", input.trim())?;
+                        history
+                            .lock()
+                            .map_err(|_| anyhow::anyhow!("TUI history lock is poisoned"))?
+                            .push(match config.ui_language {
+                                UiLanguage::ZhCn => format!(
+                                    "⚠️ 未知本地命令：{}。输入 /help 查看可用命令。",
+                                    input.trim()
+                                ),
+                                UiLanguage::En => format!(
+                                    "[WARN] Unknown local command: {}. Use /help to list commands.",
+                                    input.trim()
+                                ),
+                            });
+                        app.status = localized_status(
+                            config.ui_language,
+                            "未知本地命令",
+                            "unknown local command",
+                        );
+                        continue;
                     }
                     if !input.trim().is_empty() {
                         if !provider_configured {
@@ -806,28 +882,76 @@ struct SettingsEditor {
     config: Config,
     tab: usize,
     selected: usize,
+    text_cursor: usize,
+    models: Vec<ModelMetadata>,
+    model_pick: Option<usize>,
+    loading_models: bool,
+    model_error: Option<String>,
 }
 
 enum SettingsAction {
     Continue,
+    FetchModels,
     Cancel,
     Save,
 }
 
 impl SettingsEditor {
     fn new(config: &Config, tab: usize) -> Self {
-        Self {
+        let mut editor = Self {
             config: config.clone(),
             tab: tab.min(4),
             selected: 0,
-        }
+            text_cursor: 0,
+            models: Vec::new(),
+            model_pick: None,
+            loading_models: false,
+            model_error: None,
+        };
+        editor.sync_text_cursor();
+        editor
     }
 
     fn field_count(&self) -> usize {
-        [3, 5, 6, 4, 6][self.tab]
+        [3, 6, 6, 4, 6][self.tab]
     }
 
     fn view(&self, cursor_visible: bool) -> PopupView {
+        if let Some(selected) = self.model_pick {
+            let start = selected
+                .saturating_sub(4)
+                .min(self.models.len().saturating_sub(8));
+            let mut lines = self
+                .models
+                .iter()
+                .enumerate()
+                .skip(start)
+                .take(8)
+                .map(|(index, model)| {
+                    let marker = if index == selected { ">" } else { " " };
+                    let context = model
+                        .context_window
+                        .map_or_else(|| "?".into(), |value| value.to_string());
+                    format!("{marker} {}  context={context}", model.id)
+                })
+                .collect::<Vec<_>>();
+            lines.push(format!("{}/{}", selected + 1, self.models.len()));
+            lines.push(String::new());
+            lines.push(match self.config.ui_language {
+                UiLanguage::ZhCn => "↑/↓ 选择；Enter 回填；Esc 返回设置".into(),
+                UiLanguage::En => "Up/Down select; Enter applies; Esc returns to settings".into(),
+            });
+            return PopupView {
+                title: match self.config.ui_language {
+                    UiLanguage::ZhCn => "在线模型列表",
+                    UiLanguage::En => "Online models",
+                }
+                .into(),
+                lines,
+                dangerous: false,
+                informational: true,
+            };
+        }
         let tabs = match self.config.ui_language {
             UiLanguage::ZhCn => SETTINGS_TABS_ZH,
             UiLanguage::En => SETTINGS_TABS_EN,
@@ -848,11 +972,14 @@ impl SettingsEditor {
         for (index, (label, value)) in self.fields().into_iter().enumerate() {
             let marker = if index == self.selected { ">" } else { " " };
             if index == self.selected && self.is_text_field() {
-                let cursor = if cursor_visible { "│" } else { " " };
-                lines.push(format!("{marker} {label}: ┌ {value}{cursor} ┐"));
+                let value = self.input_with_cursor(&value, cursor_visible);
+                lines.push(format!("{marker} {label}: ┌ {value} ┐"));
             } else {
                 lines.push(format!("{marker} {label}: {value}"));
             }
+        }
+        if let Some(error) = &self.model_error {
+            lines.push(format!("⚠ {error}"));
         }
         lines.push(String::new());
         lines.push(match self.config.ui_language {
@@ -925,6 +1052,25 @@ impl SettingsEditor {
                         "Max turns (recommended 16)"
                     },
                     self.config.max_context_turns.to_string(),
+                ),
+                (
+                    if zh {
+                        "在线模型列表"
+                    } else {
+                        "Online model list"
+                    },
+                    if self.loading_models {
+                        if zh {
+                            "正在拉取…"
+                        } else {
+                            "fetching…"
+                        }
+                    } else if zh {
+                        "Enter 拉取"
+                    } else {
+                        "Enter to fetch"
+                    }
+                    .into(),
                 ),
             ],
             2 => vec![
@@ -1022,6 +1168,31 @@ impl SettingsEditor {
     }
 
     fn handle_key(&mut self, key: KeyEvent) -> SettingsAction {
+        if let Some(selected) = self.model_pick.as_mut() {
+            match key.code {
+                KeyCode::Esc => self.model_pick = None,
+                KeyCode::Up => {
+                    *selected = selected.checked_sub(1).unwrap_or(self.models.len() - 1);
+                }
+                KeyCode::Down => *selected = (*selected + 1) % self.models.len(),
+                KeyCode::Enter => {
+                    if let Some(model) = self.models.get(*selected) {
+                        self.config.model = model.id.clone();
+                        if model.context_window.is_some() {
+                            self.config.model_context_window = model.context_window;
+                        }
+                        if model.max_output_tokens.is_some() {
+                            self.config.model_max_output_tokens = model.max_output_tokens;
+                        }
+                    }
+                    self.model_pick = None;
+                    self.selected = 0;
+                    self.sync_text_cursor();
+                }
+                _ => {}
+            }
+            return SettingsAction::Continue;
+        }
         match key.code {
             KeyCode::Esc => SettingsAction::Cancel,
             KeyCode::Tab => {
@@ -1031,11 +1202,13 @@ impl SettingsEditor {
                     (self.tab + 1) % 5
                 };
                 self.selected = 0;
+                self.sync_text_cursor();
                 SettingsAction::Continue
             }
             KeyCode::BackTab => {
                 self.tab = self.tab.checked_sub(1).unwrap_or(4);
                 self.selected = 0;
+                self.sync_text_cursor();
                 SettingsAction::Continue
             }
             KeyCode::Up => {
@@ -1043,35 +1216,75 @@ impl SettingsEditor {
                     .selected
                     .checked_sub(1)
                     .unwrap_or(self.field_count() - 1);
+                self.sync_text_cursor();
                 SettingsAction::Continue
             }
             KeyCode::Down => {
                 self.selected = (self.selected + 1) % self.field_count();
+                self.sync_text_cursor();
                 SettingsAction::Continue
             }
             KeyCode::Left => {
-                self.adjust(-1);
+                if self.is_text_field() {
+                    self.move_text_cursor_left();
+                } else {
+                    self.adjust(-1);
+                }
                 SettingsAction::Continue
             }
-            KeyCode::Right | KeyCode::Char(' ') if !self.is_text_field() => {
+            KeyCode::Right if self.is_text_field() => {
+                self.move_text_cursor_right();
+                SettingsAction::Continue
+            }
+            KeyCode::Right | KeyCode::Char(' ') => {
                 self.adjust(1);
                 SettingsAction::Continue
             }
             KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 SettingsAction::Save
             }
+            KeyCode::Enter if self.tab == 1 && self.selected == 5 && !self.loading_models => {
+                SettingsAction::FetchModels
+            }
             KeyCode::Backspace if self.is_text_field() => {
-                self.text_mut().pop();
+                if let Some((previous, _)) = self.selected_text()[..self.text_cursor]
+                    .char_indices()
+                    .next_back()
+                {
+                    let cursor = self.text_cursor;
+                    self.text_mut().drain(previous..cursor);
+                    self.text_cursor = previous;
+                }
                 SettingsAction::Continue
             }
             KeyCode::Delete if self.is_text_field() => {
-                self.text_mut().clear();
+                if let Some(character) = self.selected_text()[self.text_cursor..].chars().next() {
+                    let cursor = self.text_cursor;
+                    self.text_mut().drain(cursor..cursor + character.len_utf8());
+                }
+                SettingsAction::Continue
+            }
+            KeyCode::Home if self.is_text_field() => {
+                self.text_cursor = 0;
+                SettingsAction::Continue
+            }
+            KeyCode::End if self.is_text_field() => {
+                self.text_cursor = self.selected_text().len();
                 SettingsAction::Continue
             }
             KeyCode::Char(character)
                 if self.is_text_field() && !key.modifiers.contains(KeyModifiers::CONTROL) =>
             {
-                self.text_mut().push(character);
+                let cursor = self.text_cursor;
+                let text = self.text_mut();
+                text.insert(cursor, character);
+                let stripped = matches!(character, 'M' | 'm')
+                    && super::input::strip_trailing_sgr_mouse_report(text);
+                self.text_cursor = if stripped {
+                    text.len()
+                } else {
+                    cursor + character.len_utf8()
+                };
                 SettingsAction::Continue
             }
             _ => SettingsAction::Continue,
@@ -1091,6 +1304,56 @@ impl SettingsEditor {
             (4, 4) => &mut self.config.proxy_password,
             _ => &mut self.config.proxy_bypass,
         }
+    }
+
+    fn selected_text(&self) -> &str {
+        match (self.tab, self.selected) {
+            (0, 0) => &self.config.endpoint,
+            (0, 1) => &self.config.api_key,
+            (1, 0) => &self.config.model,
+            (4, 2) => &self.config.proxy_address,
+            (4, 3) => &self.config.proxy_username,
+            (4, 4) => &self.config.proxy_password,
+            _ => &self.config.proxy_bypass,
+        }
+    }
+
+    fn sync_text_cursor(&mut self) {
+        self.text_cursor = if self.is_text_field() {
+            self.selected_text().len()
+        } else {
+            0
+        };
+    }
+
+    fn move_text_cursor_left(&mut self) {
+        if let Some((previous, _)) = self.selected_text()[..self.text_cursor]
+            .char_indices()
+            .next_back()
+        {
+            self.text_cursor = previous;
+        }
+    }
+
+    fn move_text_cursor_right(&mut self) {
+        if let Some(character) = self.selected_text()[self.text_cursor..].chars().next() {
+            self.text_cursor += character.len_utf8();
+        }
+    }
+
+    fn input_with_cursor(&self, displayed: &str, cursor_visible: bool) -> String {
+        let selected = self.selected_text();
+        let mut cursor = self.text_cursor.min(selected.len());
+        while !selected.is_char_boundary(cursor) {
+            cursor = cursor.saturating_sub(1);
+        }
+        let character_index = selected[..cursor].chars().count();
+        let mut characters = displayed.chars().collect::<Vec<_>>();
+        characters.insert(
+            character_index.min(characters.len()),
+            if cursor_visible { '│' } else { ' ' },
+        );
+        characters.into_iter().collect()
     }
 
     fn adjust(&mut self, direction: i8) {
@@ -1629,6 +1892,54 @@ mod tests {
         editor.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
         assert_eq!(editor.tab, 2);
         assert_eq!(editor.selected, 0);
+    }
+
+    #[test]
+    fn settings_text_fields_strip_degraded_sgr_mouse_reports() {
+        let config = Config::default();
+        let original = config.endpoint.clone();
+        let mut editor = SettingsEditor::new(&config, 0);
+        for character in "<35;46;8M".chars() {
+            editor.handle_key(KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE));
+        }
+        assert_eq!(editor.config.endpoint, original);
+    }
+
+    #[test]
+    fn settings_model_tab_fetches_and_applies_discovered_metadata() {
+        let mut editor = SettingsEditor::new(&Config::default(), 1);
+        editor.selected = 5;
+        assert!(matches!(
+            editor.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+            SettingsAction::FetchModels
+        ));
+        editor.models = vec![ModelMetadata {
+            id: "online-model".into(),
+            context_window: Some(65_536),
+            max_output_tokens: Some(4096),
+        }];
+        editor.model_pick = Some(0);
+        editor.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(editor.config.model, "online-model");
+        assert_eq!(editor.config.model_context_window, Some(65_536));
+        assert_eq!(editor.config.model_max_output_tokens, Some(4096));
+    }
+
+    #[test]
+    fn settings_text_cursor_supports_navigation_insertion_and_deletion() {
+        let config = Config {
+            endpoint: "你a好".into(),
+            ..Config::default()
+        };
+        let mut editor = SettingsEditor::new(&config, 0);
+        editor.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+        editor.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+        editor.handle_key(KeyEvent::new(KeyCode::Char('中'), KeyModifiers::NONE));
+        assert_eq!(editor.config.endpoint, "你中a好");
+        editor.handle_key(KeyEvent::new(KeyCode::Delete, KeyModifiers::NONE));
+        assert_eq!(editor.config.endpoint, "你中好");
+        editor.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+        assert_eq!(editor.config.endpoint, "你好");
     }
     use crate::{config::Config, security::assess};
 
