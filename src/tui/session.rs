@@ -693,6 +693,9 @@ async fn run_inner(
                 (KeyCode::Char('c'), KeyModifiers::CONTROL) => app.input.clear(),
                 (KeyCode::Esc, _) => {}
                 (KeyCode::Enter, _) => {
+                    if app.complete_selected_file_for_key(key.code) {
+                        continue;
+                    }
                     if app.complete_selected_command() {
                         continue;
                     }
@@ -1023,8 +1026,8 @@ async fn run_inner(
                 (KeyCode::Up, _) => app.previous_input(),
                 (KeyCode::Down, _) => app.next_input(),
                 (KeyCode::Left, _) => app.input.move_left(),
-                (KeyCode::Right, _) if app.complete_selected_file() => {}
                 (KeyCode::Right, _) => app.input.move_right(),
+                (KeyCode::Tab, _) if app.complete_selected_file_for_key(key.code) => {}
                 (KeyCode::Home, _) => app.input.move_home(),
                 (KeyCode::End, _) => app.input.move_end(),
                 (KeyCode::Backspace, _) => app.input.backspace(),

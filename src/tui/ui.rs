@@ -475,8 +475,8 @@ fn render_file_menu(f: &mut Frame, app: &App, input_area: ratatui::layout::Rect,
                 .border_style(theme.style(theme.border_focus))
                 .title(Line::styled(
                     match app.language {
-                        UiLanguage::ZhCn => "文件（↑↓选择，→补全）",
-                        UiLanguage::En => "Files (Up/Down, Right to complete)",
+                        UiLanguage::ZhCn => "文件（↑↓选择，Enter/Tab 补全）",
+                        UiLanguage::En => "Files (Up/Down, Enter/Tab to complete)",
                     },
                     theme.bold(theme.accent),
                 )),

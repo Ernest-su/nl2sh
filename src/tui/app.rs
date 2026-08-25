@@ -174,6 +174,9 @@ fn run_inner(options: TuiOptions, mut history: Vec<String>) -> Result<Option<Str
                             app.tool_results_expanded = !app.tool_results_expanded
                         }
                         (KeyCode::Enter, _) => {
+                            if app.complete_selected_file_for_key(k.code) {
+                                continue;
+                            }
                             if app.complete_selected_command() {
                                 continue;
                             }
@@ -199,8 +202,8 @@ fn run_inner(options: TuiOptions, mut history: Vec<String>) -> Result<Option<Str
                         (KeyCode::Up, _) => app.previous_input(),
                         (KeyCode::Down, _) => app.next_input(),
                         (KeyCode::Left, _) => app.input.move_left(),
-                        (KeyCode::Right, _) if app.complete_selected_file() => {}
                         (KeyCode::Right, _) => app.input.move_right(),
+                        (KeyCode::Tab, _) if app.complete_selected_file_for_key(k.code) => {}
                         (KeyCode::Home, _) => app.input.move_home(),
                         (KeyCode::End, _) => app.input.move_end(),
                         (KeyCode::Backspace, _) => app.input.backspace(),
@@ -296,6 +299,12 @@ impl App {
         }
         let replacement = format!("@{path}");
         self.input.replace_before_cursor(start, &replacement)
+    }
+
+    pub(crate) fn complete_selected_file_for_key(&mut self, key: KeyCode) -> bool {
+        matches!(key, KeyCode::Enter | KeyCode::Tab)
+            && self.file_menu_visible()
+            && self.complete_selected_file()
     }
 
     pub(crate) fn advance_welcome_train(&mut self, viewport_width: usize) {
@@ -642,6 +651,27 @@ mod tests {
         );
         app.refresh_file_suggestions();
         assert!(!app.complete_selected_file());
+        Ok(())
+    }
+
+    #[test]
+    fn file_reference_completion_accepts_enter_and_tab_but_not_right() -> anyhow::Result<()> {
+        let directory = tempfile::tempdir()?;
+        std::fs::write(directory.path().join("file.txt"), "test")?;
+
+        for key in [KeyCode::Enter, KeyCode::Tab] {
+            let mut app = app_with_history(0);
+            app.input.set(format!("@{}/f", directory.path().display()));
+            app.refresh_file_suggestions();
+            assert!(app.complete_selected_file_for_key(key));
+            assert!(app.input.text.ends_with("/file.txt"));
+        }
+
+        let mut app = app_with_history(0);
+        app.input.set(format!("@{}/f", directory.path().display()));
+        app.refresh_file_suggestions();
+        assert!(!app.complete_selected_file_for_key(KeyCode::Right));
+        assert!(app.input.text.ends_with("/f"));
         Ok(())
     }
 
