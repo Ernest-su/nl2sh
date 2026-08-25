@@ -3,10 +3,13 @@
 pub mod agent;
 /// Validated TOML configuration and initialization wizard.
 pub mod config;
+pub mod file_references;
 /// Bounded structured file operations for the Agent.
 pub mod file_tools;
 /// Persistent structured interaction history for diagnostics.
 pub mod history;
+/// Optional read-only Tencent ima knowledge-base client.
+pub mod ima;
 /// Shared bounded-text utilities for execution, UI, logs, and model context.
 pub mod limits;
 /// Provider-neutral LLM types and OpenAI-compatible HTTP clients.

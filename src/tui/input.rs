@@ -47,6 +47,14 @@ impl Input {
         self.text = value;
         self.cursor = self.text.len();
     }
+    pub fn replace_before_cursor(&mut self, start: usize, value: &str) -> bool {
+        if start > self.cursor || !self.text.is_char_boundary(start) {
+            return false;
+        }
+        self.text.replace_range(start..self.cursor, value);
+        self.cursor = start.saturating_add(value.len());
+        true
+    }
     pub fn clear(&mut self) {
         self.text.clear();
         self.cursor = 0;
@@ -85,9 +93,7 @@ pub(super) fn take_trailing_sgr_mouse_report(text: &mut String) -> Option<SgrMou
     if !matches!(text.chars().next_back(), Some('M' | 'm')) {
         return None;
     }
-    let Some(angle) = text.rfind('<') else {
-        return None;
-    };
+    let angle = text.rfind('<')?;
     let candidate = &text[angle + 1..text.len().saturating_sub(1)];
     let mut fields = candidate.split(';');
     let button = fields.next().and_then(|field| field.parse::<u16>().ok())?;

@@ -139,6 +139,9 @@ async fn run_inner(
         input_history_draft: String::new(),
         cursor_visible: true,
         command_selection: 0,
+        file_selection: 0,
+        file_suggestion_query: None,
+        file_suggestions: Vec::new(),
         history: snapshot(&history)?,
         conversation_scroll: 0,
         tool_results_expanded: false,
@@ -423,7 +426,12 @@ async fn run_inner(
                     let name = session_name.clone();
                     let turns = model_history.clone();
                     let tool_limit = config.model_tool_output_max_bytes;
-                    let secrets = vec![config.api_key.clone(), config.proxy_password.clone()];
+                    let secrets = vec![
+                        config.api_key.clone(),
+                        config.proxy_password.clone(),
+                        config.ima_client_id.clone(),
+                        config.ima_api_key.clone(),
+                    ];
                     let save = tokio::task::spawn_blocking(move || {
                         store.save_redacted(&name, &turns, tool_limit, &secrets)
                     })
@@ -685,6 +693,9 @@ async fn run_inner(
                 (KeyCode::Char('c'), KeyModifiers::CONTROL) => app.input.clear(),
                 (KeyCode::Esc, _) => {}
                 (KeyCode::Enter, _) => {
+                    if app.complete_selected_file_for_key(key.code) {
+                        continue;
+                    }
                     if app.complete_selected_command() {
                         continue;
                     }
@@ -992,18 +1003,21 @@ async fn run_inner(
                             continue;
                         }
                         push_history(&history, format!("> {input}"), &log, "user")?;
+                        let agent_input = crate::file_references::augment_file_references(&input);
                         app.status = localized_status(
                             config.ui_language,
                             "正在请求模型 / 执行工具",
                             "requesting LLM / executing tools",
                         );
                         active = Some(Box::pin(runner.run_with_history_streaming_owned(
-                            input,
+                            agent_input,
                             model_history.clone(),
                             &stream_sink,
                         )));
                     }
                 }
+                (KeyCode::Up, _) if app.file_menu_visible() => app.select_previous_file(),
+                (KeyCode::Down, _) if app.file_menu_visible() => app.select_next_file(),
                 (KeyCode::Up, _) if app.command_menu_visible() => app.select_previous_command(),
                 (KeyCode::Down, _) if app.command_menu_visible() => app.select_next_command(),
                 (KeyCode::Up | KeyCode::Down, _) if windows_scroll => {
@@ -1013,6 +1027,7 @@ async fn run_inner(
                 (KeyCode::Down, _) => app.next_input(),
                 (KeyCode::Left, _) => app.input.move_left(),
                 (KeyCode::Right, _) => app.input.move_right(),
+                (KeyCode::Tab, _) if app.complete_selected_file_for_key(key.code) => {}
                 (KeyCode::Home, _) => app.input.move_home(),
                 (KeyCode::End, _) => app.input.move_end(),
                 (KeyCode::Backspace, _) => app.input.backspace(),
@@ -1065,13 +1080,21 @@ fn format_balances(balances: &[AccountBalance]) -> String {
         .join(" / ")
 }
 
-const SETTINGS_TABS_ZH: [&str; 5] = ["服务", "模型与智能体", "执行与安全", "界面", "网络"];
-const SETTINGS_TABS_EN: [&str; 5] = [
+const SETTINGS_TABS_ZH: [&str; 6] = [
+    "服务",
+    "模型与智能体",
+    "执行与安全",
+    "界面",
+    "网络",
+    "知识库",
+];
+const SETTINGS_TABS_EN: [&str; 6] = [
     "Provider",
     "Model & Agent",
     "Execution",
     "Interface",
     "Network",
+    "Knowledge",
 ];
 
 struct UpdatePrompt {
@@ -1198,7 +1221,7 @@ impl SettingsEditor {
             provider,
             ollama_endpoint,
             custom_endpoint: config.endpoint.clone(),
-            tab: tab.min(4),
+            tab: tab.min(5),
             selected: 0,
             text_cursor: 0,
             models: Vec::new(),
@@ -1211,7 +1234,7 @@ impl SettingsEditor {
     }
 
     fn field_count(&self) -> usize {
-        [4, 6, 6, 7, 6][self.tab]
+        [4, 6, 6, 7, 6, 4][self.tab]
     }
 
     fn view(&self, cursor_visible: bool) -> PopupView {
@@ -1464,7 +1487,7 @@ impl SettingsEditor {
                     self.config.tool_output_max_bytes.to_string(),
                 ),
             ],
-            _ => vec![
+            4 => vec![
                 (
                     if zh { "代理开关" } else { "Proxy enabled" },
                     self.config.proxy_enabled.to_string(),
@@ -1496,6 +1519,29 @@ impl SettingsEditor {
                 (
                     if zh { "绕过列表" } else { "Bypass list" },
                     self.config.proxy_bypass.clone(),
+                ),
+            ],
+            _ => vec![
+                (
+                    if zh {
+                        "ima 只读连接"
+                    } else {
+                        "ima read-only"
+                    },
+                    self.config.ima_enabled.to_string(),
+                ),
+                ("ima Client ID", mask_secret(&self.config.ima_client_id)),
+                ("ima API Key", mask_secret(&self.config.ima_api_key)),
+                (
+                    if zh {
+                        "默认知识库 ID"
+                    } else {
+                        "Default knowledge base ID"
+                    },
+                    self.config
+                        .ima_knowledge_base_id
+                        .clone()
+                        .unwrap_or_default(),
                 ),
             ],
         }
@@ -1531,16 +1577,16 @@ impl SettingsEditor {
             KeyCode::Esc => SettingsAction::Cancel,
             KeyCode::Tab => {
                 self.tab = if key.modifiers.contains(KeyModifiers::SHIFT) {
-                    self.tab.checked_sub(1).unwrap_or(4)
+                    self.tab.checked_sub(1).unwrap_or(5)
                 } else {
-                    (self.tab + 1) % 5
+                    (self.tab + 1) % 6
                 };
                 self.selected = 0;
                 self.sync_text_cursor();
                 SettingsAction::Continue
             }
             KeyCode::BackTab => {
-                self.tab = self.tab.checked_sub(1).unwrap_or(4);
+                self.tab = self.tab.checked_sub(1).unwrap_or(5);
                 self.selected = 0;
                 self.sync_text_cursor();
                 SettingsAction::Continue
@@ -1632,7 +1678,10 @@ impl SettingsEditor {
     }
 
     fn is_text_field(&self) -> bool {
-        matches!((self.tab, self.selected), (0, 1 | 2) | (1, 0) | (4, 2..=5))
+        matches!(
+            (self.tab, self.selected),
+            (0, 1 | 2) | (1, 0) | (4, 2..=5) | (5, 1..=3)
+        )
     }
     fn text_mut(&mut self) -> &mut String {
         match (self.tab, self.selected) {
@@ -1642,6 +1691,12 @@ impl SettingsEditor {
             (4, 2) => &mut self.config.proxy_address,
             (4, 3) => &mut self.config.proxy_username,
             (4, 4) => &mut self.config.proxy_password,
+            (5, 1) => &mut self.config.ima_client_id,
+            (5, 2) => &mut self.config.ima_api_key,
+            (5, 3) => self
+                .config
+                .ima_knowledge_base_id
+                .get_or_insert_with(String::new),
             _ => &mut self.config.proxy_bypass,
         }
     }
@@ -1654,6 +1709,13 @@ impl SettingsEditor {
             (4, 2) => &self.config.proxy_address,
             (4, 3) => &self.config.proxy_username,
             (4, 4) => &self.config.proxy_password,
+            (5, 1) => &self.config.ima_client_id,
+            (5, 2) => &self.config.ima_api_key,
+            (5, 3) => self
+                .config
+                .ima_knowledge_base_id
+                .as_deref()
+                .unwrap_or_default(),
             _ => &self.config.proxy_bypass,
         }
     }
@@ -1811,6 +1873,7 @@ impl SettingsEditor {
                     direction,
                 )
             }
+            (5, 0) => self.config.ima_enabled = !self.config.ima_enabled,
             _ => {}
         }
     }
@@ -1818,6 +1881,14 @@ impl SettingsEditor {
 
 fn optional_number(value: Option<u64>) -> String {
     value.map_or_else(|| "auto".into(), |value| value.to_string())
+}
+
+fn mask_secret(value: &str) -> String {
+    if value.is_empty() {
+        String::new()
+    } else {
+        "*".repeat(value.chars().count())
+    }
 }
 fn adjust_optional(value: &mut Option<u64>, direction: i8, step: u64) {
     *value = if direction > 0 {
@@ -2352,6 +2423,30 @@ mod tests {
         assert!(!editor.config.proxy_enabled);
         assert_eq!(editor.config.proxy_address, "proxy.example:1080");
         assert_eq!(editor.config.proxy_password, "secret");
+    }
+
+    #[test]
+    fn settings_masks_and_edits_independent_ima_credentials() {
+        let config = Config {
+            ima_enabled: true,
+            ima_client_id: "client-secret".into(),
+            ima_api_key: "api-secret".into(),
+            ima_knowledge_base_id: Some("kb-id".into()),
+            ..Config::default()
+        };
+        let mut editor = SettingsEditor::new(&config, 5);
+        let view = editor.view(true);
+        assert!(!view.lines.iter().any(|line| line.contains("client-secret")));
+        assert!(!view.lines.iter().any(|line| line.contains("api-secret")));
+        editor.selected = 0;
+        editor.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
+        assert!(!editor.config.ima_enabled);
+        assert_eq!(editor.config.ima_client_id, "client-secret");
+        assert_eq!(editor.config.ima_api_key, "api-secret");
+        assert_eq!(
+            editor.config.ima_knowledge_base_id.as_deref(),
+            Some("kb-id")
+        );
     }
 
     #[test]

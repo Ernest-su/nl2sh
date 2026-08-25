@@ -1,9 +1,12 @@
 # Project Status
 
-Last Updated: 2026-08-24
+Last Updated: 2026-08-25
 
 ## Recent Changes
 
+- 准备 1.0.0 正式版：Cargo 包版本提升到 1.0.0，汇总 0.2.0 之后的功能、稳定性与安全边界变更，并沿用双 ABI Android 标签发布流程。
+- 新增可选的腾讯 ima 只读知识库连接器：独立 Client ID/API Key、始终无代理直连，仅提供知识库发现、搜索与有界原文读取 Tool；支持笔记正文和受控临时 URL，禁止写操作、重定向、非 HTTPS/非白名单来源及凭据进入模型、日志或会话。
+- TUI 输入新增 `@` 文件/目录引用候选：支持相对路径、绝对路径、`@~`、`@/`、`@.` 和父目录路径，Up/Down 选择、Enter/Tab 补全，目录可继续下钻；Right 保持普通光标右移。提交时按最长已存在路径前缀解析，`@test.txt写的是什么内容` 无需额外空格；只附加绝对路径提示，内容仍由有界结构化文件工具读取，安全与确认链不变。
 - 命令批准弹窗改为内容驱动的动态宽高：长命令和结构化 diff 超过终端可用高度时可用滚轮或 PageUp/PageDown 浏览，上方正文独立滚动，底部审批选项、强确认或编辑输入保持可见。
 - 新增结构化 `read_file`、`list_dir`、`search_text` 与 `apply_patch` Agent 工具：路径不设工作区边界并支持绝对路径、父目录和符号链接，读取/遍历/匹配/文件大小仍有界；补丁先展示 diff 并确认，再原子写入。
 - 新增私有会话快照与 `/sessions` 管理：已完成 turn 自动保存，支持列表、恢复、重命名和删除；恢复重新应用上下文与 Tool Result 上限，Provider 凭据、代理密码、余额和临时审批许可不进入会话文件。
@@ -50,17 +53,17 @@ Last Updated: 2026-08-24
 
 ## Current Phase
 
-0.2.0 发布阶段：本地发布门禁完成，等待 GitHub Actions 构建并发布双 ABI 产物。
+1.0.0 发布阶段：本地发布门禁完成，通过 `v1.0.0` 标签构建并发布双 ABI Android 产物。
 
 ## Overall Status
 
 - Product positioning: Android 原生 shell 版的类 Hermes AI Agent；核心程序以单个可执行文件交付，提供多轮 Tool Calling 和丰富 TUI，不声称与 Hermes API 或插件兼容。
-- Build status: 0.2.0 的 `cargo check --all-targets` 与 Linux release 构建通过。
-- Test status: 0.2.0 的单元、Agent loop 与非 TUI 集成测试通过；两个依赖原始 ANSI 文本连续匹配的伪终端测试受启动动画差分输出影响，发布前需修复。
-- Android cross-compile status: 0.2.0 已使用 NDK r28c、API 26 成功构建 `aarch64-linux-android` 与 `armv7-linux-androideabi` release 产物。
+- Build status: 1.0.0 的 stable Rust 检查与 Linux release 构建通过。
+- Test status: 1.0.0 的默认测试共 133 项，132 项通过；`agent_reply_remains_in_live_tui_until_ctrl_q` 因启动动画的 ratatui 差分 ANSI 输出无法形成连续原始文本而超时，单独重跑稳定复现。
+- Android cross-compile status: GitHub Actions 使用 NDK r28c、API 26 构建 `aarch64-linux-android` 与 `armv7-linux-androideabi` release 产物。
 - Android device validation: 已完成真机 root/非 root、修改确认、命令超时和全屏交互程序验证矩阵。
 - CI release workflow: 已添加 `.github/workflows/release.yml`，在推送 `v*` tag 时用 GitHub Actions 并行交叉编译 `aarch64-linux-android` 与 `armv7-linux-androideabi`，将两个程序放入统一包的 ABI 子目录，并与自动选择设备/ABI 的 Linux/Windows BAT 启动脚本、`config.toml.example`、`使用说明.md` 打包为单一 `.tar.gz`/`.zip`，附带 SHA256 校验和发布到 GitHub Release；`workflow_dispatch` 可手动触发草稿发布。
-- Known blockers: CI workflow 尚未在真实 GitHub Actions 上运行验证。
+- Known blockers: 无；标签发布产物状态由 GitHub Actions 最终结果确认。
 
 ## Completed
 
@@ -114,14 +117,14 @@ Last Updated: 2026-08-24
 - 命令审批改为固定 `1-6` 列表，支持方向键/Enter 与 `y/n/a/e/i/t` 别名；可在当前 Agent 任务内记住完全相同的普通命令，但 Root、Dangerous、Critical 和强确认命令始终禁用该选项，且许可不持久化、不做前缀匹配。
 - 审批区域使用完整风险色边框和统一 `background_alt` 面板背景；阶段切换保持稳定最小高度并清空整个面板，避免列表字符残留到强确认或编辑画面。
 - 审批面板锚定在输入区正上方的左下角；初始审批忽略孤立 Esc 和大写 CSI 尾字符，避免 adb 将方向键拆分后误触拒绝或 always 导致弹窗消失。
-- MIT `LICENSE` 已纳入仓库；Cargo 版本为 0.2.0。
+- MIT `LICENSE` 已纳入仓库；Cargo 版本为 1.0.0。
 - 实时 TUI、捕获式工具结果、发给模型的 Tool Result、JSONL 单事件和单文件均有可配置上限；截断会插入明确标记。
 - TUI 输出与历史生命周期已从 session 控制器拆为独立模块，同时保留新的审批菜单和任务级精确命令许可。
 - 真机 root/非 root、修改确认、命令超时和全屏交互程序验证矩阵已完成，覆盖提权与确认链、超时回收，以及全屏程序退出后的终端恢复和 TUI 重绘。
 
 ## In Progress
 
-- 观察 `v0.2.0` GitHub Actions，确认双 ABI 归档与 Release 发布流程。
+- 观察 `v1.0.0` GitHub Actions，确认双 ABI 归档与 Release 发布流程。
 
 ## Pending / Known Issues
 
@@ -140,6 +143,9 @@ Last Updated: 2026-08-24
 
 ## Verification Performed
 
+- 1.0.0 发布门禁：`cargo fmt --all -- --check`、`cargo check --all-targets`、`cargo clippy --all-targets -- -D warnings` 与 `cargo build --release` 通过。`cargo test --all-targets` 共 133 项，132 项通过；唯一失败为已记录的伪终端原始文本匹配用例 `agent_reply_remains_in_live_tui_until_ctrl_q`，单独重跑仍因启动动画的 ratatui 差分 ANSI 输出无法形成连续“审计日志保留”文本而超时。
+- ima 只读连接器：`cargo fmt --all -- --check`、`cargo check`、`cargo clippy --all-targets -- -D warnings` 与 74 项默认库测试通过，1 项显式凭据 live smoke 默认忽略；使用 `NL2SH_IMA_CLIENT_ID`/`NL2SH_IMA_API_KEY` 单独运行该 smoke 后，真实知识库发现和库内搜索通过且未输出账户响应；在 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY` 均指向不可用地址时仍通过，验证 ima 强制直连。mock 回归覆盖搜索、媒体信息、笔记正文、认证 header 与凭据不进入 Tool Result，来源策略覆盖非 HTTPS/非白名单拒绝。凭据和真实响应未写入仓库；全量测试仍只有既有启动动画 ANSI 差分文本匹配用例超时。
+- `@` 文件/目录引用：`cargo fmt --all -- --check`、`cargo check`、`cargo clippy --all-targets -- -D warnings` 与 71 项库测试通过；新增回归覆盖句中光标补全、相对 `@.`、绝对路径、`@~`、目录标记，以及 `@test.txt写的是什么内容` 的最长已存在路径解析。全量 `cargo test` 的其余测试通过，既有 `agent_reply_remains_in_live_tui_until_ctrl_q` 仍因启动动画 ANSI 差分文本匹配超时。
 - 结构化文件工具、会话恢复与长内容审批布局：`cargo fmt --all -- --check`、`cargo check` 和 66 项库测试通过；全量 `cargo test` 的 CLI、Agent、取消、配置、日志、LLM mock、PTY、root、安全及 4 项 TUI 测试通过，既有 `agent_reply_remains_in_live_tui_until_ctrl_q` 仍因启动动画 ANSI 差分文本匹配超时。新增回归覆盖 Tool schema、绝对/父目录/符号链接路径、确认前不写入、原子替换、会话保存/恢复/重命名/删除、凭据脱敏，以及审批正文滚动与固定操作区。
 - Windows ADB 滚轮诊断确认：默认鼠标捕获模式下设备端只收到退出按键，滚轮事件未到达进程；禁用捕获后 Windows Terminal 稳定发送 Up/Down 事件。兼容实现的 `cargo fmt --all -- --check` 与 Linux 目标 `cargo check` 通过；新增单元测试覆盖 SGR 降级输入。`cargo test` 的 61 项库测试及其他非 TUI 测试通过，全量测试仅既有 `agent_reply_remains_in_live_tui_until_ctrl_q` 因启动动画 ANSI 差分文本匹配超时而失败。
 - `/shell` 返回完整重绘：`cargo fmt --all -- --check`、`cargo check` 和 `/shell` 伪终端回归通过；回归在 `exit` 后要求重新出现完整框架的 `Ctrl+Q` 提示，并继续验证安全退出与 shell 内容不写入日志。
@@ -182,4 +188,4 @@ Last Updated: 2026-08-24
 ## Next Steps
 
 1. 根据真机结果继续优化窄屏布局和全屏交互程序切换。
-2. 观察 `v0.2.0` GitHub Actions，确认双 ABI 归档与 Release 发布成功。
+2. 观察 `v1.0.0` GitHub Actions，确认双 ABI 归档与 Release 发布成功。

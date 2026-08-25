@@ -270,6 +270,7 @@ fn popup_line(line: &str, dangerous: bool, theme: Theme) -> Line<'static> {
 }
 
 pub fn draw(f: &mut Frame, app: &mut App) {
+    app.refresh_file_suggestions();
     let theme = Theme::detect();
     f.render_widget(
         Block::default().style(Style::default().bg(theme.background)),
@@ -345,7 +346,11 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     );
     f.render_widget(input, areas[2]);
     if app.popup.is_none() {
-        render_command_menu(f, app, areas[2], theme);
+        if app.file_menu_visible() {
+            render_file_menu(f, app, areas[2], theme);
+        } else {
+            render_command_menu(f, app, areas[2], theme);
+        }
     }
     if let Some(popup) = &app.popup {
         let all_lines = popup.lines.iter().chain(&popup.footer);
@@ -430,6 +435,54 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             );
         }
     }
+}
+
+fn render_file_menu(f: &mut Frame, app: &App, input_area: ratatui::layout::Rect, theme: Theme) {
+    let suggestions = app.file_suggestions();
+    if suggestions.is_empty() || input_area.y < 3 {
+        return;
+    }
+    let visible = suggestions.len().min(10);
+    let selected = app.file_selection % suggestions.len();
+    let start = selected
+        .saturating_sub(visible.saturating_sub(1))
+        .min(suggestions.len() - visible);
+    let area = ratatui::layout::Rect::new(
+        input_area.x,
+        input_area.y.saturating_sub(visible as u16 + 2),
+        input_area.width.min(72),
+        visible as u16 + 2,
+    );
+    let lines = suggestions
+        .iter()
+        .enumerate()
+        .skip(start)
+        .take(visible)
+        .map(|(index, path)| {
+            let style = if index == selected {
+                theme.bold(theme.text_primary).bg(theme.background_alt)
+            } else {
+                theme.style(theme.text_secondary)
+            };
+            Line::from(Span::styled(format!(" @{path}"), style))
+        })
+        .collect::<Vec<_>>();
+    f.render_widget(Clear, area);
+    f.render_widget(
+        Paragraph::new(lines).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(theme.style(theme.border_focus))
+                .title(Line::styled(
+                    match app.language {
+                        UiLanguage::ZhCn => "文件（↑↓选择，Enter/Tab 补全）",
+                        UiLanguage::En => "Files (Up/Down, Enter/Tab to complete)",
+                    },
+                    theme.bold(theme.accent),
+                )),
+        ),
+        area,
+    );
 }
 
 fn popup_render_lines(lines: &[String], dangerous: bool, theme: Theme) -> Vec<Line<'static>> {
@@ -956,6 +1009,9 @@ mod tests {
             input_history_draft: String::new(),
             cursor_visible: true,
             command_selection: 0,
+            file_selection: 0,
+            file_suggestion_query: None,
+            file_suggestions: Vec::new(),
             history: Vec::new(),
             conversation_scroll: 0,
             tool_results_expanded: false,
@@ -1116,6 +1172,9 @@ mod tests {
             input_history_draft: String::new(),
             cursor_visible: true,
             command_selection: 0,
+            file_selection: 0,
+            file_suggestion_query: None,
+            file_suggestions: Vec::new(),
             history: Vec::new(),
             conversation_scroll: 0,
             tool_results_expanded: false,
@@ -1165,6 +1224,9 @@ mod tests {
             input_history_draft: String::new(),
             cursor_visible: true,
             command_selection: 0,
+            file_selection: 0,
+            file_suggestion_query: None,
+            file_suggestions: Vec::new(),
             history: vec!["background conversation text".into()],
             conversation_scroll: 0,
             tool_results_expanded: false,
@@ -1265,6 +1327,9 @@ mod tests {
             input_history_draft: String::new(),
             cursor_visible: true,
             command_selection: 0,
+            file_selection: 0,
+            file_suggestion_query: None,
+            file_suggestions: Vec::new(),
             history: vec![crate::tui::output::encode_tool_result(
                 "[OK]",
                 &format!("executed_command={}\nLAST_MARKER", "x".repeat(240)),

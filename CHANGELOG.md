@@ -1,7 +1,12 @@
 # Changelog
 
-## Unreleased
+## [1.0.0] - 2026-08-25
 
+### Changed
+
+- Changed `@` path suggestions so Enter or Tab inserts the selected candidate, while Right keeps its normal cursor-movement behavior.
+- Added an optional read-only Tencent ima knowledge-base connector with no-proxy direct networking, dynamically exposed list/search/read Agent tools, bounded original-content retrieval, strict temporary-URL origin policy, and credential/session/log redaction; no ima write operations are implemented.
+- Added `@` file and directory references in the TUI with bounded path suggestions, Up/Down selection, Enter/Tab completion, relative/absolute/tilde paths, and longest-existing-prefix parsing for prompts such as `@test.txt写的是什么内容`; referenced content remains behind bounded structured file tools.
 - Made the confirmation panel size itself from wrapped content; oversized commands and diffs scroll with the wheel or PageUp/PageDown while approval controls remain pinned.
 - Added bounded `read_file`, `list_dir`, `search_text`, and `apply_patch` tools without a workspace path sandbox; edits show a diff and require confirmation before an atomic write.
 - Added private session autosave plus `/sessions` list, resume, rename, and delete operations; credentials, balances, and temporary approvals are excluded.
@@ -21,10 +26,6 @@
 - 移除 `/provider`、`/model`、`/models`、`/proxy`，统一使用 `/config` 或其别名 `/setting`。
 - 新增 `update`/`/update` 和启动后台版本检查；按 ABI 下载、SHA-256 校验并原子替换，支持暂不更新或跳过指定版本。
 - 将 Provider、模型、Agent、安全、界面和代理配置整合为多 Tab TUI 设置面板，最大步骤/轮次显示推荐值 24/16。
-
-格式基于 Keep a Changelog。
-
-## [Unreleased]
 
 ### Added
 
