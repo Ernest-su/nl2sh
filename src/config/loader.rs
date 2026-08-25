@@ -45,6 +45,7 @@ pub fn load_or_default_unvalidated(path: &Path) -> Result<Config> {
     if let Ok(key) = env::var("NL2SH_API_KEY") {
         config.api_key = key;
     }
+    apply_ima_environment(&mut config);
     Ok(config)
 }
 
@@ -81,6 +82,22 @@ fn load_from_unvalidated(path: &Path) -> Result<Config> {
     if let Ok(key) = env::var("NL2SH_API_KEY") {
         config.api_key = key;
     }
+    apply_ima_environment(&mut config);
     config.source = Some(path.to_path_buf());
     Ok(config)
+}
+
+fn apply_ima_environment(config: &mut Config) {
+    let mut overridden = false;
+    if let Ok(client_id) = env::var("NL2SH_IMA_CLIENT_ID") {
+        config.ima_client_id = client_id;
+        overridden = true;
+    }
+    if let Ok(api_key) = env::var("NL2SH_IMA_API_KEY") {
+        config.ima_api_key = api_key;
+        overridden = true;
+    }
+    if overridden && config.ima_is_configured() {
+        config.ima_enabled = true;
+    }
 }

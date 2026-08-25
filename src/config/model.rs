@@ -104,6 +104,14 @@ pub enum ProxyType {
 pub struct Config {
     /// Optional bearer token; empty is valid for non-OpenAI local services.
     pub api_key: String,
+    /// Enables the independent read-only Tencent ima connector.
+    pub ima_enabled: bool,
+    /// ima OpenAPI Client ID; never sent to the model or logs.
+    pub ima_client_id: String,
+    /// ima OpenAPI API key; never sent to the model or logs.
+    pub ima_api_key: String,
+    /// Optional default knowledge-base ID used instead of account discovery.
+    pub ima_knowledge_base_id: Option<String>,
     /// Provider model identifier.
     pub model: String,
     /// Optional user/provider context-window override in tokens.
@@ -210,6 +218,10 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             api_key: String::new(),
+            ima_enabled: false,
+            ima_client_id: String::new(),
+            ima_api_key: String::new(),
+            ima_knowledge_base_id: None,
             model: "gpt-4o-mini".into(),
             model_context_window: None,
             model_max_output_tokens: None,
@@ -297,6 +309,9 @@ impl Config {
         if self.model.trim().is_empty() {
             bail!("model must not be empty")
         }
+        if self.ima_enabled && !self.ima_is_configured() {
+            bail!("enabled ima integration requires ima_client_id and ima_api_key")
+        }
         if self.max_context_turns == 0
             || self.max_agent_steps == 0
             || self.max_tool_calls == 0
@@ -380,5 +395,10 @@ impl Config {
         Url::parse(&self.endpoint).is_ok_and(|url| {
             url.host_str() != Some("api.openai.com") || !self.api_key.trim().is_empty()
         }) && !self.model.trim().is_empty()
+    }
+
+    /// Reports whether both ima OpenAPI credentials are present.
+    pub fn ima_is_configured(&self) -> bool {
+        !self.ima_client_id.trim().is_empty() && !self.ima_api_key.trim().is_empty()
     }
 }
