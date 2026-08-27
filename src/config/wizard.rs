@@ -15,6 +15,7 @@ use std::{
 };
 
 pub(crate) const PROVIDERS: &[ProviderPreset] = &[
+    ProviderPreset::new("OpenRouter", "https://openrouter.ai/api/v1"),
     ProviderPreset::new("OpenAI", "https://api.openai.com/v1"),
     ProviderPreset::new("DeepSeek", "https://api.deepseek.com"),
     ProviderPreset::new("Moonshot / Kimi", "https://api.moonshot.cn/v1"),
@@ -96,7 +97,7 @@ pub fn run_wizard(path: &Path) -> Result<()> {
     println!("正在创建配置 / Creating configuration: {}", path.display());
     let language = prompt("界面语言 / UI language (zh_cn/en)", "zh_cn")?;
     let ui_language = parse_language(&language)?;
-    let endpoint = select_endpoint(ui_language, "https://api.openai.com/v1")?;
+    let endpoint = select_endpoint(ui_language, "https://openrouter.ai/api/v1")?;
     let api_key = prompt(
         label(
             ui_language,
@@ -105,7 +106,7 @@ pub fn run_wizard(path: &Path) -> Result<()> {
         ),
         "",
     )?;
-    let model = prompt(label(ui_language, "模型", "Model"), "gpt-4o-mini")?;
+    let model = prompt(label(ui_language, "模型", "Model"), "openrouter/free")?;
     let api = prompt(
         label(
             ui_language,

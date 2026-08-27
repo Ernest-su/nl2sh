@@ -87,6 +87,8 @@ fn missing_file_can_supply_unconfigured_tui_defaults_without_writing() -> anyhow
     assert!(cfg.validate_runtime().is_ok());
     let key_configured = std::env::var("NL2SH_API_KEY").is_ok_and(|key| !key.trim().is_empty());
     assert_eq!(cfg.provider_is_configured(), key_configured);
+    assert_eq!(cfg.endpoint, "https://openrouter.ai/api/v1");
+    assert_eq!(cfg.model, "openrouter/free");
     assert!(!path.exists());
     assert_eq!(cfg.source.as_deref(), Some(path.as_path()));
     Ok(())
@@ -103,11 +105,21 @@ fn empty_key_is_valid_for_local_endpoint() {
 }
 
 #[test]
-fn runtime_validation_allows_tui_before_openai_credentials_exist() {
+fn runtime_validation_allows_tui_before_openrouter_credentials_exist() {
     let cfg = Config::default();
     assert!(cfg.validate_runtime().is_ok());
     assert!(!cfg.provider_is_configured());
     assert!(cfg.validate().is_err());
+}
+
+#[test]
+fn openrouter_requires_an_api_key() {
+    let mut cfg = Config::default();
+    assert!(!cfg.provider_is_configured());
+    assert!(cfg.validate().is_err());
+    cfg.api_key = "test-key".into();
+    assert!(cfg.provider_is_configured());
+    assert!(cfg.validate().is_ok());
 }
 
 #[test]

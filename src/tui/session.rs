@@ -2538,7 +2538,7 @@ mod tests {
     #[test]
     fn settings_provider_presets_update_only_the_endpoint() {
         let config = Config {
-            endpoint: "https://api.openai.com/v1".into(),
+            endpoint: "https://openrouter.ai/api/v1".into(),
             api_key: "keep-secret".into(),
             model: "keep-model".into(),
             api_type: crate::config::ApiType::Responses,
@@ -2548,6 +2548,8 @@ mod tests {
 
         assert_eq!(editor.provider, 0);
         editor.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
+        assert_eq!(editor.config.endpoint, "https://api.openai.com/v1");
+        editor.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
         assert_eq!(editor.config.endpoint, "https://api.deepseek.com");
         assert_eq!(editor.config.api_key, "keep-secret");
         assert_eq!(editor.config.model, "keep-model");
@@ -2556,7 +2558,7 @@ mod tests {
         editor.provider = crate::config::PROVIDERS.len() - 2;
         editor.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
         assert_eq!(editor.provider, crate::config::PROVIDERS.len() - 1);
-        assert_eq!(editor.config.endpoint, "https://api.openai.com/v1");
+        assert_eq!(editor.config.endpoint, "https://openrouter.ai/api/v1");
 
         editor.selected = 1;
         editor.sync_text_cursor();

@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Added OpenRouter as a built-in OpenAI-compatible Provider and made `openrouter/free` at `https://openrouter.ai/api/v1` the default for new configurations.
+
 ## [1.0.0] - 2026-08-25
 
 ### Changed
