@@ -808,35 +808,72 @@ fn welcome_train_lines(frame: u16, width: usize, theme: Theme) -> Vec<Line<'stat
     } else {
         position
     };
-    let mut lines = vec![Line::styled(
-        clip_moving_ascii(smoke, position, width),
-        theme.style(theme.text_secondary),
+    let mut lines = vec![styled_moving_ascii(
+        smoke,
+        position,
+        width,
+        |_, character| match character {
+            '@' => theme.bold(theme.special),
+            'o' => theme.bold(theme.cyan),
+            _ => theme.style(theme.text_secondary),
+        },
     )];
-    lines.extend(TRAIN_BODY.map(|line| {
-        Line::styled(
-            clip_moving_ascii(line, position, width),
-            theme.style(theme.text_primary),
-        )
+    lines.extend(TRAIN_BODY.iter().enumerate().map(|(row, line)| {
+        styled_moving_ascii(line, position, width, |column, character| {
+            train_body_style(row, column, character, theme)
+        })
     }));
     lines
 }
 
-fn clip_moving_ascii(line: &str, position: isize, width: usize) -> String {
+fn train_body_style(row: usize, column: usize, character: char, theme: Theme) -> Style {
+    if row == 2 && (17..=21).contains(&column) {
+        return theme.bold(theme.decorative_gold);
+    }
+    if row == 5 && matches!(character, 'O' | '(' | ')') {
+        return theme.bold(theme.special);
+    }
+    let color = match row {
+        0 => theme.decorative_gold,
+        1 => theme.cyan,
+        2 => theme.accent,
+        3 => theme.special,
+        4 => theme.cyan,
+        _ => theme.text_secondary,
+    };
+    theme.style(color)
+}
+
+fn styled_moving_ascii<F>(
+    line: &str,
+    position: isize,
+    width: usize,
+    mut style_for: F,
+) -> Line<'static>
+where
+    F: FnMut(usize, char) -> Style,
+{
     let indent = position.max(0) as usize;
     if indent >= width {
-        return String::new();
+        return Line::from(String::new());
     }
     let skip = position.saturating_neg().max(0) as usize;
-    let visible: String = line
+    let visible = line
         .chars()
+        .enumerate()
         .skip(skip)
-        .take(width.saturating_sub(indent))
-        .collect();
-    if visible.is_empty() {
-        String::new()
-    } else {
-        format!("{}{}", " ".repeat(indent), visible)
+        .take(width.saturating_sub(indent));
+    let mut spans = Vec::new();
+    if indent > 0 {
+        spans.push(Span::raw(" ".repeat(indent)));
     }
+    for (column, character) in visible {
+        spans.push(Span::styled(
+            character.to_string(),
+            style_for(column, character),
+        ));
+    }
+    Line::from(spans)
 }
 
 fn append_multiline_entry<'a>(lines: &mut Vec<Line<'a>>, entry: &'a str, theme: Theme) {
@@ -1401,6 +1438,19 @@ mod tests {
             .collect::<String>();
         assert!(rendered.contains("NL2SH"));
         assert!(middle.iter().all(|line| line.width() <= 80));
+        let body_colors = middle
+            .iter()
+            .skip(1)
+            .flat_map(|line| line.spans.iter().filter_map(|span| span.style.fg))
+            .collect::<Vec<_>>();
+        assert!(body_colors.contains(&theme.cyan));
+        assert!(body_colors.contains(&theme.accent));
+        assert!(body_colors.contains(&theme.special));
+        assert!(body_colors.contains(&theme.decorative_gold));
+        assert!(middle[3]
+            .spans
+            .iter()
+            .any(|span| { span.content == "N" && span.style.fg == Some(theme.decorative_gold) }));
 
         let before_entry = welcome_train_lines(0, 80, theme);
         assert!(before_entry

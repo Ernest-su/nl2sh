@@ -4,6 +4,7 @@
 
 ### Changed
 
+- The startup train now uses a multi-color theme treatment for its smoke, roof, body, `NL2SH` branding, and wheels while preserving viewport clipping and ANSI 256 fallback.
 - Changed `@` path suggestions so Enter or Tab inserts the selected candidate, while Right keeps its normal cursor-movement behavior.
 - Added an optional read-only Tencent ima knowledge-base connector with no-proxy direct networking, dynamically exposed list/search/read Agent tools, bounded original-content retrieval, strict temporary-URL origin policy, and credential/session/log redaction; no ima write operations are implemented.
 - Added `@` file and directory references in the TUI with bounded path suggestions, Up/Down selection, Enter/Tab completion, relative/absolute/tilde paths, and longest-existing-prefix parsing for prompts such as `@test.txt写的是什么内容`; referenced content remains behind bounded structured file tools.
