@@ -17,7 +17,7 @@ use crate::{
     provider_account::{build_account_client, AccountBalance},
     provider_metadata::{build_metadata_client, ModelMetadata},
     security::{RiskLevel, SecurityAssessment},
-    sessions::SessionStore,
+    sessions::{SessionInfo, SessionStore},
     shell::{OutputSink, ShellExecutor},
 };
 use anyhow::{Context, Result};
@@ -29,6 +29,8 @@ use nix::{
     sys::signal::{kill, Signal},
     unistd::getpid,
 };
+#[cfg(unix)]
+use std::mem::MaybeUninit;
 use std::{
     future::Future,
     pin::Pin,
@@ -41,6 +43,7 @@ use std::{
 use tokio::sync::{mpsc, oneshot};
 
 const BALANCE_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
+const RECENT_SESSION_LIMIT: usize = 20;
 type BalanceFuture = Pin<Box<dyn Future<Output = Result<Vec<AccountBalance>>> + Send>>;
 type UpdateFuture =
     Pin<Box<dyn Future<Output = Result<Option<crate::update::UpdateRelease>>> + Send>>;
@@ -180,6 +183,7 @@ async fn run_inner(
     let mut balance_manual = false;
     let mut last_balance_refresh: Option<Instant> = None;
     let mut confirmation: Option<ConfirmationUi> = None;
+    let mut session_picker: Option<SessionPicker> = None;
     let mut settings_editor: Option<SettingsEditor> = None;
     let update_config = config.clone();
     let mut update_check: Option<UpdateFuture> = Some(Box::pin(async move {
@@ -253,6 +257,7 @@ async fn run_inner(
             app.popup = confirmation
                 .as_ref()
                 .map(ConfirmationUi::view)
+                .or_else(|| session_picker.as_ref().map(SessionPicker::view))
                 .or_else(|| update_prompt.as_ref().map(UpdatePrompt::view))
                 .or_else(|| {
                     settings_editor
@@ -577,6 +582,70 @@ async fn run_inner(
                 }
                 continue;
             }
+            if let Some(picker) = session_picker.as_mut() {
+                let Some(key) = fragmented_arrow.normalize(key) else {
+                    continue;
+                };
+                match picker.handle_key(key) {
+                    SessionPickerAction::Continue => {}
+                    SessionPickerAction::Cancel => {
+                        session_picker = None;
+                        app.status = localized_status(
+                            config.ui_language,
+                            "未恢复会话",
+                            "session restore cancelled",
+                        );
+                    }
+                    SessionPickerAction::Restore(name) => {
+                        let store = session_store.clone();
+                        let worker_name = name.clone();
+                        let max_turns = config.max_context_turns;
+                        let tool_limit = config.model_tool_output_max_bytes;
+                        let loaded = tokio::task::spawn_blocking(move || {
+                            store.load(&worker_name, max_turns, tool_limit)
+                        })
+                        .await
+                        .context("session load worker failed")?;
+                        match loaded {
+                            Ok(turns) => {
+                                model_history = turns;
+                                session_name = name;
+                                append_restored_history(
+                                    &history,
+                                    &model_history,
+                                    config.ascii_symbols,
+                                )?;
+                                app.input_history.clear();
+                                app.status = localized_status(
+                                    config.ui_language,
+                                    "会话已恢复",
+                                    "session restored",
+                                );
+                            }
+                            Err(error) => {
+                                history
+                                    .lock()
+                                    .map_err(|_| anyhow::anyhow!("TUI history lock is poisoned"))?
+                                    .push(format!(
+                                        "{} {error:#}",
+                                        if config.ascii_symbols {
+                                            "[ERROR]"
+                                        } else {
+                                            "❌"
+                                        }
+                                    ));
+                                app.status = localized_status(
+                                    config.ui_language,
+                                    "会话恢复失败",
+                                    "session restore failed",
+                                );
+                            }
+                        }
+                        session_picker = None;
+                    }
+                }
+                continue;
+            }
             if let Some(prompt) = update_prompt.as_mut() {
                 let Some(key) = fragmented_arrow.normalize(key) else {
                     continue;
@@ -841,24 +910,25 @@ async fn run_inner(
                         let result: Result<String> = match action {
                             None => {
                                 let store = session_store.clone();
-                                tokio::task::spawn_blocking(move || {
-                                    let sessions = store.list()?;
-                                    if sessions.is_empty() {
-                                        return Ok("No saved sessions.".into());
-                                    }
-                                    Ok(sessions
-                                        .into_iter()
-                                        .map(|item| {
-                                            format!(
-                                                "{}  {} turns  {}",
-                                                item.name, item.turns, item.updated_unix_secs
-                                            )
-                                        })
-                                        .collect::<Vec<_>>()
-                                        .join("\n"))
-                                })
-                                .await
-                                .context("session list worker failed")?
+                                let sessions = tokio::task::spawn_blocking(move || store.list())
+                                    .await
+                                    .context("session list worker failed")??;
+                                if sessions.is_empty() {
+                                    Ok(localized_status(
+                                        config.ui_language,
+                                        "没有已保存的会话",
+                                        "no saved sessions",
+                                    ))
+                                } else {
+                                    session_picker =
+                                        Some(SessionPicker::new(sessions, config.ui_language));
+                                    app.status = localized_status(
+                                        config.ui_language,
+                                        "选择要恢复的会话",
+                                        "select a session to restore",
+                                    );
+                                    continue;
+                                }
                             }
                             Some("resume") if parts.len() == 3 => {
                                 let store = session_store.clone();
@@ -1096,6 +1166,153 @@ const SETTINGS_TABS_EN: [&str; 6] = [
     "Network",
     "Knowledge",
 ];
+
+struct SessionPicker {
+    sessions: Vec<SessionInfo>,
+    selected: usize,
+    number_input: String,
+    language: UiLanguage,
+}
+
+enum SessionPickerAction {
+    Continue,
+    Cancel,
+    Restore(String),
+}
+
+impl SessionPicker {
+    fn new(mut sessions: Vec<SessionInfo>, language: UiLanguage) -> Self {
+        sessions.truncate(RECENT_SESSION_LIMIT);
+        Self {
+            sessions,
+            selected: 0,
+            number_input: String::new(),
+            language,
+        }
+    }
+
+    fn view(&self) -> PopupView {
+        let mut lines = self
+            .sessions
+            .iter()
+            .enumerate()
+            .map(|(index, session)| {
+                format!(
+                    "{} {:>2}. {}  {} {}  {}",
+                    if index == self.selected { ">" } else { " " },
+                    index + 1,
+                    session.name,
+                    session.turns,
+                    match self.language {
+                        UiLanguage::ZhCn => "轮",
+                        UiLanguage::En => "turns",
+                    },
+                    format_session_time(session.updated_unix_secs)
+                )
+            })
+            .collect::<Vec<_>>();
+        if !self.number_input.is_empty() {
+            lines.push(String::new());
+            lines.push(match self.language {
+                UiLanguage::ZhCn => format!("序号：{}", self.number_input),
+                UiLanguage::En => format!("Number: {}", self.number_input),
+            });
+        }
+        PopupView {
+            title: match self.language {
+                UiLanguage::ZhCn => "最近会话",
+                UiLanguage::En => "Recent sessions",
+            }
+            .into(),
+            lines,
+            footer: vec![match self.language {
+                UiLanguage::ZhCn => "输入序号或 ↑/↓ 选择，Enter 恢复，Esc 取消",
+                UiLanguage::En => "Type a number or use Up/Down, Enter restores, Esc cancels",
+            }
+            .into()],
+            scroll: self.selected.saturating_sub(8).min(u16::MAX as usize) as u16,
+            min_height: 8,
+            dangerous: false,
+            informational: true,
+        }
+    }
+
+    fn handle_key(&mut self, key: KeyEvent) -> SessionPickerAction {
+        match key.code {
+            KeyCode::Up => {
+                self.number_input.clear();
+                self.selected = self
+                    .selected
+                    .checked_sub(1)
+                    .unwrap_or(self.sessions.len() - 1);
+                SessionPickerAction::Continue
+            }
+            KeyCode::Down => {
+                self.number_input.clear();
+                self.selected = (self.selected + 1) % self.sessions.len();
+                SessionPickerAction::Continue
+            }
+            KeyCode::Char(character) if character.is_ascii_digit() => {
+                if self.number_input.len() < 3 {
+                    self.number_input.push(character);
+                }
+                SessionPickerAction::Continue
+            }
+            KeyCode::Backspace => {
+                self.number_input.pop();
+                SessionPickerAction::Continue
+            }
+            KeyCode::Enter => {
+                let selected = if self.number_input.is_empty() {
+                    self.selected
+                } else {
+                    let Ok(number) = self.number_input.parse::<usize>() else {
+                        return SessionPickerAction::Continue;
+                    };
+                    let Some(index) = number.checked_sub(1) else {
+                        return SessionPickerAction::Continue;
+                    };
+                    if index >= self.sessions.len() {
+                        return SessionPickerAction::Continue;
+                    }
+                    index
+                };
+                SessionPickerAction::Restore(self.sessions[selected].name.clone())
+            }
+            KeyCode::Esc => SessionPickerAction::Cancel,
+            _ => SessionPickerAction::Continue,
+        }
+    }
+}
+
+#[cfg(unix)]
+fn format_session_time(timestamp: u64) -> String {
+    let Ok(timestamp) = libc::time_t::try_from(timestamp) else {
+        return timestamp.to_string();
+    };
+    let mut local = MaybeUninit::<libc::tm>::uninit();
+    // SAFETY: `timestamp` and `local` are valid pointers for the duration of
+    // the call, and `localtime_r` initializes `local` before returning it.
+    let result = unsafe { libc::localtime_r(&timestamp, local.as_mut_ptr()) };
+    if result.is_null() {
+        return timestamp.to_string();
+    }
+    // SAFETY: a non-null `localtime_r` result guarantees the output was initialized.
+    let local = unsafe { local.assume_init() };
+    format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}",
+        local.tm_year + 1900,
+        local.tm_mon + 1,
+        local.tm_mday,
+        local.tm_hour,
+        local.tm_min
+    )
+}
+
+#[cfg(not(unix))]
+fn format_session_time(timestamp: u64) -> String {
+    timestamp.to_string()
+}
 
 struct UpdatePrompt {
     release: crate::update::UpdateRelease,
@@ -2620,6 +2837,52 @@ mod tests {
         }
         assert!(ui.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)));
         assert_eq!(response.try_recv(), Ok(ConfirmationDecision::Approve));
+    }
+
+    #[test]
+    fn session_picker_accepts_arrows_and_typed_numbers() {
+        let sessions = vec![
+            SessionInfo {
+                name: "newest".into(),
+                turns: 3,
+                updated_unix_secs: 30,
+            },
+            SessionInfo {
+                name: "older".into(),
+                turns: 2,
+                updated_unix_secs: 20,
+            },
+        ];
+        let mut picker = SessionPicker::new(sessions.clone(), UiLanguage::ZhCn);
+        assert!(matches!(
+            picker.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE)),
+            SessionPickerAction::Continue
+        ));
+        assert!(matches!(
+            picker.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+            SessionPickerAction::Restore(name) if name == "older"
+        ));
+
+        let mut picker = SessionPicker::new(sessions, UiLanguage::En);
+        assert!(matches!(
+            picker.handle_key(KeyEvent::new(KeyCode::Char('2'), KeyModifiers::NONE)),
+            SessionPickerAction::Continue
+        ));
+        assert!(matches!(
+            picker.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+            SessionPickerAction::Restore(name) if name == "older"
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn session_picker_formats_unix_time_as_local_date_and_minute() {
+        let formatted = format_session_time(1_700_000_000);
+        assert!(formatted.starts_with("2023-"));
+        assert_eq!(formatted.len(), "2023-11-14 22:13".len());
+        assert_eq!(formatted.as_bytes().get(4), Some(&b'-'));
+        assert_eq!(formatted.as_bytes().get(10), Some(&b' '));
+        assert_eq!(formatted.as_bytes().get(13), Some(&b':'));
     }
 
     #[test]

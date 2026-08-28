@@ -526,7 +526,7 @@ fn render_command_menu(f: &mut Frame, app: &App, input_area: ratatui::layout::Re
                 (UiLanguage::ZhCn, "/shell") => "进入普通终端（exit 返回）",
                 (UiLanguage::ZhCn, "/exit") => "安全退出",
                 (UiLanguage::ZhCn, "/help") => "显示帮助",
-                (UiLanguage::ZhCn, "/sessions") => "管理已保存会话",
+                (UiLanguage::ZhCn, "/sessions") => "选择并恢复最近会话",
                 (UiLanguage::ZhCn, "/update") => "检查版本更新",
                 (UiLanguage::En, "/balance") => "Query provider balance",
                 (UiLanguage::En, "/clear") => "Clear the current session",
@@ -535,7 +535,7 @@ fn render_command_menu(f: &mut Frame, app: &App, input_area: ratatui::layout::Re
                 (UiLanguage::En, "/shell") => "Open terminal (exit returns)",
                 (UiLanguage::En, "/exit") => "Quit safely",
                 (UiLanguage::En, "/help") => "Show help",
-                (UiLanguage::En, "/sessions") => "Manage saved sessions",
+                (UiLanguage::En, "/sessions") => "Select and restore a recent session",
                 (UiLanguage::En, "/update") => "Check for updates",
                 _ => "",
             };

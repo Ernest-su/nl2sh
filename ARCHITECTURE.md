@@ -146,7 +146,7 @@ Confirmation policy
 
 Agent TUI 在输入分发边界保留 `/` 前缀命名空间：所有去除前导空白后以 `/` 开头的输入均为本地命令，已知命令执行本地动作，未知命令只产生本地提示。任何斜杠命令都不得写入模型用户历史或调用 LLM。
 
-每个已完成 Agent turn 自动保存到配置文件同目录的 `sessions/` 私有目录，文件以 `0600` 原子替换。`/sessions` 负责列表、恢复、重命名和删除；恢复只装载完整 turn，并重新应用上下文轮数和 Tool Result 上限。会话文档仅包含 provider-neutral 对话项，不包含 `Config`，因此 API Key、代理密码、余额和仅当前任务有效的审批许可不会落盘。
+每个已完成 Agent turn 自动保存到配置文件同目录的 `sessions/` 私有目录，文件以 `0600` 原子替换。`/sessions` 打开按更新时间倒序排列的最近会话列表，可输入序号或用 Up/Down 与 Enter 选择恢复；兼容的命名恢复、重命名和删除子命令仍保留。恢复只装载完整 turn，并重新应用上下文轮数和 Tool Result 上限。会话文档仅包含 provider-neutral 对话项，不包含 `Config`，因此 API Key、代理密码、余额和仅当前任务有效的审批许可不会落盘。
 
 设置编辑器在单次打开期间分别持有 Ollama 与 Custom 的 Endpoint 草稿；离开对应 Provider 前保存当前值，切回时恢复。其他内置 Provider 仍使用固定预设地址，编辑其地址会转入 Custom。
 

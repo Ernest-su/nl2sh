@@ -4,6 +4,7 @@ Last Updated: 2026-08-27
 
 ## Recent Changes
 
+- `/sessions` 改为弹出按更新时间倒序排列的最近会话列表，保存时间以设备本地日期和分钟显示；可直接输入序号或使用 Up/Down 与 Enter 选择恢复，原有命名恢复、重命名和删除子命令继续可用，会话数据边界不变。
 - 新增 OpenRouter 内置 Provider 与 OpenAI-compatible 模型发现；新配置默认使用 `https://openrouter.ai/api/v1` 和 `openrouter/free`，远程调用仍要求 API Key，现有安全确认、Android 与 PTY 边界不变。
 - 启动小火车改为主题 palette 驱动的彩色 ASCII Art：烟雾、车顶、车身、`NL2SH` 字样与轮组分层着色，继续支持 TrueColor/ANSI 256、窄屏裁剪，且不改变动画生命周期或安全边界。
 - 准备 1.0.0 正式版：Cargo 包版本提升到 1.0.0，汇总 0.2.0 之后的功能、稳定性与安全边界变更，并沿用双 ABI Android 标签发布流程。
@@ -145,6 +146,7 @@ Last Updated: 2026-08-27
 
 ## Verification Performed
 
+- `/sessions` 最近会话选择：Linux 目标下 `cargo fmt --all -- --check`、`cargo check`、会话存储、设备本地日期格式及序号/方向键选择测试通过；全量 `cargo test` 的 76 项库测试、其余 CLI/Agent/配置/日志/LLM/PTY/root/安全及 4 项 TUI 测试通过，既有 `agent_reply_remains_in_live_tui_until_ctrl_q` 仍因启动动画 ANSI 差分文本匹配超时。
 - OpenRouter Provider 与默认模型：Linux 目标下 `cargo fmt --all -- --check`、`cargo check`、9 项配置测试、Provider 识别及设置面板预设回归通过；`cargo test` 的其余测试通过，唯一失败为既有 `agent_reply_remains_in_live_tui_until_ctrl_q` 启动动画 ANSI 差分文本匹配超时。
 - 1.0.0 发布门禁：`cargo fmt --all -- --check`、`cargo check --all-targets`、`cargo clippy --all-targets -- -D warnings` 与 `cargo build --release` 通过。`cargo test --all-targets` 共 133 项，132 项通过；唯一失败为已记录的伪终端原始文本匹配用例 `agent_reply_remains_in_live_tui_until_ctrl_q`，单独重跑仍因启动动画的 ratatui 差分 ANSI 输出无法形成连续“审计日志保留”文本而超时。
 - ima 只读连接器：`cargo fmt --all -- --check`、`cargo check`、`cargo clippy --all-targets -- -D warnings` 与 74 项默认库测试通过，1 项显式凭据 live smoke 默认忽略；使用 `NL2SH_IMA_CLIENT_ID`/`NL2SH_IMA_API_KEY` 单独运行该 smoke 后，真实知识库发现和库内搜索通过且未输出账户响应；在 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY` 均指向不可用地址时仍通过，验证 ima 强制直连。mock 回归覆盖搜索、媒体信息、笔记正文、认证 header 与凭据不进入 Tool Result，来源策略覆盖非 HTTPS/非白名单拒绝。凭据和真实响应未写入仓库；全量测试仍只有既有启动动画 ANSI 差分文本匹配用例超时。
