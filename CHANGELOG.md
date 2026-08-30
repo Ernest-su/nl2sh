@@ -4,6 +4,9 @@
 
 ### Added
 
+- Added a self-hosted signed Termux APT repository for `aarch64` and `arm`, with package-manager-owned updates and XDG config/state paths.
+- Added a local `pack-termux-release.sh` workflow that directly emits separate `aarch64` and `arm` `.deb` packages, with a dedicated Termux installation guide kept in the repository.
+- Added `pack-termux-release.ps1`, which builds with the Windows Android NDK and delegates only Debian packaging to WSL `dpkg-deb`.
 - Added OpenRouter as a built-in OpenAI-compatible Provider and made `openrouter/free` at `https://openrouter.ai/api/v1` the default for new configurations.
 
 ## [1.0.0] - 2026-08-25

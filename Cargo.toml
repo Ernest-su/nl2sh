@@ -5,6 +5,10 @@ edition = "2021"
 description = "Natural Language to Shell for Android"
 license = "MIT"
 
+[features]
+default = ["self-update"]
+self-update = []
+
 [dependencies]
 anyhow = "1"
 async-trait = "0.1"

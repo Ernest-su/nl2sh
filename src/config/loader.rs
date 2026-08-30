@@ -5,14 +5,71 @@ use std::{
     path::{Path, PathBuf},
 };
 
-/// Resolves `config.toml` beside the canonical executable path.
+const CONFIG_ENV: &str = "NL2SH_CONFIG";
+
+/// Resolves the default configuration path.
+///
+/// Packaged Termux installations use the XDG configuration directory while
+/// direct Android deployments retain the executable-relative legacy path.
 pub fn default_config_path() -> Result<PathBuf> {
+    if let Some(path) = non_empty_env_path(CONFIG_ENV) {
+        return Ok(path);
+    }
+    if is_termux_environment() {
+        if let Some(directory) = non_empty_env_path("XDG_CONFIG_HOME") {
+            return Ok(directory.join("nl2sh/config.toml"));
+        }
+        if let Some(home) = non_empty_env_path("HOME") {
+            return Ok(home.join(".config/nl2sh/config.toml"));
+        }
+    }
+    executable_relative_config_path()
+}
+
+/// Resolves persistent state for logs and sessions.
+///
+/// Explicit and legacy configurations keep state beside the configuration.
+/// Termux's default configuration uses XDG state storage instead.
+pub fn state_dir(config_path: &Path) -> Result<PathBuf> {
+    if non_empty_env_path(CONFIG_ENV).is_some() {
+        return Ok(config_path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .to_path_buf());
+    }
+    if is_termux_environment() && config_path == default_config_path()? {
+        if let Some(directory) = non_empty_env_path("XDG_STATE_HOME") {
+            return Ok(directory.join("nl2sh"));
+        }
+        if let Some(home) = non_empty_env_path("HOME") {
+            return Ok(home.join(".local/state/nl2sh"));
+        }
+    }
+    Ok(config_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .to_path_buf())
+}
+
+fn executable_relative_config_path() -> Result<PathBuf> {
     let exe = env::current_exe().context("cannot locate nl2sh executable")?;
     let canonical = fs::canonicalize(&exe).unwrap_or(exe);
     let parent = canonical
         .parent()
         .context("executable has no parent directory")?;
     Ok(parent.join("config.toml"))
+}
+
+fn is_termux_environment() -> bool {
+    env::var_os("TERMUX_VERSION").is_some()
+        || non_empty_env_path("PREFIX")
+            .is_some_and(|prefix| prefix.to_string_lossy().contains("com.termux/files/usr"))
+}
+
+fn non_empty_env_path(name: &str) -> Option<PathBuf> {
+    env::var_os(name)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
 }
 
 /// Loads an explicit path or the executable-relative default.

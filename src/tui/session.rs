@@ -186,9 +186,9 @@ async fn run_inner(
     let mut session_picker: Option<SessionPicker> = None;
     let mut settings_editor: Option<SettingsEditor> = None;
     let update_config = config.clone();
-    let mut update_check: Option<UpdateFuture> = Some(Box::pin(async move {
-        crate::update::check(&update_config).await
-    }));
+    let mut update_check: Option<UpdateFuture> = crate::update::self_update_enabled().then(|| {
+        Box::pin(async move { crate::update::check(&update_config).await }) as UpdateFuture
+    });
     let mut update_prompt: Option<UpdatePrompt> = None;
     let mut update_manual = false;
     let mut model_list_active: Option<ModelListFuture> = None;
@@ -809,6 +809,18 @@ async fn run_inner(
                         }
                         "/update" => {
                             log.record("local_command", "/update")?;
+                            if !crate::update::self_update_enabled() {
+                                history
+                                    .lock()
+                                    .map_err(|_| anyhow::anyhow!("TUI history lock is poisoned"))?
+                                    .push(crate::update::package_update_message().into());
+                                app.status = localized_status(
+                                    config.ui_language,
+                                    "请使用 pkg upgrade nl2sh 更新",
+                                    "use pkg upgrade nl2sh to update",
+                                );
+                                continue;
+                            }
                             let update_config = config.clone();
                             update_check = Some(Box::pin(async move {
                                 crate::update::check(&update_config).await
@@ -1751,9 +1763,9 @@ impl SettingsEditor {
                 ("ima API Key", mask_secret(&self.config.ima_api_key)),
                 (
                     if zh {
-                        "默认知识库 ID"
+                        "默认知识库 ID（可选）"
                     } else {
-                        "Default knowledge base ID"
+                        "Default knowledge base ID (optional)"
                     },
                     self.config
                         .ima_knowledge_base_id
@@ -2653,6 +2665,7 @@ mod tests {
         };
         let mut editor = SettingsEditor::new(&config, 5);
         let view = editor.view(true);
+        assert!(view.lines.iter().any(|line| line.contains("可选")));
         assert!(!view.lines.iter().any(|line| line.contains("client-secret")));
         assert!(!view.lines.iter().any(|line| line.contains("api-secret")));
         editor.selected = 0;

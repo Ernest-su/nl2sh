@@ -35,7 +35,7 @@ struct HistoryRecord<'a> {
 }
 
 impl HistoryLog {
-    /// Opens the configured log path, resolving relative paths beside config.toml.
+    /// Opens the configured log path, resolving relative paths in the state directory.
     pub fn open(config_path: &Path, configured_path: &Path) -> Result<Self> {
         Self::open_with_limits(config_path, configured_path, 256 * 1024, 10 * 1024 * 1024)
     }
@@ -51,11 +51,12 @@ impl HistoryLog {
         let path = if configured_path.is_absolute() {
             configured_path.to_path_buf()
         } else {
-            config_path
-                .parent()
-                .unwrap_or_else(|| Path::new("."))
-                .join(configured_path)
+            crate::config::state_dir(config_path)?.join(configured_path)
         };
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("cannot create history directory {}", parent.display()))?;
+        }
         let mut options = OpenOptions::new();
         options.create(true).append(true);
         #[cfg(unix)]

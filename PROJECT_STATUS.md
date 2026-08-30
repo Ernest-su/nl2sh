@@ -1,13 +1,17 @@
 # Project Status
 
-Last Updated: 2026-08-27
+Last Updated: 2026-08-30
 
 ## Recent Changes
 
+- 新增 `pack-termux-release.sh`：本地构建 `aarch64`/`arm` 包管理版本并直接输出两个独立 `.deb`，不额外封装 ZIP、不接触仓库签名私钥；独立 Termux 安装说明保留在仓库中。
+- 新增 `pack-termux-release.ps1`：使用 Windows NDK 原生构建双 ABI Android 二进制，通过安全的 `wslpath` 参数转换仅调用 WSL `dpkg-deb` 封包，支持项目路径包含空格。
+- 新增自建 Termux APT 仓库打包与 GitHub Pages 签名发布，只覆盖已支持的 `aarch64`/`arm`；包管理构建关闭程序内自更新并引导使用 `pkg upgrade nl2sh`，Termux 配置/日志/会话分别遵循 XDG config/state 路径，直接 Android 部署兼容路径不变。
 - `/sessions` 改为弹出按更新时间倒序排列的最近会话列表，保存时间以设备本地日期和分钟显示；可直接输入序号或使用 Up/Down 与 Enter 选择恢复，原有命名恢复、重命名和删除子命令继续可用，会话数据边界不变。
 - 新增 OpenRouter 内置 Provider 与 OpenAI-compatible 模型发现；新配置默认使用 `https://openrouter.ai/api/v1` 和 `openrouter/free`，远程调用仍要求 API Key，现有安全确认、Android 与 PTY 边界不变。
 - 启动小火车改为主题 palette 驱动的彩色 ASCII Art：烟雾、车顶、车身、`NL2SH` 字样与轮组分层着色，继续支持 TrueColor/ANSI 256、窄屏裁剪，且不改变动画生命周期或安全边界。
 - 准备 1.0.0 正式版：Cargo 包版本提升到 1.0.0，汇总 0.2.0 之后的功能、稳定性与安全边界变更，并沿用双 ABI Android 标签发布流程。
+- ima 设置页明确将默认知识库 ID 标注为可选；留空时继续有界发现可访问知识库，不改变搜索逻辑。
 - 新增可选的腾讯 ima 只读知识库连接器：独立 Client ID/API Key、始终无代理直连，仅提供知识库发现、搜索与有界原文读取 Tool；支持笔记正文和受控临时 URL，禁止写操作、重定向、非 HTTPS/非白名单来源及凭据进入模型、日志或会话。
 - TUI 输入新增 `@` 文件/目录引用候选：支持相对路径、绝对路径、`@~`、`@/`、`@.` 和父目录路径，Up/Down 选择、Enter/Tab 补全，目录可继续下钻；Right 保持普通光标右移。提交时按最长已存在路径前缀解析，`@test.txt写的是什么内容` 无需额外空格；只附加绝对路径提示，内容仍由有界结构化文件工具读取，安全与确认链不变。
 - 命令批准弹窗改为内容驱动的动态宽高：长命令和结构化 diff 超过终端可用高度时可用滚轮或 PageUp/PageDown 浏览，上方正文独立滚动，底部审批选项、强确认或编辑输入保持可见。
@@ -146,6 +150,8 @@ Last Updated: 2026-08-27
 
 ## Verification Performed
 
+- Termux 本地发布打包：`bash -n pack-termux-release.sh packaging/termux/build-deb.sh cross-compile.sh`、`cargo fmt --all -- --check`、`cargo check --no-default-features` 与 77 项默认库测试通过；1 项显式凭据 ima smoke 按设计忽略。
+- Termux APT 自建仓库：Linux 目标的 `cargo fmt --all -- --check`、默认/`--no-default-features` `cargo check`、77 项默认库测试与包管理 release 构建通过；`nl2sh update` 在包管理构建中正确提示 `pkg upgrade nl2sh`，生成的 `aarch64` `.deb` 包含 `$PREFIX/bin/nl2sh`、配置示例、README 与 LICENSE，包根目录权限为 `0755`。APT `Packages`/`Release` 的架构过滤、相对资源路径与 SHA-256 通过，临时测试密钥生成的 `InRelease` 和 `Release.gpg` 均通过 `gpgv` 验签。ARM64 GNU/Linux 目标的格式、两种 feature 检查及相同 77 项库测试通过。全量测试仍只有既有 `agent_reply_remains_in_live_tui_until_ctrl_q` 因启动动画 ANSI 差分文本匹配超时。
 - `/sessions` 最近会话选择：Linux 目标下 `cargo fmt --all -- --check`、`cargo check`、会话存储、设备本地日期格式及序号/方向键选择测试通过；全量 `cargo test` 的 76 项库测试、其余 CLI/Agent/配置/日志/LLM/PTY/root/安全及 4 项 TUI 测试通过，既有 `agent_reply_remains_in_live_tui_until_ctrl_q` 仍因启动动画 ANSI 差分文本匹配超时。
 - OpenRouter Provider 与默认模型：Linux 目标下 `cargo fmt --all -- --check`、`cargo check`、9 项配置测试、Provider 识别及设置面板预设回归通过；`cargo test` 的其余测试通过，唯一失败为既有 `agent_reply_remains_in_live_tui_until_ctrl_q` 启动动画 ANSI 差分文本匹配超时。
 - 1.0.0 发布门禁：`cargo fmt --all -- --check`、`cargo check --all-targets`、`cargo clippy --all-targets -- -D warnings` 与 `cargo build --release` 通过。`cargo test --all-targets` 共 133 项，132 项通过；唯一失败为已记录的伪终端原始文本匹配用例 `agent_reply_remains_in_live_tui_until_ctrl_q`，单独重跑仍因启动动画的 ratatui 差分 ANSI 输出无法形成连续“审计日志保留”文本而超时。

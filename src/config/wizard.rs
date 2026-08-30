@@ -575,6 +575,9 @@ fn serialize(cfg: &Config) -> Result<String> {
 
 fn write_new(path: &Path, cfg: &Config) -> Result<()> {
     let text = serialize(cfg)?;
+    if let Some(parent) = path.parent() {
+        create_private_config_dir(parent)?;
+    }
     let mut options = OpenOptions::new();
     options.write(true).create_new(true);
     #[cfg(unix)]
@@ -588,6 +591,22 @@ fn write_new(path: &Path, cfg: &Config) -> Result<()> {
     file.write_all(text.as_bytes())
         .context("cannot write configuration")?;
     Ok(())
+}
+
+#[cfg(unix)]
+fn create_private_config_dir(path: &Path) -> Result<()> {
+    use std::os::unix::fs::DirBuilderExt;
+    let mut builder = fs::DirBuilder::new();
+    builder.recursive(true).mode(0o700);
+    builder
+        .create(path)
+        .with_context(|| format!("cannot create config directory {}", path.display()))
+}
+
+#[cfg(not(unix))]
+fn create_private_config_dir(path: &Path) -> Result<()> {
+    fs::create_dir_all(path)
+        .with_context(|| format!("cannot create config directory {}", path.display()))
 }
 
 fn write_replace(path: &Path, cfg: &Config) -> Result<()> {

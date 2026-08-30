@@ -221,6 +221,10 @@ async fn main() -> Result<()> {
 }
 
 async fn run_update(cfg: &config::Config) -> Result<()> {
+    if !nl2sh::update::self_update_enabled() {
+        println!("{}", nl2sh::update::package_update_message());
+        return Ok(());
+    }
     println!("正在检查更新 / Checking for updates…");
     let Some(release) = nl2sh::update::check(cfg).await? else {
         println!(

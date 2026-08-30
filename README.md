@@ -24,6 +24,7 @@ Natural Language to Shell 是面向 Android 原生 `adb shell` 的类 Hermes AI 
 - 支持当前用户、自动提升和强制 root 模式。非 root 提升使用参数化的 `su -c <command>`，不拼接 shell 字符串。
 - crossterm + ratatui 终端界面通过 RAII 和 panic hook 恢复 raw mode、alternate screen、鼠标捕获和光标；滚轮浏览历史，Shift+拖选后可使用宿主终端的右键菜单复制。
 - 主要目标为 Android API 26+、`aarch64-linux-android` 和 `/data/local/tmp`。不依赖或专门支持 Termux。
+- 同时提供自建的签名 Termux APT 仓库；APT 构建关闭程序内自更新，由 `pkg upgrade nl2sh` 统一管理。
 
 默认执行路径使用 Unix `openpty`：slave 成为子进程 controlling terminal，master 非阻塞读取，stdout/stderr 合并，超时会清理整个进程组。识别到全屏/交互命令时，nl2sh 临时使用本地 raw mode，桥接 stdin/master 输出并同步窗口尺寸，结束后恢复终端。不同 Android 终端和全屏应用仍可能存在兼容差异，详见 `PROJECT_STATUS.md`。
 
@@ -104,6 +105,44 @@ $env:ANDROID_NDK_HOME = "C:\Android\Sdk\ndk\28.2.13676358"
 
 两个脚本都会构建 AArch64 与 ARMv7 release，将程序放入对应 ABI 子目录，并输出 `dist/nl2sh-android.zip` 和 `dist/SHA256SUMS`；不连接或部署 ADB 设备。
 
+### Termux APT 安装
+
+当前自建仓库仅发布已经验证的 `aarch64` 和 `arm`，暂不发布 `x86_64` 或 `i686`。首次安装仓库公钥和软件源：
+
+```bash
+mkdir -p "$PREFIX/etc/apt/keyrings"
+curl -fsSL https://ernest-su.github.io/nl2sh/nl2sh-repo.gpg \
+  -o "$PREFIX/etc/apt/keyrings/nl2sh.gpg"
+echo "deb [signed-by=$PREFIX/etc/apt/keyrings/nl2sh.gpg] https://ernest-su.github.io/nl2sh stable main" \
+  > "$PREFIX/etc/apt/sources.list.d/nl2sh.list"
+pkg update
+pkg install nl2sh
+```
+
+APT 版本的默认配置位于 `$XDG_CONFIG_HOME/nl2sh/config.toml`，未设置时使用 `~/.config/nl2sh/config.toml`；日志和会话位于 `$XDG_STATE_HOME/nl2sh`，未设置时使用 `~/.local/state/nl2sh`。`NL2SH_CONFIG` 可以覆盖默认配置路径，显式 `--config` 仍具有最高优先级。直接推送到 Android 的版本继续使用可执行文件旁的 `config.toml`，保持现有部署兼容。
+
+APT 版本不会直接替换 `$PREFIX/bin/nl2sh`。`nl2sh update` 和 TUI `/update` 会提示使用 `pkg upgrade nl2sh`。
+
+发布流水线需要仓库 Secret `TERMUX_APT_GPG_PRIVATE_KEY`，内容为无交互口令的 ASCII-armored 私钥。tag 构建会生成两个架构的 `.deb`、签名 `InRelease`/`Release.gpg` 和 GitHub Pages 仓库；本地打包及仓库脚本位于 `packaging/termux/`。
+
+本地直接生成两个架构的 `.deb`：
+
+```bash
+export ANDROID_NDK_HOME=/path/to/android-ndk
+./pack-termux-release.sh
+```
+
+Windows PowerShell 使用 Windows NDK 编译，再调用默认 WSL 发行版中的 `dpkg-deb` 封包：
+
+```powershell
+$env:ANDROID_NDK_HOME = "C:\Android\Sdk\ndk\28.2.13676358"
+.\pack-termux-release.ps1
+```
+
+Windows 路径中的空格会通过 `wslpath` 转换；WSL 内只需提供 `bash` 和 `dpkg-deb`，不会在 WSL 中重复编译。缺少工具时可在 Ubuntu/Debian WSL 中运行 `sudo apt install dpkg`。
+
+两个脚本均输出 `dist/nl2sh_版本_aarch64.deb` 和 `dist/nl2sh_版本_arm.deb`，不创建 ZIP，也不读取或包含 APT 仓库私钥。独立安装说明见 `Termux使用说明.md`。
+
 ### Android 提示 `No such file or directory`
 
 如果 `/data/local/tmp/nl2sh` 明明存在且已有执行权限，但运行时仍提示：
@@ -144,7 +183,7 @@ RUST_TARGET=armv7-linux-androideabi ./android-build-run.sh
 
 ## 配置
 
-默认配置位于解析符号链接后的可执行文件目录，名称为 `config.toml`。配置不存在时直接进入 TUI，使用 `/config` 打开统一设置面板；旧的逐行配置向导和 `--init` 已移除。配置完成前普通任务不会发送给模型。配置以 `0600` 权限创建，也可传入 `--config /path/config.toml`。
+直接 Android 部署的默认配置位于解析符号链接后的可执行文件目录，名称为 `config.toml`；Termux APT 安装使用上文的 XDG 配置与状态目录。配置不存在时直接进入 TUI，使用 `/config` 打开统一设置面板；旧的逐行配置向导和 `--init` 已移除。配置完成前普通任务不会发送给模型。配置以 `0600` 权限创建，也可传入 `--config /path/config.toml`，或设置 `NL2SH_CONFIG`。
 
 ```bash
 cp config.toml.example config.toml

@@ -173,3 +173,12 @@
 - [x] 将 Cargo 包版本提升到 1.0.0，并整理 0.2.0 之后的用户可见变更。
 - [x] 完成 stable Rust 格式、检查、Clippy 与 release 构建；默认测试除已记录的启动动画 ANSI 差分伪终端用例外均通过。
 - [x] 合并 `dev` 到 `master`，以 `v1.0.0` 标签触发双 ABI Android GitHub Release 工作流。
+
+## Phase 22 Termux APT 自建仓库 — 完成
+
+- [x] 为 Termux 默认配置与运行状态引入 XDG 路径，并保留直接 Android 部署和显式配置路径兼容。
+- [x] 增加可关闭的程序内自更新 feature；APT 构建只提示通过 `pkg upgrade nl2sh` 更新。
+- [x] 仅为已支持的 `aarch64`/`arm` 生成独立 `.deb`，构建签名 APT 索引并通过 GitHub Pages 发布。
+- [x] 增加包结构、无自更新构建、仓库索引与 ARM64 开发主机验证流程。
+- [x] 增加本地双架构 Termux `.deb` 打包脚本与独立用户安装说明，不额外封装 ZIP。
+- [x] 增加 Windows PowerShell 打包入口：Windows NDK 原生编译，WSL 仅负责 `dpkg-deb` 封包。

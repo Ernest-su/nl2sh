@@ -30,7 +30,7 @@ pub struct SessionInfo {
     pub updated_unix_secs: u64,
 }
 
-/// Private session directory adjacent to the active configuration file.
+/// Private session directory in the active state directory.
 #[derive(Debug, Clone)]
 pub struct SessionStore {
     directory: PathBuf,
@@ -39,8 +39,7 @@ pub struct SessionStore {
 impl SessionStore {
     /// Opens or creates the private session directory.
     pub fn open(config_path: &Path) -> Result<Self> {
-        let parent = config_path.parent().unwrap_or_else(|| Path::new("."));
-        let directory = parent.join("sessions");
+        let directory = crate::config::state_dir(config_path)?.join("sessions");
         create_private_dir(&directory)?;
         Ok(Self { directory })
     }
