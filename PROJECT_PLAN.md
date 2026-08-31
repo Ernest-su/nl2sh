@@ -193,6 +193,6 @@
 
 - [x] 将 Cargo 包版本提升到 1.0.1，并整理 Android shell/Termux 动态运行环境与部署脚本变更。
 - [x] 发布 `v1.0.1` 并以 tag 源码归档的 SHA-256 更新 TUR 配方。
-- [ ] 在 TUR 完整环境构建 `aarch64`、`arm`、`i686` 与 `x86_64`。
-- [ ] 完成 AArch64 真机及 x86/i686 模拟器的 Termux 安装、安全与 PTY smoke test。
-- [ ] 向 Termux User Repository 提交 `nl2sh` 配方 PR。
+- [x] 在 TUR 完整环境构建 `aarch64`、`arm`、`i686` 与 `x86_64`，并通过官方配方 linter、ELF 清理和符号检查。
+- [x] 在 AArch64 Termux 真机验证包升级与 TUI，在支持 32 位 ABI 的真机验证 ARMv7 ELF，并在 API 27 x86/i686、x86_64 模拟器验证官方 Termux、APT 安装、版本启动、TUI 退出和终端恢复。
+- [ ] 向 TUR 上游提交 `tur/nl2sh` 配方 PR，并根据 CI/Review 结果收尾。
