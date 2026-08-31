@@ -74,17 +74,20 @@ pub fn resolve_invocation(
         }
         Ok(("su".into(), vec!["-c".into(), command.into()]))
     } else {
-        Ok((shell_path().into(), vec!["-c".into(), command.into()]))
+        Ok((shell_path(), vec!["-c".into(), command.into()]))
     }
 }
 
-fn shell_path() -> &'static str {
+fn shell_path() -> OsString {
     #[cfg(target_os = "android")]
     {
-        "/system/bin/sh"
+        if let Some(prefix) = crate::runtime::termux_prefix() {
+            return prefix.join("bin/sh").into_os_string();
+        }
+        "/system/bin/sh".into()
     }
     #[cfg(not(target_os = "android"))]
     {
-        "/bin/sh"
+        "/bin/sh".into()
     }
 }

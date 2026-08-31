@@ -1,6 +1,21 @@
 # nl2sh Termux 安装说明
 
-本项目提供两个由 Android NDK 构建的 Termux `.deb`：
+nl2sh 以直接 Android shell 为一等运行环境，同时提供 Termux 兼容模式。运行时会根据 `TERMUX_VERSION` 或标准 `$PREFIX` 自动切换 Agent 命令假设、XDG 路径和 `$PREFIX/bin/sh`，但不会改变安全分类、确认或 root 策略。
+
+## 1. TUR 安装
+
+`tur/nl2sh/build.sh` 可复制到 Termux User Repository fork 的同名目录提交。配方合并后安装：
+
+```bash
+pkg install tur-repo
+pkg install nl2sh
+```
+
+发布新版本时必须同步更新配方的版本和源码 SHA-256，并在 TUR 构建环境验证目标架构。
+
+## 2. 自建包与本地安装
+
+项目也提供两个由 Android NDK 构建的 Termux `.deb`：
 
 ```text
 dist/
@@ -17,7 +32,7 @@ $env:ANDROID_NDK_HOME = "C:\Android\Sdk\ndk\28.2.13676358"
 
 Windows 需要安装 Rust、两个 Android Rust target、Windows 版 NDK 和 WSL；默认 WSL 发行版中需要存在 `bash` 与 `dpkg-deb`。
 
-## 1. 确认设备架构
+### 确认设备架构
 
 在 Termux 中运行：
 
@@ -29,7 +44,7 @@ dpkg --print-architecture
 - 输出 `arm`：安装文件名以 `_arm.deb` 结尾的包。
 - 当前发布包不支持 `x86_64` 和 `i686`。
 
-## 2. 本地安装
+### 安装本地包
 
 64 位 ARM 设备：
 

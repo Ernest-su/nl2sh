@@ -2,7 +2,7 @@
 
 ## 产品定位
 
-nl2sh 是 Android 原生 shell 版的类 Hermes AI Agent，以多轮 Tool Calling 连接模型、本地安全引擎和真实 Android 执行结果。其部署单元是单个 stable Rust Android 可执行文件，配置、日志和发布辅助脚本不是运行时程序依赖。终端交互以丰富 TUI 为主，同时保留单次 CLI 模式。“类 Hermes”不构成对 Hermes API、插件系统或功能集的兼容承诺。
+nl2sh 是以 Android 原生 shell 为一等环境、Termux 为兼容环境的类 Hermes AI Agent，以多轮 Tool Calling 连接模型、本地安全引擎和真实 Android 执行结果。其部署单元是单个 stable Rust Android 可执行文件，配置、日志和发布辅助脚本不是直接 Android 部署的运行时依赖。终端交互以丰富 TUI 为主，同时保留单次 CLI 模式。“类 Hermes”不构成对 Hermes API、插件系统或功能集的兼容承诺。
 
 ## 系统整体架构
 
@@ -28,7 +28,7 @@ Android Runtime
 
 用户输入先成为内部对话消息。Provider 把统一请求映射为 Chat Completions 或 Responses JSON；Tool Call 被转换回内部类型。Agent 只能把 shell tool 交给安全引擎，确认完成后才能调用执行器。stdout、stderr、退出码、超时和错误被编码为 Tool Result，下一轮模型只能依据这些真实结果回答。
 
-每个 Agent 任务开始时，Android 执行器会向 system prompt 附加一次低敏感运行环境摘要，仅包含 API level、ABI、`/system/bin/sh`、当前 UID 与 root/su 能力；探测失败时省略对应字段且不阻断任务。摘要只用于命令兼容性提示，不包含型号、序列号、Android ID、IP、账号或应用列表，也不参与安全分类、确认或提权决策。易变的内存、存储和网络状态仍必须通过工具按需查询。
+每个 Agent 任务开始时，统一 runtime 模块根据 `TERMUX_VERSION` 或标准 Termux `PREFIX` 区分直接 Android shell 与 Termux，并由执行器向 system prompt 附加一次低敏感摘要，仅包含环境类型、API level、ABI、shell、当前 UID 与 root/su 能力；探测失败时省略对应字段且不阻断任务。直接 Android shell 使用 `/system/bin/sh`/toybox 的一等保守基线；Termux 兼容模式使用 `$PREFIX/bin/sh`、XDG 路径和包管理基线，但不假定可选包已经安装。摘要只用于命令兼容性提示，不包含型号、序列号、Android ID、IP、账号或应用列表，也不参与安全分类、确认或提权决策。
 
 TUI 在命令运行期间展示有界实时输出，工具轮完成后移除对应临时行并以默认折叠项保存有界结果，F2 只改变显示展开状态。执行捕获、实时 UI、日志事件/文件和模型 Tool Result 分别应用配置上限；截断保留头尾并插入显式标记，模型不会把不完整结果误认为完整。最终回答提示要求按用户语言总结，多项结构化对比优先使用 Markdown 表格。
 
@@ -51,6 +51,7 @@ TUI 的视觉语义统一由 `UI_DESIGN.md` 约束。实现应以集中式 `Them
 | `src/llm` | `LlmClient`、`TextDeltaSink`、统一消息/工具类型、两个 HTTP/SSE adapter、retry | `LlmRequest` → 文本增量 + `LlmResponse` | 不进行安全判断或执行工具 |
 | `src/provider_metadata` | `ProviderMetadataClient`、Provider 识别、模型列表与上下文元数据归一化 | Provider 配置 → `ModelMetadata` 列表 | 只读网络访问，不记录凭据/原始账户响应，不参与模型推理与安全判断 |
 | `src/provider_account` | `ProviderAccountClient`、余额结果归一化 | Provider 凭据 → 可显示余额 | 仅调用公开只读接口；不记录凭据、余额或原始响应，不参与推理、安全或执行 |
+| `src/runtime` | `AndroidRuntime`、Termux 标记与 prefix 探测 | 进程环境 → Android shell/Termux | 只提供兼容性信息和 shell/path 选择，不参与安全分类、确认或 root 授权 |
 | `src/network` | 统一 rustls HTTP Client、HTTP/SOCKS 代理、认证和绕过策略 | `Config` → `reqwest::Client` | 代理凭据不得进入日志、错误详情或模型上下文；关闭总开关不清理配置 |
 | `src/update` | GitHub Release 发现、版本/ABI 选择、SHA-256 校验与原子替换 | Release 元数据与 Android ABI → 已校验的新可执行文件 | 不执行模型输出；不接受跨 ABI 或无校验资产 |
 | `src/agent` | `AgentRunner`、上下文完整交互单元、工具 schema、`Confirmer` | 用户任务 → Tool Loop / 最终文本 | 不得绕过 security 和 confirmer |
@@ -142,7 +143,7 @@ Confirmation policy
 
 启动更新检查是只读后台任务，失败不阻塞 TUI；仅在发现更高版本且匹配本机 ABI 时提示。立即更新会先恢复终端，再下载裸二进制及 SHA-256，校验通过后在当前目录原子替换。跳过版本写入配置，普通暂不更新不持久化。
 
-Termux APT 构建不启用 `self-update` Cargo feature：不执行启动更新检查，也不替换包管理器拥有的 `$PREFIX/bin/nl2sh`，手工更新入口只提示 `pkg upgrade nl2sh`。直接 Android 发布仍默认启用校验后自更新。Termux 默认配置遵循 XDG config 目录，日志与会话遵循 XDG state 目录；非 Termux 直接部署和显式配置路径继续保持配置相邻状态，避免改变既有 ADB 部署。
+Termux TUR/APT 构建不启用 `self-update` Cargo feature：不执行启动更新检查，也不替换包管理器拥有的 `$PREFIX/bin/nl2sh`，手工更新入口只提示 `pkg upgrade nl2sh`。TUR 配方从固定 tag 和 SHA-256 源码归档通过 `termux_setup_rust` 构建。直接 Android 发布仍默认启用校验后自更新。Termux 默认配置遵循 XDG config 目录，日志与会话遵循 XDG state 目录；非 Termux直接部署和显式配置路径继续保持配置相邻状态。
 
 `/config` 与别名 `/setting` 使用单一 TUI 设置面板承载服务、模型与 Agent、执行与安全、界面和网络分类；其他分散配置命令不再暴露。两者属于严格本地命令，打开面板后不得进入模型上下文。服务分类与旧向导共享内置 Provider 预设，选择预设只联动 Endpoint，保留 API Key、模型和协议，自定义 Endpoint 显示为 Custom。Tab/Shift+Tab 只切分类，Up/Down 只移动字段，Left/Right 只调整当前值；保存后主循环重新加载配置和客户端。界面分类独立控制佛像与小火车 ASCII Art，并提供显式的日志清除操作；日志清除仅截断当前 JSONL 文件并恢复后续记录能力，不清理当前会话或改变安全链。
 
@@ -152,4 +153,4 @@ Agent TUI 在输入分发边界保留 `/` 前缀命名空间：所有去除前�
 
 设置编辑器在单次打开期间分别持有 Ollama 与 Custom 的 Endpoint 草稿；离开对应 Provider 前保存当前值，切回时恢复。其他内置 Provider 仍使用固定预设地址，编辑其地址会转入 Custom。
 
-`/shell` 是显式的用户直控边界：它暂停 alternate-screen TUI，并在当前执行用户模式下启动 Android `/system/bin/sh -i`（开发主机条件使用 `/bin/sh -i`）。其中输入直接属于用户而非 LLM 输出，不进入模型、安全分类或审计内容；键入 `exit` 或发送 EOF 后必须 wait 子 shell、恢复 raw mode、鼠标捕获和 alternate screen，并显式清除 ratatui 差分缓存后完整重绘原会话。由于该子 shell 在事件循环内被直接 await，不能依赖循环的暂停状态边沿检测触发重绘。
+`/shell` 是显式的用户直控边界：它暂停 alternate-screen TUI，直接 Android shell 使用 `/system/bin/sh -i`，Termux 使用 `$PREFIX/bin/sh -i`，开发主机条件使用 `/bin/sh -i`。其中输入直接属于用户而非 LLM 输出，不进入模型、安全分类或审计内容；键入 `exit` 或发送 EOF 后必须 wait 子 shell、恢复 raw mode、鼠标捕获和 alternate screen，并显式清除 ratatui 差分缓存后完整重绘原会话。

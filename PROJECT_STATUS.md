@@ -1,9 +1,12 @@
 # Project Status
 
-Last Updated: 2026-08-30
+Last Updated: 2026-08-31
 
 ## Recent Changes
 
+- 新增可提交到 Termux User Repository 的 `tur/nl2sh/build.sh`：固定 release 源码与 SHA-256，使用 TUR/Termux 构建系统的 Rust toolchain 和目标架构构建，并关闭包内自更新。
+- 集中识别直接 Android shell 与 Termux：Android shell 保持 `/system/bin/sh`/toybox 一等基线，Termux 兼容模式动态使用 `$PREFIX/bin/sh`、XDG 与包管理提示；Agent、Command、运行摘要和 `/shell` 保持一致，安全分类、确认、root 与 PTY 边界不变。
+- 新增 `android-build-tmux-run.sh`：自动选择安装 Termux 的 ADB 设备并识别 `aarch64`/`arm`，只构建匹配架构的包管理版 `.deb`，推送到 Android 临时目录后通过 ADB 转发 SSH 进入 tmux；已有同名会话时新建部署窗口，确保仍会安装新包并运行 `nl2sh`。
 - 新增 `pack-termux-release.sh`：本地构建 `aarch64`/`arm` 包管理版本并直接输出两个独立 `.deb`，不额外封装 ZIP、不接触仓库签名私钥；独立 Termux 安装说明保留在仓库中。
 - 新增 `pack-termux-release.ps1`：使用 Windows NDK 原生构建双 ABI Android 二进制，通过安全的 `wslpath` 参数转换仅调用 WSL `dpkg-deb` 封包，支持项目路径包含空格。
 - 新增自建 Termux APT 仓库打包与 GitHub Pages 签名发布，只覆盖已支持的 `aarch64`/`arm`；包管理构建关闭程序内自更新并引导使用 `pkg upgrade nl2sh`，Termux 配置/日志/会话分别遵循 XDG config/state 路径，直接 Android 部署兼容路径不变。
@@ -34,7 +37,7 @@ Last Updated: 2026-08-30
 - 支持余额接口时，Agent TUI 会在启动后及每 60 秒静默刷新，最近一次成功余额常驻顶栏，失败保留旧值；手工 `/balance` 立即刷新，余额仍只存在内存且不进入对话、配置或审计历史。
 - 新增 `/proxy` Agent TUI 配置弹窗，支持 HTTP CONNECT、SOCKS5/SOCKS5H、认证和绕过列表；总开关关闭时保留配置。LLM、模型发现、Ollama 元数据和余额查询统一使用同一代理策略，密码仅掩码显示且不进入日志或模型上下文。
 - `/proxy` 弹窗复用方向键碎片序列过滤：CSI/SS3 左右键不会再因先到达的 Esc 字节而关闭弹窗，独立 Esc 在短暂组合窗口后仍可取消。
-- Agent 与单命令 prompt 明确以 stock Android `/system/bin/sh` 和 toybox 为基线，不再无证据假设 Python、Bash、Node、常见脚本运行时、开发工具或 Linux 包管理器存在；非基线程序必须先只读探测并准备 Android 原生回退。
+- Agent 与单命令 prompt 在直接 Android shell 中以 `/system/bin/sh` 和 toybox 为一等基线；Termux 兼容模式改用 `$PREFIX/bin/sh`、XDG 和包管理基线，两者都必须先只读探测可选程序。
 - 普通输入路径现在也统一过滤碎片终端序列，将部分 PTY 的 `Esc O Q` 还原为 F2，避免循环展开/收起工具结果时把 `OQ` 写入输入框。
 - Agent 根据已知 Context Window、最大输出预留和 Provider 实际输入 Token 动态淘汰最旧完整历史轮次；system instruction、当前交互和 Tool Calling round 不拆分，配置的轮次与步骤上限仍是硬边界。
 - 新增不记入审计的 `/balance`：使用现有 API Token 查询 DeepSeek 与 SiliconFlow 的公开只读余额接口；其他未提供稳定 Bearer Token 余额接口的国内外 Provider 明确显示不支持，不调用控制台私有接口。
@@ -60,13 +63,13 @@ Last Updated: 2026-08-30
 
 ## Current Phase
 
-1.0.0 发布阶段：本地发布门禁完成，通过 `v1.0.0` 标签构建并发布双 ABI Android 产物。
+1.0.1 兼容版发布阶段：正在完成 TUR 四架构构建、Termux 真机/模拟器验证和配方提交。
 
 ## Overall Status
 
-- Product positioning: Android 原生 shell 版的类 Hermes AI Agent；核心程序以单个可执行文件交付，提供多轮 Tool Calling 和丰富 TUI，不声称与 Hermes API 或插件兼容。
-- Build status: 1.0.0 的 stable Rust 检查与 Linux release 构建通过。
-- Test status: 1.0.0 的默认测试共 133 项，132 项通过；`agent_reply_remains_in_live_tui_until_ctrl_q` 因启动动画的 ratatui 差分 ANSI 输出无法形成连续原始文本而超时，单独重跑稳定复现。
+- Product positioning: 以 Android 原生 shell 为一等环境、Termux 为兼容环境的类 Hermes AI Agent；核心程序以单个可执行文件交付，提供多轮 Tool Calling 和丰富 TUI，不声称与 Hermes API 或插件兼容。
+- Build status: 1.0.1 的 stable Rust 检查、Clippy 与 AArch64 API 26 包管理版 release 交叉编译通过。
+- Test status: 1.0.1 新增 runtime/Termux prompt 测试通过；全量测试仍只有 `agent_reply_remains_in_live_tui_until_ctrl_q` 因启动动画的 ratatui 差分 ANSI 输出无法形成连续原始文本而超时。
 - Android cross-compile status: GitHub Actions 使用 NDK r28c、API 26 构建 `aarch64-linux-android` 与 `armv7-linux-androideabi` release 产物。
 - Android device validation: 已完成真机 root/非 root、修改确认、命令超时和全屏交互程序验证矩阵。
 - CI release workflow: 已添加 `.github/workflows/release.yml`，在推送 `v*` tag 时用 GitHub Actions 并行交叉编译 `aarch64-linux-android` 与 `armv7-linux-androideabi`，将两个程序放入统一包的 ABI 子目录，并与自动选择设备/ABI 的 Linux/Windows BAT 启动脚本、`config.toml.example`、`使用说明.md` 打包为单一 `.tar.gz`/`.zip`，附带 SHA256 校验和发布到 GitHub Release；`workflow_dispatch` 可手动触发草稿发布。
@@ -124,14 +127,14 @@ Last Updated: 2026-08-30
 - 命令审批改为固定 `1-6` 列表，支持方向键/Enter 与 `y/n/a/e/i/t` 别名；可在当前 Agent 任务内记住完全相同的普通命令，但 Root、Dangerous、Critical 和强确认命令始终禁用该选项，且许可不持久化、不做前缀匹配。
 - 审批区域使用完整风险色边框和统一 `background_alt` 面板背景；阶段切换保持稳定最小高度并清空整个面板，避免列表字符残留到强确认或编辑画面。
 - 审批面板锚定在输入区正上方的左下角；初始审批忽略孤立 Esc 和大写 CSI 尾字符，避免 adb 将方向键拆分后误触拒绝或 always 导致弹窗消失。
-- MIT `LICENSE` 已纳入仓库；Cargo 版本为 1.0.0。
+- MIT `LICENSE` 已纳入仓库；Cargo 版本为 1.0.1。
 - 实时 TUI、捕获式工具结果、发给模型的 Tool Result、JSONL 单事件和单文件均有可配置上限；截断会插入明确标记。
 - TUI 输出与历史生命周期已从 session 控制器拆为独立模块，同时保留新的审批菜单和任务级精确命令许可。
 - 真机 root/非 root、修改确认、命令超时和全屏交互程序验证矩阵已完成，覆盖提权与确认链、超时回收，以及全屏程序退出后的终端恢复和 TUI 重绘。
 
 ## In Progress
 
-- 观察 `v1.0.0` GitHub Actions，确认双 ABI 归档与 Release 发布流程。
+- 发布 `v1.0.1`，完成 TUR 四架构构建、Termux 运行矩阵与配方 PR。
 
 ## Pending / Known Issues
 
@@ -146,10 +149,12 @@ Last Updated: 2026-08-30
 - Provider JSON 与 Agent 通过统一类型隔离。
 - su 命令作为独立 argv 传递，避免 nl2sh 自己做不安全 shell quoting。
 - 安全规则只允许自定义规则提高风险，内置规则不可被清空。
-- Android 使用 `/system/bin/sh`，非 Android 开发主机条件使用 `/bin/sh`。
+- 直接 Android shell 使用 `/system/bin/sh`，Termux 使用 `$PREFIX/bin/sh`，非 Android 开发主机条件使用 `/bin/sh`。
 
 ## Verification Performed
 
+- 1.0.1 AArch64 Termux 真机：API 36 `aarch64` 设备通过本地 `.deb` 从 1.0.0 升级到 1.0.1，`dpkg-query`、`nl2sh --version`、Android 26 PIE/linker64、`TERMUX_VERSION`/`PREFIX`、`$PREFIX/bin/sh`、tmux 内 TUI 启动、Ctrl+Q 退出和宿主终端恢复均通过；XDG state 目录按 Termux 路径创建。
+- TUR 与双运行环境兼容：`cargo fmt --all -- --check`、`cargo check --all-targets`、`cargo clippy --all-targets -- -D warnings`、TUR/部署脚本 Bash 语法和 AArch64 API 26 `--no-default-features` release 交叉编译通过；新增测试覆盖 Termux 标记识别及两套 prompt 约束。全量测试其余项目通过，既有 `agent_reply_remains_in_live_tui_until_ctrl_q` 仍因启动动画 ANSI 差分文本匹配超时。
 - Termux 本地发布打包：`bash -n pack-termux-release.sh packaging/termux/build-deb.sh cross-compile.sh`、`cargo fmt --all -- --check`、`cargo check --no-default-features` 与 77 项默认库测试通过；1 项显式凭据 ima smoke 按设计忽略。
 - Termux APT 自建仓库：Linux 目标的 `cargo fmt --all -- --check`、默认/`--no-default-features` `cargo check`、77 项默认库测试与包管理 release 构建通过；`nl2sh update` 在包管理构建中正确提示 `pkg upgrade nl2sh`，生成的 `aarch64` `.deb` 包含 `$PREFIX/bin/nl2sh`、配置示例、README 与 LICENSE，包根目录权限为 `0755`。APT `Packages`/`Release` 的架构过滤、相对资源路径与 SHA-256 通过，临时测试密钥生成的 `InRelease` 和 `Release.gpg` 均通过 `gpgv` 验签。ARM64 GNU/Linux 目标的格式、两种 feature 检查及相同 77 项库测试通过。全量测试仍只有既有 `agent_reply_remains_in_live_tui_until_ctrl_q` 因启动动画 ANSI 差分文本匹配超时。
 - `/sessions` 最近会话选择：Linux 目标下 `cargo fmt --all -- --check`、`cargo check`、会话存储、设备本地日期格式及序号/方向键选择测试通过；全量 `cargo test` 的 76 项库测试、其余 CLI/Agent/配置/日志/LLM/PTY/root/安全及 4 项 TUI 测试通过，既有 `agent_reply_remains_in_live_tui_until_ctrl_q` 仍因启动动画 ANSI 差分文本匹配超时。
@@ -199,4 +204,4 @@ Last Updated: 2026-08-30
 ## Next Steps
 
 1. 根据真机结果继续优化窄屏布局和全屏交互程序切换。
-2. 观察 `v1.0.0` GitHub Actions，确认双 ABI 归档与 Release 发布成功。
+2. 完成 `v1.0.1` TUR 四架构和 Termux 真机/模拟器验证。

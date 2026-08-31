@@ -4,7 +4,7 @@
 
 <h1 align="center">nl2sh</h1>
 
-Natural Language to Shell 是面向 Android 原生 `adb shell` 的类 Hermes AI Agent。核心程序以单个 Android 可执行文件交付，无需 Termux 或设备端运行时依赖；同时提供丰富的 TUI，用于多轮对话、实时命令输出、安全确认、历史浏览和配置。它把自然语言交给 OpenAI 兼容模型，通过 Tool Calling 生成命令，在本地安全分类和确认之后执行，并把真实结果返回模型。
+Natural Language to Shell 是以 Android 原生 `adb shell` 为一等运行环境、同时兼容 Termux 的类 Hermes AI Agent。直接 Android 部署以单个可执行文件交付，无需 Termux 或设备端运行时依赖；Termux 用户可选择包管理安装。丰富的 TUI 用于多轮对话、实时命令输出、安全确认、历史浏览和配置。它把自然语言交给 OpenAI 兼容模型，通过 Tool Calling 生成命令，在本地安全分类和确认之后执行，并把真实结果返回模型。
 
 “类 Hermes”指的是自主 Agent 的产品形态和 Tool Calling 交互方式；nl2sh 专注 Android shell，不声称与 Hermes 的 API、插件或全部功能兼容。
 
@@ -23,8 +23,8 @@ Natural Language to Shell 是面向 Android 原生 `adb shell` 的类 Hermes AI 
 - LLM 不能决定确认、风险等级、root 提升或超时；用户编辑后的命令必须重新分类。
 - 支持当前用户、自动提升和强制 root 模式。非 root 提升使用参数化的 `su -c <command>`，不拼接 shell 字符串。
 - crossterm + ratatui 终端界面通过 RAII 和 panic hook 恢复 raw mode、alternate screen、鼠标捕获和光标；滚轮浏览历史，Shift+拖选后可使用宿主终端的右键菜单复制。
-- 主要目标为 Android API 26+、`aarch64-linux-android` 和 `/data/local/tmp`。不依赖或专门支持 Termux。
-- 同时提供自建的签名 Termux APT 仓库；APT 构建关闭程序内自更新，由 `pkg upgrade nl2sh` 统一管理。
+- 一等目标为 Android API 26+ 原生 shell、`aarch64-linux-android` 和 `/data/local/tmp`；运行时自动识别直接 Android shell 与 Termux，不改变安全确认边界。
+- Termux 作为兼容运行环境，提供 TUR 配方和自建签名 APT 仓库；包管理构建关闭程序内自更新，由 `pkg upgrade nl2sh` 统一管理。
 
 默认执行路径使用 Unix `openpty`：slave 成为子进程 controlling terminal，master 非阻塞读取，stdout/stderr 合并，超时会清理整个进程组。识别到全屏/交互命令时，nl2sh 临时使用本地 raw mode，桥接 stdin/master 输出并同步窗口尺寸，结束后恢复终端。不同 Android 终端和全屏应用仍可能存在兼容差异，详见 `PROJECT_STATUS.md`。
 
@@ -107,6 +107,17 @@ $env:ANDROID_NDK_HOME = "C:\Android\Sdk\ndk\28.2.13676358"
 
 ### Termux APT 安装
 
+推荐通过 Termux User Repository（TUR）安装。TUR 合并 `tur/nl2sh/build.sh` 配方后可使用：
+
+```bash
+pkg install tur-repo
+pkg install nl2sh
+```
+
+仓库内的 `tur/nl2sh/build.sh` 是可复制到 TUR fork 的提交配方；版本发布后必须同步更新 `TERMUX_PKG_VERSION` 与源码归档 SHA-256，并在 TUR 环境运行 `TERMUX_INSTALL_DEPS=true ./build-package.sh -a <arch> nl2sh`。
+
+以下自建 APT 仓库继续作为独立分发渠道。
+
 当前自建仓库仅发布已经验证的 `aarch64` 和 `arm`，暂不发布 `x86_64` 或 `i686`。首次安装仓库公钥和软件源：
 
 ```bash
@@ -142,6 +153,14 @@ $env:ANDROID_NDK_HOME = "C:\Android\Sdk\ndk\28.2.13676358"
 Windows 路径中的空格会通过 `wslpath` 转换；WSL 内只需提供 `bash` 和 `dpkg-deb`，不会在 WSL 中重复编译。缺少工具时可在 Ubuntu/Debian WSL 中运行 `sudo apt install dpkg`。
 
 两个脚本均输出 `dist/nl2sh_版本_aarch64.deb` 和 `dist/nl2sh_版本_arm.deb`，不创建 ZIP，也不读取或包含 APT 仓库私钥。独立安装说明见 `Termux使用说明.md`。
+
+开发时可自动选择已安装 Termux 的 ADB 设备、按设备 ABI 构建单个 `.deb`，并通过 SSH/tmux 安装运行：
+
+```bash
+./android-build-tmux-run.sh
+```
+
+Termux 需预先执行 `pkg install openssh tmux`、`passwd` 和 `sshd`。可通过 `ADB_SERIAL`、`TERMUX_SSH_LOCAL_PORT`、`TERMUX_SSH_REMOTE_PORT`、`TERMUX_TMUX_SESSION` 与 `ANDROID_TMP_DIR` 覆盖默认设备、端口、会话名和 `/data/local/tmp` 临时目录。
 
 ### Android 提示 `No such file or directory`
 
@@ -215,7 +234,7 @@ Agent 任务默认使用 Normal 预算：50 Step、100 次 Tool Call、30 分钟
 
 设置面板的“网络”Tab 支持 HTTP/HTTPS CONNECT、SOCKS5 和推荐的 SOCKS5H（由代理解析 DNS），以及可选用户名、密码和绕过列表。总开关关闭时保留其他代理字段。代理设置统一用于模型请求、模型发现、余额和更新检查；密码掩码显示，不进入对话或审计日志。
 
-每个 Android Agent 任务开始时会向 system prompt 附加一次低敏感运行环境摘要，包括 API level、ABI、`/system/bin/sh`、当前 UID 和 root/su 能力。摘要仅用于提高命令兼容性，不包含型号、序列号、Android ID、IP、账号或应用列表，也不会改变安全分类、确认和提权策略；内存、存储与网络等易变信息仍由工具按需查询。
+每个 Android Agent 任务开始时会向 system prompt 附加一次低敏感运行环境摘要，包括直接 Android shell/Termux、API level、ABI、当前 shell、UID 和 root/su 能力。直接 Android shell 使用 `/system/bin/sh` 与 toybox 的保守基线；Termux 兼容模式使用 `$PREFIX/bin/sh`、XDG 路径并允许 `pkg`/`apt` 基线，但仍先探测可选程序。摘要不包含型号、序列号、Android ID、IP、账号或应用列表，也不会改变安全分类、确认和提权策略；内存、存储与网络等易变信息仍由工具按需查询。
 
 ## 使用
 

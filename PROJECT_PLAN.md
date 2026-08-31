@@ -1,6 +1,6 @@
 # Project Plan
 
-状态以 2026-08-25 的工作区和实际验证为准；1.0.0 为当前发布版本；未完成项不会机械勾选。
+状态以 2026-08-31 的工作区和实际验证为准；1.0.1 为当前准备发布版本；未完成项不会机械勾选。
 
 ## Phase 0 项目初始化与工程基线 — 完成
 
@@ -182,3 +182,17 @@
 - [x] 增加包结构、无自更新构建、仓库索引与 ARM64 开发主机验证流程。
 - [x] 增加本地双架构 Termux `.deb` 打包脚本与独立用户安装说明，不额外封装 ZIP。
 - [x] 增加 Windows PowerShell 打包入口：Windows NDK 原生编译，WSL 仅负责 `dpkg-deb` 封包。
+
+## Phase 23 TUR 与双运行环境兼容 — 完成
+
+- [x] 增加可复制到 Termux User Repository 的 `tur/nl2sh/build.sh`，使用固定 tag、SHA-256、`termux_setup_rust` 和包管理版 feature 构建。
+- [x] 集中探测直接 Android shell 与 Termux，动态切换 Agent/Command prompt、执行 shell、`/shell` 和运行环境摘要。
+- [x] 保持 Android shell 为一等运行路径，Termux 为兼容路径；环境提示不参与安全分类、确认或 root 决策。
+
+## Phase 24 1.0.1 兼容版发布与 TUR 验证 — 进行中
+
+- [x] 将 Cargo 包版本提升到 1.0.1，并整理 Android shell/Termux 动态运行环境与部署脚本变更。
+- [ ] 发布 `v1.0.1` 并以 tag 源码归档的 SHA-256 更新 TUR 配方。
+- [ ] 在 TUR 完整环境构建 `aarch64`、`arm`、`i686` 与 `x86_64`。
+- [ ] 完成 AArch64 真机及 x86/i686 模拟器的 Termux 安装、安全与 PTY smoke test。
+- [ ] 向 Termux User Repository 提交 `nl2sh` 配方 PR。

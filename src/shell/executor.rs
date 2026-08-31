@@ -1,5 +1,7 @@
 use super::{pipeline, pty, resolve_invocation, RootProbe, SystemRootProbe};
 use crate::config::Config;
+#[cfg(target_os = "android")]
+use crate::runtime::{android_runtime, termux_prefix, AndroidRuntime};
 use anyhow::Result;
 use async_trait::async_trait;
 use std::ffi::OsString;
@@ -183,10 +185,24 @@ impl CommandExecutor for ShellExecutor {
             let uid = self.probe.uid();
             let su_available = self.probe.su_available();
             let api_level = android_api_level().await;
+            let environment = android_runtime();
+            let shell = match environment {
+                AndroidRuntime::AndroidShell => "/system/bin/sh".to_owned(),
+                AndroidRuntime::Termux => termux_prefix()
+                    .map(|prefix| prefix.join("bin/sh").to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "$PREFIX/bin/sh".to_owned()),
+            };
             let mut fields = vec![
                 "platform=Android".to_owned(),
+                format!(
+                    "environment={}",
+                    match environment {
+                        AndroidRuntime::AndroidShell => "android-shell",
+                        AndroidRuntime::Termux => "termux",
+                    }
+                ),
                 format!("abi={}", std::env::consts::ARCH),
-                "shell=/system/bin/sh".to_owned(),
+                format!("shell={shell}"),
                 format!("uid={uid}"),
                 format!("root={}", uid == 0),
                 format!("su_available={su_available}"),

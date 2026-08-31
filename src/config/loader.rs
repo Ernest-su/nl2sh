@@ -1,4 +1,5 @@
 use super::{AgentMode, Config};
+use crate::runtime::is_termux;
 use anyhow::{Context, Result};
 use std::{
     env, fs,
@@ -15,7 +16,7 @@ pub fn default_config_path() -> Result<PathBuf> {
     if let Some(path) = non_empty_env_path(CONFIG_ENV) {
         return Ok(path);
     }
-    if is_termux_environment() {
+    if is_termux() {
         if let Some(directory) = non_empty_env_path("XDG_CONFIG_HOME") {
             return Ok(directory.join("nl2sh/config.toml"));
         }
@@ -37,7 +38,7 @@ pub fn state_dir(config_path: &Path) -> Result<PathBuf> {
             .unwrap_or_else(|| Path::new("."))
             .to_path_buf());
     }
-    if is_termux_environment() && config_path == default_config_path()? {
+    if is_termux() && config_path == default_config_path()? {
         if let Some(directory) = non_empty_env_path("XDG_STATE_HOME") {
             return Ok(directory.join("nl2sh"));
         }
@@ -58,12 +59,6 @@ fn executable_relative_config_path() -> Result<PathBuf> {
         .parent()
         .context("executable has no parent directory")?;
     Ok(parent.join("config.toml"))
-}
-
-fn is_termux_environment() -> bool {
-    env::var_os("TERMUX_VERSION").is_some()
-        || non_empty_env_path("PREFIX")
-            .is_some_and(|prefix| prefix.to_string_lossy().contains("com.termux/files/usr"))
 }
 
 fn non_empty_env_path(name: &str) -> Option<PathBuf> {

@@ -19,6 +19,8 @@ pub mod network;
 pub mod provider_account;
 /// Provider-specific model discovery and normalized metadata.
 pub mod provider_metadata;
+/// Direct Android shell versus Termux compatibility runtime detection.
+pub mod runtime;
 /// Local shell command classification and confirmation requirements.
 pub mod security;
 /// Private, bounded conversation snapshots used by `/sessions`.

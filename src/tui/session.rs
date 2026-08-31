@@ -2251,7 +2251,11 @@ fn localized_status(language: UiLanguage, zh_cn: &str, en: &str) -> String {
 fn interactive_shell_command() -> &'static str {
     #[cfg(target_os = "android")]
     {
-        "exec /system/bin/sh -i"
+        if crate::runtime::is_termux() {
+            "exec \"${PREFIX}/bin/sh\" -i"
+        } else {
+            "exec /system/bin/sh -i"
+        }
     }
     #[cfg(not(target_os = "android"))]
     {
