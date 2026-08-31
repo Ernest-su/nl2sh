@@ -64,7 +64,7 @@ Last Updated: 2026-08-31
 
 ## Current Phase
 
-1.0.1 兼容版发布阶段：正在完成 TUR 四架构构建、Termux 真机/模拟器验证和配方提交。
+1.0.1 兼容版已完成 TUR 四架构构建及 Termux 真机/模拟器运行矩阵，正在提交上游配方。
 
 ## Overall Status
 
@@ -135,7 +135,7 @@ Last Updated: 2026-08-31
 
 ## In Progress
 
-- 发布 `v1.0.1`，完成 TUR 四架构构建、Termux 运行矩阵与配方 PR。
+- 向 TUR 上游提交 `tur/nl2sh` 配方 PR，并跟进 CI/Review。
 
 ## Pending / Known Issues
 
@@ -154,6 +154,8 @@ Last Updated: 2026-08-31
 
 ## Verification Performed
 
+- TUR 1.0.1 四架构：上游 `scripts/lint-packages.sh tur/nl2sh/build.sh` 全部通过；`TERMUX_INSTALL_DEPS=true ./build-package.sh -a <arch> nl2sh` 对 `aarch64`、`arm`、`i686`、`x86_64` 均完成 release 编译、打包、ELF 清理与未定义符号检查。四个包均为 Android API 26、NDK r29 产物，架构分别核验为 ELF64 AArch64、ELF32 ARM EABI5、ELF32 i386 与 ELF64 x86-64。
+- Termux 四架构运行矩阵：AArch64 API 36 真机通过 `.deb` 升级、版本检查、tmux/TUI 启停和终端恢复；同一支持 `armeabi-v7a` 的真机执行 TUR ARMv7 ELF 返回 `nl2sh 1.0.1`；API 27 x86 与 x86_64 模拟器分别安装对应官方 Termux APK，通过 `apt install` 安装 i686/x86_64 TUR 包，`nl2sh --version`、全屏 TUI 启动、Ctrl+Q 退出及 alternate-screen 恢复均通过。
 - 1.0.1 AArch64 Termux 真机：API 36 `aarch64` 设备通过本地 `.deb` 从 1.0.0 升级到 1.0.1，`dpkg-query`、`nl2sh --version`、Android 26 PIE/linker64、`TERMUX_VERSION`/`PREFIX`、`$PREFIX/bin/sh`、tmux 内 TUI 启动、Ctrl+Q 退出和宿主终端恢复均通过；XDG state 目录按 Termux 路径创建。
 - TUR 与双运行环境兼容：`cargo fmt --all -- --check`、`cargo check --all-targets`、`cargo clippy --all-targets -- -D warnings`、TUR/部署脚本 Bash 语法和 AArch64 API 26 `--no-default-features` release 交叉编译通过；新增测试覆盖 Termux 标记识别及两套 prompt 约束。全量测试其余项目通过，既有 `agent_reply_remains_in_live_tui_until_ctrl_q` 仍因启动动画 ANSI 差分文本匹配超时。
 - Termux 本地发布打包：`bash -n pack-termux-release.sh packaging/termux/build-deb.sh cross-compile.sh`、`cargo fmt --all -- --check`、`cargo check --no-default-features` 与 77 项默认库测试通过；1 项显式凭据 ima smoke 按设计忽略。
@@ -205,4 +207,4 @@ Last Updated: 2026-08-31
 ## Next Steps
 
 1. 根据真机结果继续优化窄屏布局和全屏交互程序切换。
-2. 完成 `v1.0.1` TUR 四架构和 Termux 真机/模拟器验证。
+2. 提交 `v1.0.1` TUR 配方 PR，并跟进上游 CI/Review。
