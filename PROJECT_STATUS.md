@@ -155,6 +155,7 @@ Last Updated: 2026-08-31
 ## Verification Performed
 
 - TUR 上游提交：PR #2776 仅包含提交 `addpkg(nl2sh): v1.0.1` 和 `tur/nl2sh/build.sh` 一个新增文件；GitHub 判定分支可合并。初始 `Packages-TUR` 与 `Package updates TUR` workflow 为 `action_required`，等待上游 maintainer 批准首次外部贡献运行。
+- v1.0.1 签名 APT 发布：补齐仓库签名 Secret 和 `github-pages` 的 `v*` tag deployment policy 后，release workflow 全部 job 通过，GPG 导入、仓库组装签名、Pages artifact 上传及部署成功。线上 `InRelease` 通过仓库公钥验签，指纹为 `5230 D3A7 CCBE ED46 16D3 9C51 FC6A D1BC 63F7 D4D8`；aarch64/arm Packages 中的 1.0.1 元数据和 SHA-256 与实际下载 `.deb` 一致。
 - TUR 1.0.1 四架构：上游 `scripts/lint-packages.sh tur/nl2sh/build.sh` 全部通过；`TERMUX_INSTALL_DEPS=true ./build-package.sh -a <arch> nl2sh` 对 `aarch64`、`arm`、`i686`、`x86_64` 均完成 release 编译、打包、ELF 清理与未定义符号检查。四个包均为 Android API 26、NDK r29 产物，架构分别核验为 ELF64 AArch64、ELF32 ARM EABI5、ELF32 i386 与 ELF64 x86-64。
 - Termux 四架构运行矩阵：AArch64 API 36 真机通过 `.deb` 升级、版本检查、tmux/TUI 启停和终端恢复；同一支持 `armeabi-v7a` 的真机执行 TUR ARMv7 ELF 返回 `nl2sh 1.0.1`；API 27 x86 与 x86_64 模拟器分别安装对应官方 Termux APK，通过 `apt install` 安装 i686/x86_64 TUR 包，`nl2sh --version`、全屏 TUI 启动、Ctrl+Q 退出及 alternate-screen 恢复均通过。
 - 1.0.1 AArch64 Termux 真机：API 36 `aarch64` 设备通过本地 `.deb` 从 1.0.0 升级到 1.0.1，`dpkg-query`、`nl2sh --version`、Android 26 PIE/linker64、`TERMUX_VERSION`/`PREFIX`、`$PREFIX/bin/sh`、tmux 内 TUI 启动、Ctrl+Q 退出和宿主终端恢复均通过；XDG state 目录按 Termux 路径创建。
