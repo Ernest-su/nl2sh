@@ -15,6 +15,7 @@ use std::{
 };
 
 pub(crate) const PROVIDERS: &[ProviderPreset] = &[
+    ProviderPreset::new("OpenRouter", "https://openrouter.ai/api/v1"),
     ProviderPreset::new("OpenAI", "https://api.openai.com/v1"),
     ProviderPreset::new("DeepSeek", "https://api.deepseek.com"),
     ProviderPreset::new("Moonshot / Kimi", "https://api.moonshot.cn/v1"),
@@ -96,7 +97,7 @@ pub fn run_wizard(path: &Path) -> Result<()> {
     println!("正在创建配置 / Creating configuration: {}", path.display());
     let language = prompt("界面语言 / UI language (zh_cn/en)", "zh_cn")?;
     let ui_language = parse_language(&language)?;
-    let endpoint = select_endpoint(ui_language, "https://api.openai.com/v1")?;
+    let endpoint = select_endpoint(ui_language, "https://openrouter.ai/api/v1")?;
     let api_key = prompt(
         label(
             ui_language,
@@ -105,7 +106,7 @@ pub fn run_wizard(path: &Path) -> Result<()> {
         ),
         "",
     )?;
-    let model = prompt(label(ui_language, "模型", "Model"), "gpt-4o-mini")?;
+    let model = prompt(label(ui_language, "模型", "Model"), "openrouter/free")?;
     let api = prompt(
         label(
             ui_language,
@@ -574,6 +575,9 @@ fn serialize(cfg: &Config) -> Result<String> {
 
 fn write_new(path: &Path, cfg: &Config) -> Result<()> {
     let text = serialize(cfg)?;
+    if let Some(parent) = path.parent() {
+        create_private_config_dir(parent)?;
+    }
     let mut options = OpenOptions::new();
     options.write(true).create_new(true);
     #[cfg(unix)]
@@ -587,6 +591,22 @@ fn write_new(path: &Path, cfg: &Config) -> Result<()> {
     file.write_all(text.as_bytes())
         .context("cannot write configuration")?;
     Ok(())
+}
+
+#[cfg(unix)]
+fn create_private_config_dir(path: &Path) -> Result<()> {
+    use std::os::unix::fs::DirBuilderExt;
+    let mut builder = fs::DirBuilder::new();
+    builder.recursive(true).mode(0o700);
+    builder
+        .create(path)
+        .with_context(|| format!("cannot create config directory {}", path.display()))
+}
+
+#[cfg(not(unix))]
+fn create_private_config_dir(path: &Path) -> Result<()> {
+    fs::create_dir_all(path)
+        .with_context(|| format!("cannot create config directory {}", path.display()))
 }
 
 fn write_replace(path: &Path, cfg: &Config) -> Result<()> {

@@ -1,6 +1,6 @@
 # Project Plan
 
-状态以 2026-08-25 的工作区和实际验证为准；1.0.0 为当前发布版本；未完成项不会机械勾选。
+状态以 2026-08-31 的工作区和实际验证为准；1.0.1 为当前准备发布版本；未完成项不会机械勾选。
 
 ## Phase 0 项目初始化与工程基线 — 完成
 
@@ -115,7 +115,7 @@
 
 - [x] 跨 Agent 工具步骤累计输入/输出 Token，并在 TUI 展示任务总计。
 - [x] `/models` 在线模型发现、手工回退、Provider 元数据抽象及上下文窗口覆盖/占用估算。
-- [x] OpenAI、DeepSeek、SiliconFlow 与 Ollama 模型发现适配。
+- [x] OpenRouter、OpenAI、DeepSeek、SiliconFlow 与 Ollama 模型发现适配。
 - [x] `/balance` 通过公开 Bearer Token 接口查询 DeepSeek 与 SiliconFlow 余额；结果不进入日志或模型上下文，其他 Provider 明确降级为不支持。
 - [x] 支持余额的 Provider 在 TUI 定时刷新并常驻显示；按模型窗口、输出预留和实际输入 Token 动态收缩完整历史轮次。
 - [x] `/proxy` TUI 弹窗配置 HTTP/SOCKS 代理；统一所有 Provider 网络客户端，总开关关闭时保留代理字段。
@@ -173,3 +173,26 @@
 - [x] 将 Cargo 包版本提升到 1.0.0，并整理 0.2.0 之后的用户可见变更。
 - [x] 完成 stable Rust 格式、检查、Clippy 与 release 构建；默认测试除已记录的启动动画 ANSI 差分伪终端用例外均通过。
 - [x] 合并 `dev` 到 `master`，以 `v1.0.0` 标签触发双 ABI Android GitHub Release 工作流。
+
+## Phase 22 Termux APT 自建仓库 — 完成
+
+- [x] 为 Termux 默认配置与运行状态引入 XDG 路径，并保留直接 Android 部署和显式配置路径兼容。
+- [x] 增加可关闭的程序内自更新 feature；APT 构建只提示通过 `pkg upgrade nl2sh` 更新。
+- [x] 仅为已支持的 `aarch64`/`arm` 生成独立 `.deb`，构建签名 APT 索引并通过 GitHub Pages 发布。
+- [x] 增加包结构、无自更新构建、仓库索引与 ARM64 开发主机验证流程。
+- [x] 增加本地双架构 Termux `.deb` 打包脚本与独立用户安装说明，不额外封装 ZIP。
+- [x] 增加 Windows PowerShell 打包入口：Windows NDK 原生编译，WSL 仅负责 `dpkg-deb` 封包。
+
+## Phase 23 TUR 与双运行环境兼容 — 完成
+
+- [x] 增加可复制到 Termux User Repository 的 `tur/nl2sh/build.sh`，使用固定 tag、SHA-256、`termux_setup_rust` 和包管理版 feature 构建。
+- [x] 集中探测直接 Android shell 与 Termux，动态切换 Agent/Command prompt、执行 shell、`/shell` 和运行环境摘要。
+- [x] 保持 Android shell 为一等运行路径，Termux 为兼容路径；环境提示不参与安全分类、确认或 root 决策。
+
+## Phase 24 1.0.1 兼容版发布与 TUR 验证 — 进行中
+
+- [x] 将 Cargo 包版本提升到 1.0.1，并整理 Android shell/Termux 动态运行环境与部署脚本变更。
+- [ ] 发布 `v1.0.1` 并以 tag 源码归档的 SHA-256 更新 TUR 配方。
+- [ ] 在 TUR 完整环境构建 `aarch64`、`arm`、`i686` 与 `x86_64`。
+- [ ] 完成 AArch64 真机及 x86/i686 模拟器的 Termux 安装、安全与 PTY smoke test。
+- [ ] 向 Termux User Repository 提交 `nl2sh` 配方 PR。

@@ -1,9 +1,28 @@
 # Changelog
 
+## [Unreleased]
+
+## [1.0.1] - 2026-08-31
+
+### Added
+
+- Added a TUR-ready `tur/nl2sh/build.sh` recipe using a pinned release archive, SHA-256 verification, and the Termux Rust toolchain.
+- Added centralized direct-Android-shell versus Termux runtime detection for prompts, runtime summaries, configuration paths, and shell selection.
+- Added `android-build-tmux-run.sh` for ABI-aware Termux package builds, ADB deployment, and SSH/tmux installation and launch.
+- Added a self-hosted signed Termux APT repository for `aarch64` and `arm`, with package-manager-owned updates and XDG config/state paths.
+- Added a local `pack-termux-release.sh` workflow that directly emits separate `aarch64` and `arm` `.deb` packages, with a dedicated Termux installation guide kept in the repository.
+- Added `pack-termux-release.ps1`, which builds with the Windows Android NDK and delegates only Debian packaging to WSL `dpkg-deb`.
+- Added OpenRouter as a built-in OpenAI-compatible Provider and made `openrouter/free` at `https://openrouter.ai/api/v1` the default for new configurations.
+
+### Changed
+
+- Made stock Android shell the explicit first-class runtime and Termux a compatibility runtime with dynamic `$PREFIX/bin/sh`, XDG, package-manager, and optional-tool guidance; security and confirmation policy remain unchanged.
+
 ## [1.0.0] - 2026-08-25
 
 ### Changed
 
+- The startup train now uses a multi-color theme treatment for its smoke, roof, body, `NL2SH` branding, and wheels while preserving viewport clipping and ANSI 256 fallback.
 - Changed `@` path suggestions so Enter or Tab inserts the selected candidate, while Right keeps its normal cursor-movement behavior.
 - Added an optional read-only Tencent ima knowledge-base connector with no-proxy direct networking, dynamically exposed list/search/read Agent tools, bounded original-content retrieval, strict temporary-URL origin policy, and credential/session/log redaction; no ima write operations are implemented.
 - Added `@` file and directory references in the TUI with bounded path suggestions, Up/Down selection, Enter/Tab completion, relative/absolute/tilde paths, and longest-existing-prefix parsing for prompts such as `@test.txt写的是什么内容`; referenced content remains behind bounded structured file tools.

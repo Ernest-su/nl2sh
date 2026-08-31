@@ -3,7 +3,7 @@ mod model;
 mod wizard;
 
 pub use loader::{
-    default_config_path, load, load_from, load_or_default_unvalidated, load_unvalidated,
+    default_config_path, load, load_from, load_or_default_unvalidated, load_unvalidated, state_dir,
 };
 pub use model::*;
 pub(crate) use wizard::{provider_index, PROVIDERS};

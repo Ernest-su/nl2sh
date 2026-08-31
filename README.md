@@ -4,7 +4,7 @@
 
 <h1 align="center">nl2sh</h1>
 
-Natural Language to Shell 是面向 Android 原生 `adb shell` 的类 Hermes AI Agent。核心程序以单个 Android 可执行文件交付，无需 Termux 或设备端运行时依赖；同时提供丰富的 TUI，用于多轮对话、实时命令输出、安全确认、历史浏览和配置。它把自然语言交给 OpenAI 兼容模型，通过 Tool Calling 生成命令，在本地安全分类和确认之后执行，并把真实结果返回模型。
+Natural Language to Shell 是以 Android 原生 `adb shell` 为一等运行环境、同时兼容 Termux 的类 Hermes AI Agent。直接 Android 部署以单个可执行文件交付，无需 Termux 或设备端运行时依赖；Termux 用户可选择包管理安装。丰富的 TUI 用于多轮对话、实时命令输出、安全确认、历史浏览和配置。它把自然语言交给 OpenAI 兼容模型，通过 Tool Calling 生成命令，在本地安全分类和确认之后执行，并把真实结果返回模型。
 
 “类 Hermes”指的是自主 Agent 的产品形态和 Tool Calling 交互方式；nl2sh 专注 Android shell，不声称与 Hermes 的 API、插件或全部功能兼容。
 
@@ -18,12 +18,13 @@ Natural Language to Shell 是面向 Android 原生 `adb shell` 的类 Hermes AI 
 - 可选接入腾讯 ima 知识库，Agent 可发现知识库、搜索资料并读取有界原文；连接器只读、始终无代理直连，不提供上传、追加、导入或删除操作。
 - 完整对话自动保存，可用 `/sessions` 列表、恢复、重命名或删除；凭据、余额和临时审批不保存。
 - 审批窗口根据命令或 diff 动态调整宽高；超高内容可用滚轮或 PageUp/PageDown 浏览，操作选项始终固定可见。
-- 支持 Chat Completions 与 Responses API、自定义 OpenAI 兼容 endpoint。
+- 内置 OpenRouter、OpenAI、DeepSeek、Moonshot/Kimi、SiliconFlow 与 Ollama，支持 Chat Completions、Responses API 和自定义 OpenAI 兼容 endpoint。
 - `balanced` 默认策略自动执行只读查询、确认修改操作、二次确认危险操作。
 - LLM 不能决定确认、风险等级、root 提升或超时；用户编辑后的命令必须重新分类。
 - 支持当前用户、自动提升和强制 root 模式。非 root 提升使用参数化的 `su -c <command>`，不拼接 shell 字符串。
 - crossterm + ratatui 终端界面通过 RAII 和 panic hook 恢复 raw mode、alternate screen、鼠标捕获和光标；滚轮浏览历史，Shift+拖选后可使用宿主终端的右键菜单复制。
-- 主要目标为 Android API 26+、`aarch64-linux-android` 和 `/data/local/tmp`。不依赖或专门支持 Termux。
+- 一等目标为 Android API 26+ 原生 shell、`aarch64-linux-android` 和 `/data/local/tmp`；运行时自动识别直接 Android shell 与 Termux，不改变安全确认边界。
+- Termux 作为兼容运行环境，提供 TUR 配方和自建签名 APT 仓库；包管理构建关闭程序内自更新，由 `pkg upgrade nl2sh` 统一管理。
 
 默认执行路径使用 Unix `openpty`：slave 成为子进程 controlling terminal，master 非阻塞读取，stdout/stderr 合并，超时会清理整个进程组。识别到全屏/交互命令时，nl2sh 临时使用本地 raw mode，桥接 stdin/master 输出并同步窗口尺寸，结束后恢复终端。不同 Android 终端和全屏应用仍可能存在兼容差异，详见 `PROJECT_STATUS.md`。
 
@@ -104,6 +105,63 @@ $env:ANDROID_NDK_HOME = "C:\Android\Sdk\ndk\28.2.13676358"
 
 两个脚本都会构建 AArch64 与 ARMv7 release，将程序放入对应 ABI 子目录，并输出 `dist/nl2sh-android.zip` 和 `dist/SHA256SUMS`；不连接或部署 ADB 设备。
 
+### Termux APT 安装
+
+推荐通过 Termux User Repository（TUR）安装。TUR 合并 `tur/nl2sh/build.sh` 配方后可使用：
+
+```bash
+pkg install tur-repo
+pkg install nl2sh
+```
+
+仓库内的 `tur/nl2sh/build.sh` 是可复制到 TUR fork 的提交配方；版本发布后必须同步更新 `TERMUX_PKG_VERSION` 与源码归档 SHA-256，并在 TUR 环境运行 `TERMUX_INSTALL_DEPS=true ./build-package.sh -a <arch> nl2sh`。
+
+以下自建 APT 仓库继续作为独立分发渠道。
+
+当前自建仓库仅发布已经验证的 `aarch64` 和 `arm`，暂不发布 `x86_64` 或 `i686`。首次安装仓库公钥和软件源：
+
+```bash
+mkdir -p "$PREFIX/etc/apt/keyrings"
+curl -fsSL https://ernest-su.github.io/nl2sh/nl2sh-repo.gpg \
+  -o "$PREFIX/etc/apt/keyrings/nl2sh.gpg"
+echo "deb [signed-by=$PREFIX/etc/apt/keyrings/nl2sh.gpg] https://ernest-su.github.io/nl2sh stable main" \
+  > "$PREFIX/etc/apt/sources.list.d/nl2sh.list"
+pkg update
+pkg install nl2sh
+```
+
+APT 版本的默认配置位于 `$XDG_CONFIG_HOME/nl2sh/config.toml`，未设置时使用 `~/.config/nl2sh/config.toml`；日志和会话位于 `$XDG_STATE_HOME/nl2sh`，未设置时使用 `~/.local/state/nl2sh`。`NL2SH_CONFIG` 可以覆盖默认配置路径，显式 `--config` 仍具有最高优先级。直接推送到 Android 的版本继续使用可执行文件旁的 `config.toml`，保持现有部署兼容。
+
+APT 版本不会直接替换 `$PREFIX/bin/nl2sh`。`nl2sh update` 和 TUI `/update` 会提示使用 `pkg upgrade nl2sh`。
+
+发布流水线需要仓库 Secret `TERMUX_APT_GPG_PRIVATE_KEY`，内容为无交互口令的 ASCII-armored 私钥。tag 构建会生成两个架构的 `.deb`、签名 `InRelease`/`Release.gpg` 和 GitHub Pages 仓库；本地打包及仓库脚本位于 `packaging/termux/`。
+
+本地直接生成两个架构的 `.deb`：
+
+```bash
+export ANDROID_NDK_HOME=/path/to/android-ndk
+./pack-termux-release.sh
+```
+
+Windows PowerShell 使用 Windows NDK 编译，再调用默认 WSL 发行版中的 `dpkg-deb` 封包：
+
+```powershell
+$env:ANDROID_NDK_HOME = "C:\Android\Sdk\ndk\28.2.13676358"
+.\pack-termux-release.ps1
+```
+
+Windows 路径中的空格会通过 `wslpath` 转换；WSL 内只需提供 `bash` 和 `dpkg-deb`，不会在 WSL 中重复编译。缺少工具时可在 Ubuntu/Debian WSL 中运行 `sudo apt install dpkg`。
+
+两个脚本均输出 `dist/nl2sh_版本_aarch64.deb` 和 `dist/nl2sh_版本_arm.deb`，不创建 ZIP，也不读取或包含 APT 仓库私钥。独立安装说明见 `Termux使用说明.md`。
+
+开发时可自动选择已安装 Termux 的 ADB 设备、按设备 ABI 构建单个 `.deb`，并通过 SSH/tmux 安装运行：
+
+```bash
+./android-build-tmux-run.sh
+```
+
+Termux 需预先执行 `pkg install openssh tmux`、`passwd` 和 `sshd`。可通过 `ADB_SERIAL`、`TERMUX_SSH_LOCAL_PORT`、`TERMUX_SSH_REMOTE_PORT`、`TERMUX_TMUX_SESSION` 与 `ANDROID_TMP_DIR` 覆盖默认设备、端口、会话名和 `/data/local/tmp` 临时目录。
+
 ### Android 提示 `No such file or directory`
 
 如果 `/data/local/tmp/nl2sh` 明明存在且已有执行权限，但运行时仍提示：
@@ -144,7 +202,7 @@ RUST_TARGET=armv7-linux-androideabi ./android-build-run.sh
 
 ## 配置
 
-默认配置位于解析符号链接后的可执行文件目录，名称为 `config.toml`。配置不存在时直接进入 TUI，使用 `/config` 打开统一设置面板；旧的逐行配置向导和 `--init` 已移除。配置完成前普通任务不会发送给模型。配置以 `0600` 权限创建，也可传入 `--config /path/config.toml`。
+直接 Android 部署的默认配置位于解析符号链接后的可执行文件目录，名称为 `config.toml`；Termux APT 安装使用上文的 XDG 配置与状态目录。配置不存在时直接进入 TUI，使用 `/config` 打开统一设置面板；旧的逐行配置向导和 `--init` 已移除。配置完成前普通任务不会发送给模型。配置以 `0600` 权限创建，也可传入 `--config /path/config.toml`，或设置 `NL2SH_CONFIG`。
 
 ```bash
 cp config.toml.example config.toml
@@ -152,15 +210,17 @@ cp config.toml.example config.toml
 
 配置优先级为 CLI 参数、`NL2SH_API_KEY`、`config.toml`、字段默认值。CLI 可用 `--endpoint`、`--model`、`--api-type` 覆盖 provider 设置；覆盖后统一校验，因此可以修正文件中的对应无效值。空 API Key 适用于本地服务，此时不会发送空 Authorization header。不要提交真实 key。
 
+默认 Provider 是 OpenRouter（`https://openrouter.ai/api/v1`），默认模型是 `openrouter/free`；首次使用需在 `/config` 中填写 OpenRouter API Key，或设置 `NL2SH_API_KEY`。`openrouter/free` 会由 OpenRouter 在可用的免费模型之间路由，实际能力和限额取决于服务端当前策略。
+
 `api_type` 默认是 `auto`，因此配置文件可省略该字段。首次请求优先使用 Responses；仅当端点不存在、明确不支持，或在尚未输出任何内容时返回不兼容结构，才回退 Chat Completions，并在当前进程缓存成功协议。鉴权、限流、5xx、超时和已经产生流式内容后的错误不会触发切换。遇到特殊兼容服务时仍可显式设置 `responses` 或 `chat_completions`，也可用 `--api-type` 临时强制覆盖。
 
 腾讯 ima 为独立的可选只读连接器，可在 `/config` 的“知识库”分类配置，或使用环境变量 `NL2SH_IMA_CLIENT_ID` 与 `NL2SH_IMA_API_KEY`。TOML 字段为 `ima_enabled`、`ima_client_id`、`ima_api_key`，可选 `ima_knowledge_base_id` 用于固定默认知识库；未指定时会有界发现可访问知识库。启用后 Agent 获得知识库列表、搜索和原文读取工具。ima 客户端始终无代理直连，不继承网络 Tab 的代理设置；API Key、Client ID、临时下载 header 和签名 URL不会进入模型、审计日志或会话文件。远程资料被视为不可信数据，不会作为系统指令执行。项目不实现任何 ima 写操作。
 
-`model_context_window` 和 `model_max_output_tokens` 是可选的 Token 限额覆盖；省略上下文窗口时，nl2sh 优先使用 Provider 元数据，再使用内置的保守模型注册表。OpenAI、DeepSeek、SiliconFlow 使用各自的 OpenAI 风格模型列表，Ollama 使用原生 `/api/tags` 与 `/api/show` 读取本地模型及上下文。状态栏的上下文百分比使用最后一次模型请求的输入 Token 除以已知窗口估算，未知时显示 `?`。实际输入 Token 达到上下文安全水位后，Agent 会按观测用量动态淘汰最旧的完整历史轮次；system instruction、当前轮次和完整 Tool Calling round 不会被拆分，`max_context_turns` 仍是硬上限。
+`model_context_window` 和 `model_max_output_tokens` 是可选的 Token 限额覆盖；省略上下文窗口时，nl2sh 优先使用 Provider 元数据，再使用内置的保守模型注册表。OpenRouter、OpenAI、DeepSeek、SiliconFlow 使用各自的 OpenAI 风格模型列表，Ollama 使用原生 `/api/tags` 与 `/api/show` 读取本地模型及上下文。状态栏的上下文百分比使用最后一次模型请求的输入 Token 除以已知窗口估算，未知时显示 `?`。实际输入 Token 达到上下文安全水位后，Agent 会按观测用量动态淘汰最旧的完整历史轮次；system instruction、当前轮次和完整 Tool Calling round 不会被拆分，`max_context_turns` 仍是硬上限。
 
 Agent 任务默认使用 Normal 预算：50 Step、100 次 Tool Call、30 分钟活跃运行时间；`agent_mode` 可选 `fast`（20/40/10 分钟）、`normal` 或 `deep`（100/200/60 分钟），并可用 `max_agent_steps`、`max_tool_calls`、`max_task_execution_time_secs` 逐项覆盖。`hard_max_agent_steps` 默认 200，始终限制有效 Step。等待命令确认不计入活跃时间；重复动作、连续无进展和接近预算都会促使 Agent 改变策略或收敛，但不会绕过风险分类、确认和 root 策略。
 
-`/balance` 使用当前 API Token 调用公开的只读账户接口；当前支持 DeepSeek `/user/balance` 和 SiliconFlow `/user/info`。支持时 TUI 进入会话即查询、每 60 秒静默刷新并将最近一次成功余额常驻顶栏；手工 `/balance` 会立即刷新，失败时保留已有显示值。Moonshot/Kimi、OpenAI、自定义服务及没有公开 Bearer Token 余额接口的 Provider 会明确显示不支持。余额只保留在当前进程内存，不进入 JSONL 日志、模型上下文或配置文件。
+`/balance` 使用当前 API Token 调用公开的只读账户接口；当前支持 DeepSeek `/user/balance` 和 SiliconFlow `/user/info`。支持时 TUI 进入会话即查询、每 60 秒静默刷新并将最近一次成功余额常驻顶栏；手工 `/balance` 会立即刷新，失败时保留已有显示值。OpenRouter、Moonshot/Kimi、OpenAI、自定义服务及没有公开 Bearer Token 余额接口的 Provider 会明确显示不支持。余额只保留在当前进程内存，不进入 JSONL 日志、模型上下文或配置文件。
 
 `execute_user_mode`：
 
@@ -170,11 +230,11 @@ Agent 任务默认使用 Normal 预算：50 Step、100 次 Tool Call、30 分钟
 
 `history_log_file` 默认为 `nl2sh.log`，相对路径按 `config.toml` 所在目录解析。日志采用逐行 JSON，记录用户输入、命令、输出、结果和错误并在每条记录后刷新；新文件权限为 `0600`。日志可能包含命令输出中的设备信息，排查完成后应按实际保密要求保管或清理，但不会写入 API Key。设置面板“界面”分类中的“清除审计日志”可用 Enter 截断当前日志，清除后本次进程仍会继续记录新事件。\n\n输出资源默认受限：实时 TUI 为 256 KiB、单个捕获流为 1 MiB、单个发给模型的 Tool Result 为 128 KiB、单条日志事件为 256 KiB、单个日志文件为 10 MiB。对应配置项为 `ui_live_output_max_bytes`、`tool_output_max_bytes`、`model_tool_output_max_bytes`、`history_log_event_max_bytes` 和 `history_log_max_bytes`。所有内容截断都会插入 `NL2SH ... TRUNCATED` 标记；日志达到文件上限后停止追加，不会静默形成不完整记录。
 
-`ui_language` 控制终端界面语言，可选 `zh_cn` 或 `en`，默认 `zh_cn`。使用 `/config` 或其别名 `/setting` 打开统一设置面板；原 `/provider`、`/model`、`/models`、`/proxy` 命令已移除。“服务”分类可用 Left/Right 在 OpenAI、DeepSeek、Moonshot/Kimi、SiliconFlow、Ollama 和 Custom 间选择，内置项会回填 Endpoint 但保留 API Key、模型与协议。Tab/Shift+Tab 切分类，Up/Down 选字段，Left/Right 调整当前值，Ctrl+S 保存；面板接管键盘焦点，当前文本字段具有输入边界、背景和闪烁光标。最大步骤和轮次显示推荐值 24/16。`show_buddha_ascii_art` 与 `show_train_ascii_art` 分别控制佛像和启动小火车，默认均为 `true`，可在“界面”分类中独立关闭。
+`ui_language` 控制终端界面语言，可选 `zh_cn` 或 `en`，默认 `zh_cn`。使用 `/config` 或其别名 `/setting` 打开统一设置面板；原 `/provider`、`/model`、`/models`、`/proxy` 命令已移除。“服务”分类可用 Left/Right 在 OpenRouter、OpenAI、DeepSeek、Moonshot/Kimi、SiliconFlow、Ollama 和 Custom 间选择，内置项会回填 Endpoint 但保留 API Key、模型与协议。Tab/Shift+Tab 切分类，Up/Down 选字段，Left/Right 调整当前值，Ctrl+S 保存；面板接管键盘焦点，当前文本字段具有输入边界、背景和闪烁光标。最大步骤和轮次显示推荐值 24/16。`show_buddha_ascii_art` 与 `show_train_ascii_art` 分别控制佛像和启动小火车，默认均为 `true`，可在“界面”分类中独立关闭。
 
 设置面板的“网络”Tab 支持 HTTP/HTTPS CONNECT、SOCKS5 和推荐的 SOCKS5H（由代理解析 DNS），以及可选用户名、密码和绕过列表。总开关关闭时保留其他代理字段。代理设置统一用于模型请求、模型发现、余额和更新检查；密码掩码显示，不进入对话或审计日志。
 
-每个 Android Agent 任务开始时会向 system prompt 附加一次低敏感运行环境摘要，包括 API level、ABI、`/system/bin/sh`、当前 UID 和 root/su 能力。摘要仅用于提高命令兼容性，不包含型号、序列号、Android ID、IP、账号或应用列表，也不会改变安全分类、确认和提权策略；内存、存储与网络等易变信息仍由工具按需查询。
+每个 Android Agent 任务开始时会向 system prompt 附加一次低敏感运行环境摘要，包括直接 Android shell/Termux、API level、ABI、当前 shell、UID 和 root/su 能力。直接 Android shell 使用 `/system/bin/sh` 与 toybox 的保守基线；Termux 兼容模式使用 `$PREFIX/bin/sh`、XDG 路径并允许 `pkg`/`apt` 基线，但仍先探测可选程序。摘要不包含型号、序列号、Android ID、IP、账号或应用列表，也不会改变安全分类、确认和提权策略；内存、存储与网络等易变信息仍由工具按需查询。
 
 ## 使用
 

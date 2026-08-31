@@ -7,6 +7,16 @@ use std::{fs, io::Write, path::PathBuf};
 
 const LATEST_RELEASE_URL: &str = "https://api.github.com/repos/Ernest-su/nl2sh/releases/latest";
 
+/// Whether this build may replace its own executable.
+pub const fn self_update_enabled() -> bool {
+    cfg!(feature = "self-update")
+}
+
+/// User-facing guidance for package-manager builds.
+pub const fn package_update_message() -> &'static str {
+    "此版本由 Termux APT 管理，请运行 pkg upgrade nl2sh / This build is managed by Termux APT; run pkg upgrade nl2sh"
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// One installable release for the current Android ABI.
 pub struct UpdateRelease {
@@ -32,6 +42,9 @@ struct GithubAsset {
 
 /// Checks GitHub's latest non-draft release and returns a newer compatible build.
 pub async fn check(config: &Config) -> Result<Option<UpdateRelease>> {
+    if !self_update_enabled() {
+        bail!(package_update_message())
+    }
     let abi = android_abi()?;
     let release: GithubRelease = crate::network::build_http_client(config)?
         .get(LATEST_RELEASE_URL)
@@ -60,6 +73,9 @@ pub async fn check(config: &Config) -> Result<Option<UpdateRelease>> {
 
 /// Downloads, verifies, and atomically replaces the running executable.
 pub async fn install(config: &Config, release: &UpdateRelease) -> Result<()> {
+    if !self_update_enabled() {
+        bail!(package_update_message())
+    }
     let client = crate::network::build_http_client(config)?;
     let binary = download(&client, &release.binary_url).await?;
     let checksum = String::from_utf8(download(&client, &release.checksum_url).await?)

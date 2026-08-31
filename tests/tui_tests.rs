@@ -168,7 +168,9 @@ async fn setting_alias_can_create_partial_config_without_startup_wizard() -> any
     process.master.write_all(b"/setting\r")?;
     process.master.write_all(b"\t")?;
     wait_for_text(&mut process.master, "Ctrl+S", Duration::from_secs(3)).await?;
-    process.master.write_all(&[0x7f; 11])?;
+    process
+        .master
+        .write_all(&vec![0x7f; nl2sh::config::Config::default().model.len()])?;
     process.master.write_all(b"model-from-tui")?;
     process.master.write_all(&[0x13])?;
     wait_for_text(&mut process.master, "Ctrl+Q", Duration::from_secs(3)).await?;

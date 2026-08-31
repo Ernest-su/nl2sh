@@ -221,6 +221,10 @@ async fn main() -> Result<()> {
 }
 
 async fn run_update(cfg: &config::Config) -> Result<()> {
+    if !nl2sh::update::self_update_enabled() {
+        println!("{}", nl2sh::update::package_update_message());
+        return Ok(());
+    }
     println!("正在检查更新 / Checking for updates…");
     let Some(release) = nl2sh::update::check(cfg).await? else {
         println!(
@@ -400,7 +404,7 @@ async fn run_command(
     output: std::sync::Arc<dyn OutputSink>,
 ) -> Result<()> {
     let system = format!(
-        "You are an Android shell command generator. Generate one executable command for Android adb shell. Output only the command. No Markdown, explanation, prefix, or alternatives. {} If a non-baseline runtime would be required and cannot be safely probed with a toybox fallback in the same command, return NL2SH_UNABLE_TO_GENERATE. If unsafe or unreliable return NL2SH_UNABLE_TO_GENERATE.",
+        "You are an Android device shell command generator. Generate one executable command for the detected Android shell runtime. Output only the command. No Markdown, explanation, prefix, or alternatives. {} If a non-baseline runtime would be required and cannot be safely probed with an appropriate runtime fallback in the same command, return NL2SH_UNABLE_TO_GENERATE. If unsafe or unreliable return NL2SH_UNABLE_TO_GENERATE.",
         android_shell_constraints()
     );
     let r = llm

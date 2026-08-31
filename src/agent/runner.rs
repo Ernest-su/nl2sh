@@ -9,6 +9,7 @@ use crate::{
         ConversationItem, ConversationMessage, LlmClient, LlmRequest, Role, TextDeltaSink,
         ToolResult, ToolRound, Usage,
     },
+    runtime::{android_runtime, AndroidRuntime},
     security::{assess, MatchedRule, RiskLevel, SecurityAssessment},
     shell::CommandExecutor,
 };
@@ -528,7 +529,7 @@ impl AgentRunner<'_> {
 
 fn system_prompt(runtime: Option<&str>) -> String {
     let mut system = format!(
-        "You are an Android shell agent. Prefer read_file, list_dir, search_text, and apply_patch for file work; do not use sed, shell redirection, or echo to edit files. Use execute_shell_command for other evidence. Never claim unexecuted results. {} Write the final answer in the user's language for a human reader. Summarize conclusions instead of dumping raw tool protocol output. Use a concise Markdown table when comparing multiple items or presenting repeated structured fields; otherwise use clear concise text.",
+        "You are an Android device shell agent. Prefer read_file, list_dir, search_text, and apply_patch for file work; do not use sed, shell redirection, or echo to edit files. Use execute_shell_command for other evidence. Never claim unexecuted results. {} Write the final answer in the user's language for a human reader. Summarize conclusions instead of dumping raw tool protocol output. Use a concise Markdown table when comparing multiple items or presenting repeated structured fields; otherwise use clear concise text.",
         android_shell_constraints()
     );
     if let Some(runtime) = runtime {
@@ -540,7 +541,14 @@ fn system_prompt(runtime: Option<&str>) -> String {
 
 /// Baseline execution constraints shared by Agent and single-command prompts.
 pub fn android_shell_constraints() -> &'static str {
-    "The target is a stock Android API 26+ shell using /system/bin/sh and toybox, not a desktop Linux distribution or Termux. Unless runtime evidence proves otherwise, assume these are unavailable: python/python3, bash/zsh/fish, node/npm/npx, perl, ruby, PHP, Lua, Java, Go, git, jq, curl/wget, ssh/scp/rsync, gcc/clang, make/cmake, and package managers such as apt/apt-get, yum/dnf, apk, pacman, brew, pip, gem, or cargo. Do not use /bin/bash, /usr/bin/env, GNU-only flags, or scripts requiring those runtimes. Prefer Android commands such as cmd, am, pm, dumpsys, settings, getprop, logcat, and toybox utilities. Before using any non-baseline executable, verify it with command -v using a read-only tool call and provide a /system/bin/sh or toybox fallback; do not install missing tooling unless the user explicitly requests it."
+    runtime_constraints(android_runtime())
+}
+
+fn runtime_constraints(runtime: AndroidRuntime) -> &'static str {
+    match runtime {
+        AndroidRuntime::AndroidShell => "The first-class target is a stock Android API 26+ shell using /system/bin/sh and toybox, not a desktop Linux distribution or Termux. Unless runtime evidence proves otherwise, assume these are unavailable: python/python3, bash/zsh/fish, node/npm/npx, perl, ruby, PHP, Lua, Java, Go, git, jq, curl/wget, ssh/scp/rsync, gcc/clang, make/cmake, and package managers such as apt/apt-get, yum/dnf, apk, pacman, brew, pip, gem, or cargo. Do not use /bin/bash, /usr/bin/env, GNU-only flags, or scripts requiring those runtimes. Prefer Android commands such as cmd, am, pm, dumpsys, settings, getprop, logcat, and toybox utilities. Before using any non-baseline executable, verify it with command -v using a read-only tool call and provide a /system/bin/sh or toybox fallback; do not install missing tooling unless the user explicitly requests it.",
+        AndroidRuntime::Termux => "The process is running in Termux compatibility mode on Android, using the Termux prefix and $PREFIX/bin/sh rather than a desktop Linux filesystem. pkg/apt and the Termux base utilities are available, but optional packages and language runtimes must not be assumed: verify them with command -v before use. Prefer $PREFIX, $HOME, and XDG paths; do not hardcode desktop FHS paths such as /usr, /etc, or /bin. Android framework commands such as am, pm, dumpsys, settings, getprop, and logcat may be used when accessible, but app sandbox and Android permission restrictions still apply. Do not install or upgrade packages unless the user explicitly requests it. Termux compatibility never changes command risk classification, confirmation, or root policy.",
+    }
 }
 
 fn truncate_tool_results(items: &[ConversationItem], limit: usize) -> Vec<ConversationItem> {
@@ -596,7 +604,7 @@ mod tests {
 
     #[test]
     fn system_prompt_forbids_assuming_desktop_script_runtimes() {
-        let prompt = system_prompt(None);
+        let prompt = runtime_constraints(AndroidRuntime::AndroidShell);
         for required in [
             "/system/bin/sh",
             "python/python3",
@@ -608,5 +616,20 @@ mod tests {
             assert!(prompt.contains(required), "missing constraint: {required}");
         }
         assert!(prompt.contains("not a desktop Linux distribution or Termux"));
+    }
+
+    #[test]
+    fn termux_prompt_uses_prefix_without_weakening_security() {
+        let prompt = runtime_constraints(AndroidRuntime::Termux);
+        for required in [
+            "Termux compatibility mode",
+            "$PREFIX/bin/sh",
+            "command -v",
+            "explicitly requests",
+            "never changes command risk classification",
+        ] {
+            assert!(prompt.contains(required), "missing constraint: {required}");
+        }
+        assert!(!prompt.contains("not a desktop Linux distribution or Termux"));
     }
 }

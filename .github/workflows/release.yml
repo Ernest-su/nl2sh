@@ -13,6 +13,8 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -108,6 +110,20 @@ jobs:
           path: |
             nl2sh-android-*
 
+      - name: Build Termux package-manager binary
+        run: |
+          set -euo pipefail
+          export ANDROID_NDK_HOME="${RUNNER_TEMP}/${NDK_FOLDER}"
+          export RUST_TARGET="${{ matrix.target }}"
+          export NL2SH_PACKAGE_MANAGER_BUILD=1
+          ./cross-compile.sh
+
+      - name: Upload Termux binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: termux-${{ matrix.target }}
+          path: target/${{ matrix.target }}/release/nl2sh
+
   package:
     name: Assemble combined Android package
     needs: build
@@ -158,9 +174,72 @@ jobs:
             dist/nl2sh-android.zip
             dist/SHA256SUMS
 
+  termux-package:
+    name: Build Termux packages
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: termux-aarch64-linux-android
+          path: artifacts/aarch64
+      - uses: actions/download-artifact@v4
+        with:
+          name: termux-armv7-linux-androideabi
+          path: artifacts/arm
+      - name: Build architecture-specific debs
+        run: |
+          set -euo pipefail
+          chmod +x artifacts/aarch64/nl2sh artifacts/arm/nl2sh
+          packaging/termux/build-deb.sh aarch64 artifacts/aarch64/nl2sh dist
+          packaging/termux/build-deb.sh arm artifacts/arm/nl2sh dist
+          dpkg-deb --info dist/nl2sh_*_aarch64.deb
+          dpkg-deb --info dist/nl2sh_*_arm.deb
+      - uses: actions/upload-artifact@v4
+        with:
+          name: termux-debs
+          path: dist/*.deb
+
+  termux-repository:
+    name: Publish signed Termux APT repository
+    if: github.event_name == 'push'
+    needs: termux-package
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: termux-debs
+          path: debs
+      - name: Install repository tooling
+        run: sudo apt-get update && sudo apt-get install -y apt-utils
+      - name: Import repository signing key
+        env:
+          PRIVATE_KEY: ${{ secrets.TERMUX_APT_GPG_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          [[ -n "${PRIVATE_KEY}" ]] || { echo "TERMUX_APT_GPG_PRIVATE_KEY is not configured" >&2; exit 1; }
+          printf '%s' "${PRIVATE_KEY}" | gpg --batch --import
+          KEY_ID="$(gpg --batch --with-colons --list-secret-keys | awk -F: '$1 == "sec" { print $5; exit }')"
+          [[ -n "${KEY_ID}" ]] || { echo "no signing key was imported" >&2; exit 1; }
+          echo "NL2SH_APT_GPG_KEY_ID=${KEY_ID}" >> "${GITHUB_ENV}"
+      - name: Assemble and sign repository
+        run: packaging/termux/build-apt-repo.sh debs site
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
   release:
     name: Publish release
-    needs: package
+    needs: [package, termux-package]
     runs-on: ubuntu-latest
     steps:
       - name: Download artifacts
@@ -197,3 +276,4 @@ jobs:
             artifacts/**/nl2sh-android-arm64-v8a.sha256
             artifacts/**/nl2sh-android-armeabi-v7a
             artifacts/**/nl2sh-android-armeabi-v7a.sha256
+            artifacts/**/*.deb

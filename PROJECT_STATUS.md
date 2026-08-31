@@ -1,10 +1,20 @@
 # Project Status
 
-Last Updated: 2026-08-25
+Last Updated: 2026-08-31
 
 ## Recent Changes
 
+- 新增可提交到 Termux User Repository 的 `tur/nl2sh/build.sh`：固定 release 源码与 SHA-256，使用 TUR/Termux 构建系统的 Rust toolchain 和目标架构构建，并关闭包内自更新。
+- 集中识别直接 Android shell 与 Termux：Android shell 保持 `/system/bin/sh`/toybox 一等基线，Termux 兼容模式动态使用 `$PREFIX/bin/sh`、XDG 与包管理提示；Agent、Command、运行摘要和 `/shell` 保持一致，安全分类、确认、root 与 PTY 边界不变。
+- 新增 `android-build-tmux-run.sh`：自动选择安装 Termux 的 ADB 设备并识别 `aarch64`/`arm`，只构建匹配架构的包管理版 `.deb`，推送到 Android 临时目录后通过 ADB 转发 SSH 进入 tmux；已有同名会话时新建部署窗口，确保仍会安装新包并运行 `nl2sh`。
+- 新增 `pack-termux-release.sh`：本地构建 `aarch64`/`arm` 包管理版本并直接输出两个独立 `.deb`，不额外封装 ZIP、不接触仓库签名私钥；独立 Termux 安装说明保留在仓库中。
+- 新增 `pack-termux-release.ps1`：使用 Windows NDK 原生构建双 ABI Android 二进制，通过安全的 `wslpath` 参数转换仅调用 WSL `dpkg-deb` 封包，支持项目路径包含空格。
+- 新增自建 Termux APT 仓库打包与 GitHub Pages 签名发布，只覆盖已支持的 `aarch64`/`arm`；包管理构建关闭程序内自更新并引导使用 `pkg upgrade nl2sh`，Termux 配置/日志/会话分别遵循 XDG config/state 路径，直接 Android 部署兼容路径不变。
+- `/sessions` 改为弹出按更新时间倒序排列的最近会话列表，保存时间以设备本地日期和分钟显示；可直接输入序号或使用 Up/Down 与 Enter 选择恢复，原有命名恢复、重命名和删除子命令继续可用，会话数据边界不变。
+- 新增 OpenRouter 内置 Provider 与 OpenAI-compatible 模型发现；新配置默认使用 `https://openrouter.ai/api/v1` 和 `openrouter/free`，远程调用仍要求 API Key，现有安全确认、Android 与 PTY 边界不变。
+- 启动小火车改为主题 palette 驱动的彩色 ASCII Art：烟雾、车顶、车身、`NL2SH` 字样与轮组分层着色，继续支持 TrueColor/ANSI 256、窄屏裁剪，且不改变动画生命周期或安全边界。
 - 准备 1.0.0 正式版：Cargo 包版本提升到 1.0.0，汇总 0.2.0 之后的功能、稳定性与安全边界变更，并沿用双 ABI Android 标签发布流程。
+- ima 设置页明确将默认知识库 ID 标注为可选；留空时继续有界发现可访问知识库，不改变搜索逻辑。
 - 新增可选的腾讯 ima 只读知识库连接器：独立 Client ID/API Key、始终无代理直连，仅提供知识库发现、搜索与有界原文读取 Tool；支持笔记正文和受控临时 URL，禁止写操作、重定向、非 HTTPS/非白名单来源及凭据进入模型、日志或会话。
 - TUI 输入新增 `@` 文件/目录引用候选：支持相对路径、绝对路径、`@~`、`@/`、`@.` 和父目录路径，Up/Down 选择、Enter/Tab 补全，目录可继续下钻；Right 保持普通光标右移。提交时按最长已存在路径前缀解析，`@test.txt写的是什么内容` 无需额外空格；只附加绝对路径提示，内容仍由有界结构化文件工具读取，安全与确认链不变。
 - 命令批准弹窗改为内容驱动的动态宽高：长命令和结构化 diff 超过终端可用高度时可用滚轮或 PageUp/PageDown 浏览，上方正文独立滚动，底部审批选项、强确认或编辑输入保持可见。
@@ -27,11 +37,11 @@ Last Updated: 2026-08-25
 - 支持余额接口时，Agent TUI 会在启动后及每 60 秒静默刷新，最近一次成功余额常驻顶栏，失败保留旧值；手工 `/balance` 立即刷新，余额仍只存在内存且不进入对话、配置或审计历史。
 - 新增 `/proxy` Agent TUI 配置弹窗，支持 HTTP CONNECT、SOCKS5/SOCKS5H、认证和绕过列表；总开关关闭时保留配置。LLM、模型发现、Ollama 元数据和余额查询统一使用同一代理策略，密码仅掩码显示且不进入日志或模型上下文。
 - `/proxy` 弹窗复用方向键碎片序列过滤：CSI/SS3 左右键不会再因先到达的 Esc 字节而关闭弹窗，独立 Esc 在短暂组合窗口后仍可取消。
-- Agent 与单命令 prompt 明确以 stock Android `/system/bin/sh` 和 toybox 为基线，不再无证据假设 Python、Bash、Node、常见脚本运行时、开发工具或 Linux 包管理器存在；非基线程序必须先只读探测并准备 Android 原生回退。
+- Agent 与单命令 prompt 在直接 Android shell 中以 `/system/bin/sh` 和 toybox 为一等基线；Termux 兼容模式改用 `$PREFIX/bin/sh`、XDG 和包管理基线，两者都必须先只读探测可选程序。
 - 普通输入路径现在也统一过滤碎片终端序列，将部分 PTY 的 `Esc O Q` 还原为 F2，避免循环展开/收起工具结果时把 `OQ` 写入输入框。
 - Agent 根据已知 Context Window、最大输出预留和 Provider 实际输入 Token 动态淘汰最旧完整历史轮次；system instruction、当前交互和 Tool Calling round 不拆分，配置的轮次与步骤上限仍是硬边界。
 - 新增不记入审计的 `/balance`：使用现有 API Token 查询 DeepSeek 与 SiliconFlow 的公开只读余额接口；其他未提供稳定 Bearer Token 余额接口的国内外 Provider 明确显示不支持，不调用控制台私有接口。
-- 新增独立 `ProviderMetadataClient`，分别适配 OpenAI、DeepSeek、SiliconFlow 的模型列表与 Ollama 原生模型详情；配置支持上下文窗口/最大输出 Token 覆盖，已知窗口用于在状态栏估算最后一次请求的上下文占用率。
+- 新增独立 `ProviderMetadataClient`，分别适配 OpenRouter、OpenAI、DeepSeek、SiliconFlow 的模型列表与 Ollama 原生模型详情；配置支持上下文窗口/最大输出 Token 覆盖，已知窗口用于在状态栏估算最后一次请求的上下文占用率。
 - Agent 任务会累计所有模型步骤返回的输入/输出 Token，并在 TUI 状态栏展示本次任务合计；新增 `/models` 在线模型选择，网络或协议失败时回退手工输入，凭据和原始 Provider 响应不写入审计日志。
 - 启动小火车由约 10 FPS 提升到约 30 FPS，并将每帧位移由两列改为一列，以减少跳格卡顿；TUI 事件轮询与异步刷新周期同步缩短，动画约 4.1 秒后结束。
 - 修复启动小火车车头与向右行驶方向相反的问题；车体和烟雾现朝向右侧，`NL2SH` 字样保持正向，奇偶宽度下仍会让车头贴到内容区右边缘后再驶出。
@@ -53,13 +63,13 @@ Last Updated: 2026-08-25
 
 ## Current Phase
 
-1.0.0 发布阶段：本地发布门禁完成，通过 `v1.0.0` 标签构建并发布双 ABI Android 产物。
+1.0.1 兼容版发布阶段：正在完成 TUR 四架构构建、Termux 真机/模拟器验证和配方提交。
 
 ## Overall Status
 
-- Product positioning: Android 原生 shell 版的类 Hermes AI Agent；核心程序以单个可执行文件交付，提供多轮 Tool Calling 和丰富 TUI，不声称与 Hermes API 或插件兼容。
-- Build status: 1.0.0 的 stable Rust 检查与 Linux release 构建通过。
-- Test status: 1.0.0 的默认测试共 133 项，132 项通过；`agent_reply_remains_in_live_tui_until_ctrl_q` 因启动动画的 ratatui 差分 ANSI 输出无法形成连续原始文本而超时，单独重跑稳定复现。
+- Product positioning: 以 Android 原生 shell 为一等环境、Termux 为兼容环境的类 Hermes AI Agent；核心程序以单个可执行文件交付，提供多轮 Tool Calling 和丰富 TUI，不声称与 Hermes API 或插件兼容。
+- Build status: 1.0.1 的 stable Rust 检查、Clippy 与 AArch64 API 26 包管理版 release 交叉编译通过。
+- Test status: 1.0.1 新增 runtime/Termux prompt 测试通过；全量测试仍只有 `agent_reply_remains_in_live_tui_until_ctrl_q` 因启动动画的 ratatui 差分 ANSI 输出无法形成连续原始文本而超时。
 - Android cross-compile status: GitHub Actions 使用 NDK r28c、API 26 构建 `aarch64-linux-android` 与 `armv7-linux-androideabi` release 产物。
 - Android device validation: 已完成真机 root/非 root、修改确认、命令超时和全屏交互程序验证矩阵。
 - CI release workflow: 已添加 `.github/workflows/release.yml`，在推送 `v*` tag 时用 GitHub Actions 并行交叉编译 `aarch64-linux-android` 与 `armv7-linux-androideabi`，将两个程序放入统一包的 ABI 子目录，并与自动选择设备/ABI 的 Linux/Windows BAT 启动脚本、`config.toml.example`、`使用说明.md` 打包为单一 `.tar.gz`/`.zip`，附带 SHA256 校验和发布到 GitHub Release；`workflow_dispatch` 可手动触发草稿发布。
@@ -72,7 +82,7 @@ Last Updated: 2026-08-25
 - 会话自动保存与 `/sessions` 列表、恢复、重命名、删除；私有文件权限及敏感运行态排除。
 - `/shell` 退出后显式清除 ratatui 差分缓存，确保恢复 alternate screen 后完整重绘 TUI，而非只绘制差异导致界面缺失。
 - Provider 设置在面板会话内分别保留 Ollama 与 Custom 的 Endpoint 草稿，切换到其他内置服务商再返回时恢复此前输入。
-- 统一 TUI 设置面板的“服务”分类恢复内置 Provider 选择，复用向导中的 OpenAI、DeepSeek、Moonshot/Kimi、SiliconFlow、Ollama 与 Custom 预设；切换只回填 Endpoint，不覆盖 API Key、模型或协议。
+- 统一 TUI 设置面板的“服务”分类恢复内置 Provider 选择，复用向导中的 OpenRouter、OpenAI、DeepSeek、Moonshot/Kimi、SiliconFlow、Ollama 与 Custom 预设；切换只回填 Endpoint，不覆盖 API Key、模型或协议。
 - 本地 `/shell` 可暂停 TUI 并进入系统交互 shell，使用 `exit` 或 Ctrl+D 后回收子进程、恢复终端并重绘原会话；shell 内容不进入模型上下文或审计日志。
 - Android shell 版类 Hermes AI Agent 的产品定位，以单文件 Android 可执行程序和丰富 TUI 为主要交付形态。
 - 模块化 Cargo 工程、CLI、配置加载/校验/向导。
@@ -117,14 +127,14 @@ Last Updated: 2026-08-25
 - 命令审批改为固定 `1-6` 列表，支持方向键/Enter 与 `y/n/a/e/i/t` 别名；可在当前 Agent 任务内记住完全相同的普通命令，但 Root、Dangerous、Critical 和强确认命令始终禁用该选项，且许可不持久化、不做前缀匹配。
 - 审批区域使用完整风险色边框和统一 `background_alt` 面板背景；阶段切换保持稳定最小高度并清空整个面板，避免列表字符残留到强确认或编辑画面。
 - 审批面板锚定在输入区正上方的左下角；初始审批忽略孤立 Esc 和大写 CSI 尾字符，避免 adb 将方向键拆分后误触拒绝或 always 导致弹窗消失。
-- MIT `LICENSE` 已纳入仓库；Cargo 版本为 1.0.0。
+- MIT `LICENSE` 已纳入仓库；Cargo 版本为 1.0.1。
 - 实时 TUI、捕获式工具结果、发给模型的 Tool Result、JSONL 单事件和单文件均有可配置上限；截断会插入明确标记。
 - TUI 输出与历史生命周期已从 session 控制器拆为独立模块，同时保留新的审批菜单和任务级精确命令许可。
 - 真机 root/非 root、修改确认、命令超时和全屏交互程序验证矩阵已完成，覆盖提权与确认链、超时回收，以及全屏程序退出后的终端恢复和 TUI 重绘。
 
 ## In Progress
 
-- 观察 `v1.0.0` GitHub Actions，确认双 ABI 归档与 Release 发布流程。
+- 发布 `v1.0.1`，完成 TUR 四架构构建、Termux 运行矩阵与配方 PR。
 
 ## Pending / Known Issues
 
@@ -139,10 +149,16 @@ Last Updated: 2026-08-25
 - Provider JSON 与 Agent 通过统一类型隔离。
 - su 命令作为独立 argv 传递，避免 nl2sh 自己做不安全 shell quoting。
 - 安全规则只允许自定义规则提高风险，内置规则不可被清空。
-- Android 使用 `/system/bin/sh`，非 Android 开发主机条件使用 `/bin/sh`。
+- 直接 Android shell 使用 `/system/bin/sh`，Termux 使用 `$PREFIX/bin/sh`，非 Android 开发主机条件使用 `/bin/sh`。
 
 ## Verification Performed
 
+- 1.0.1 AArch64 Termux 真机：API 36 `aarch64` 设备通过本地 `.deb` 从 1.0.0 升级到 1.0.1，`dpkg-query`、`nl2sh --version`、Android 26 PIE/linker64、`TERMUX_VERSION`/`PREFIX`、`$PREFIX/bin/sh`、tmux 内 TUI 启动、Ctrl+Q 退出和宿主终端恢复均通过；XDG state 目录按 Termux 路径创建。
+- TUR 与双运行环境兼容：`cargo fmt --all -- --check`、`cargo check --all-targets`、`cargo clippy --all-targets -- -D warnings`、TUR/部署脚本 Bash 语法和 AArch64 API 26 `--no-default-features` release 交叉编译通过；新增测试覆盖 Termux 标记识别及两套 prompt 约束。全量测试其余项目通过，既有 `agent_reply_remains_in_live_tui_until_ctrl_q` 仍因启动动画 ANSI 差分文本匹配超时。
+- Termux 本地发布打包：`bash -n pack-termux-release.sh packaging/termux/build-deb.sh cross-compile.sh`、`cargo fmt --all -- --check`、`cargo check --no-default-features` 与 77 项默认库测试通过；1 项显式凭据 ima smoke 按设计忽略。
+- Termux APT 自建仓库：Linux 目标的 `cargo fmt --all -- --check`、默认/`--no-default-features` `cargo check`、77 项默认库测试与包管理 release 构建通过；`nl2sh update` 在包管理构建中正确提示 `pkg upgrade nl2sh`，生成的 `aarch64` `.deb` 包含 `$PREFIX/bin/nl2sh`、配置示例、README 与 LICENSE，包根目录权限为 `0755`。APT `Packages`/`Release` 的架构过滤、相对资源路径与 SHA-256 通过，临时测试密钥生成的 `InRelease` 和 `Release.gpg` 均通过 `gpgv` 验签。ARM64 GNU/Linux 目标的格式、两种 feature 检查及相同 77 项库测试通过。全量测试仍只有既有 `agent_reply_remains_in_live_tui_until_ctrl_q` 因启动动画 ANSI 差分文本匹配超时。
+- `/sessions` 最近会话选择：Linux 目标下 `cargo fmt --all -- --check`、`cargo check`、会话存储、设备本地日期格式及序号/方向键选择测试通过；全量 `cargo test` 的 76 项库测试、其余 CLI/Agent/配置/日志/LLM/PTY/root/安全及 4 项 TUI 测试通过，既有 `agent_reply_remains_in_live_tui_until_ctrl_q` 仍因启动动画 ANSI 差分文本匹配超时。
+- OpenRouter Provider 与默认模型：Linux 目标下 `cargo fmt --all -- --check`、`cargo check`、9 项配置测试、Provider 识别及设置面板预设回归通过；`cargo test` 的其余测试通过，唯一失败为既有 `agent_reply_remains_in_live_tui_until_ctrl_q` 启动动画 ANSI 差分文本匹配超时。
 - 1.0.0 发布门禁：`cargo fmt --all -- --check`、`cargo check --all-targets`、`cargo clippy --all-targets -- -D warnings` 与 `cargo build --release` 通过。`cargo test --all-targets` 共 133 项，132 项通过；唯一失败为已记录的伪终端原始文本匹配用例 `agent_reply_remains_in_live_tui_until_ctrl_q`，单独重跑仍因启动动画的 ratatui 差分 ANSI 输出无法形成连续“审计日志保留”文本而超时。
 - ima 只读连接器：`cargo fmt --all -- --check`、`cargo check`、`cargo clippy --all-targets -- -D warnings` 与 74 项默认库测试通过，1 项显式凭据 live smoke 默认忽略；使用 `NL2SH_IMA_CLIENT_ID`/`NL2SH_IMA_API_KEY` 单独运行该 smoke 后，真实知识库发现和库内搜索通过且未输出账户响应；在 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY` 均指向不可用地址时仍通过，验证 ima 强制直连。mock 回归覆盖搜索、媒体信息、笔记正文、认证 header 与凭据不进入 Tool Result，来源策略覆盖非 HTTPS/非白名单拒绝。凭据和真实响应未写入仓库；全量测试仍只有既有启动动画 ANSI 差分文本匹配用例超时。
 - `@` 文件/目录引用：`cargo fmt --all -- --check`、`cargo check`、`cargo clippy --all-targets -- -D warnings` 与 71 项库测试通过；新增回归覆盖句中光标补全、相对 `@.`、绝对路径、`@~`、目录标记，以及 `@test.txt写的是什么内容` 的最长已存在路径解析。全量 `cargo test` 的其余测试通过，既有 `agent_reply_remains_in_live_tui_until_ctrl_q` 仍因启动动画 ANSI 差分文本匹配超时。
@@ -188,4 +204,4 @@ Last Updated: 2026-08-25
 ## Next Steps
 
 1. 根据真机结果继续优化窄屏布局和全屏交互程序切换。
-2. 观察 `v1.0.0` GitHub Actions，确认双 ABI 归档与 Release 发布成功。
+2. 完成 `v1.0.1` TUR 四架构和 Termux 真机/模拟器验证。

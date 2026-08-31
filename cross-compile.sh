@@ -64,5 +64,9 @@ export "CARGO_TARGET_${CARGO_PREFIX}_LINKER"
 export "CARGO_TARGET_${CARGO_PREFIX}_AR"
 export "CC_${CC_SUFFIX}"
 export "AR_${CC_SUFFIX}"
-cargo build --release --target "${TARGET}"
+CARGO_ARGS=(build --locked --release --target "${TARGET}")
+if [[ "${NL2SH_PACKAGE_MANAGER_BUILD:-0}" == "1" ]]; then
+  CARGO_ARGS+=(--no-default-features)
+fi
+cargo "${CARGO_ARGS[@]}"
 echo "Built: target/${TARGET}/release/nl2sh"

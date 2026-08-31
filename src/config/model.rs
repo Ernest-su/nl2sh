@@ -222,10 +222,10 @@ impl Default for Config {
             ima_client_id: String::new(),
             ima_api_key: String::new(),
             ima_knowledge_base_id: None,
-            model: "gpt-4o-mini".into(),
+            model: "openrouter/free".into(),
             model_context_window: None,
             model_max_output_tokens: None,
-            endpoint: "https://api.openai.com/v1".into(),
+            endpoint: "https://openrouter.ai/api/v1".into(),
             api_type: ApiType::Auto,
             proxy_enabled: false,
             proxy_type: ProxyType::Http,
@@ -286,7 +286,7 @@ impl Config {
     pub fn validate(&self) -> Result<()> {
         self.validate_runtime()?;
         if !self.provider_is_configured() {
-            bail!("api_key is required for api.openai.com")
+            bail!("api_key is required for the configured remote provider")
         }
         Ok(())
     }
@@ -393,7 +393,8 @@ impl Config {
     /// its built-in provider policy.
     pub fn provider_is_configured(&self) -> bool {
         Url::parse(&self.endpoint).is_ok_and(|url| {
-            url.host_str() != Some("api.openai.com") || !self.api_key.trim().is_empty()
+            !matches!(url.host_str(), Some("api.openai.com" | "openrouter.ai"))
+                || !self.api_key.trim().is_empty()
         }) && !self.model.trim().is_empty()
     }
 

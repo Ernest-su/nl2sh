@@ -8,6 +8,8 @@ use serde_json::{json, Value};
 /// Provider family selected from the configured endpoint.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProviderKind {
+    /// OpenRouter's OpenAI-compatible public API.
+    OpenRouter,
     /// OpenAI's public API.
     OpenAi,
     /// DeepSeek's public API.
@@ -47,7 +49,9 @@ pub fn build_metadata_client(config: &Config) -> Box<dyn ProviderMetadataClient>
 
 /// Detects a built-in provider without sending a request.
 pub fn provider_kind(endpoint: &str) -> ProviderKind {
-    if endpoint.contains("api.openai.com") {
+    if endpoint.contains("openrouter.ai") {
+        ProviderKind::OpenRouter
+    } else if endpoint.contains("api.openai.com") {
         ProviderKind::OpenAi
     } else if endpoint.contains("api.deepseek.com") {
         ProviderKind::DeepSeek
@@ -82,7 +86,8 @@ impl ProviderMetadataClient for HttpProviderMetadataClient {
     async fn list_models(&self, config: &Config) -> Result<Vec<ModelMetadata>> {
         match self.kind {
             ProviderKind::Ollama => list_ollama_models(config).await,
-            ProviderKind::OpenAi
+            ProviderKind::OpenRouter
+            | ProviderKind::OpenAi
             | ProviderKind::DeepSeek
             | ProviderKind::SiliconFlow
             | ProviderKind::OpenAiCompatible => list_openai_models(config).await,
@@ -194,6 +199,10 @@ mod tests {
 
     #[test]
     fn detects_builtin_provider_families_and_contexts() {
+        assert_eq!(
+            provider_kind("https://openrouter.ai/api/v1"),
+            ProviderKind::OpenRouter
+        );
         assert_eq!(
             provider_kind("https://api.openai.com/v1"),
             ProviderKind::OpenAi
