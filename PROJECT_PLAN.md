@@ -192,7 +192,7 @@
 ## Phase 24 1.0.1 兼容版发布与 TUR 验证 — 进行中
 
 - [x] 将 Cargo 包版本提升到 1.0.1，并整理 Android shell/Termux 动态运行环境与部署脚本变更。
-- [ ] 发布 `v1.0.1` 并以 tag 源码归档的 SHA-256 更新 TUR 配方。
+- [x] 发布 `v1.0.1` 并以 tag 源码归档的 SHA-256 更新 TUR 配方。
 - [ ] 在 TUR 完整环境构建 `aarch64`、`arm`、`i686` 与 `x86_64`。
 - [ ] 完成 AArch64 真机及 x86/i686 模拟器的 Termux 安装、安全与 PTY smoke test。
 - [ ] 向 Termux User Repository 提交 `nl2sh` 配方 PR。
