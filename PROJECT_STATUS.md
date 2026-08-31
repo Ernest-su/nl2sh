@@ -4,6 +4,7 @@ Last Updated: 2026-08-31
 
 ## Recent Changes
 
+- 发布 `v1.0.1`，并将 TUR 配方更新为该 tag 的固定 GitHub 源码归档及 SHA-256；GitHub Release 工作流状态由 Actions 最终结果确认。
 - 新增可提交到 Termux User Repository 的 `tur/nl2sh/build.sh`：固定 release 源码与 SHA-256，使用 TUR/Termux 构建系统的 Rust toolchain 和目标架构构建，并关闭包内自更新。
 - 集中识别直接 Android shell 与 Termux：Android shell 保持 `/system/bin/sh`/toybox 一等基线，Termux 兼容模式动态使用 `$PREFIX/bin/sh`、XDG 与包管理提示；Agent、Command、运行摘要和 `/shell` 保持一致，安全分类、确认、root 与 PTY 边界不变。
 - 新增 `android-build-tmux-run.sh`：自动选择安装 Termux 的 ADB 设备并识别 `aarch64`/`arm`，只构建匹配架构的包管理版 `.deb`，推送到 Android 临时目录后通过 ADB 转发 SSH 进入 tmux；已有同名会话时新建部署窗口，确保仍会安装新包并运行 `nl2sh`。
