@@ -1,9 +1,10 @@
 # Project Status
 
-Last Updated: 2026-08-31
+Last Updated: 2026-09-02
 
 ## Recent Changes
 
+- TUI 支持 Codex 风格的 `!command`：不请求 Provider，直接经过既有安全分类、确认、Root 与 PTY 执行链，并在当前界面显示有界实时输出和退出状态；命令及结果不进入模型上下文，未配置 Provider 时也可使用。
 - 发布 `v1.0.1`，并将 TUR 配方更新为该 tag 的固定 GitHub 源码归档及 SHA-256；GitHub Release 工作流状态由 Actions 最终结果确认。
 - 新增可提交到 Termux User Repository 的 `tur/nl2sh/build.sh`：固定 release 源码与 SHA-256，使用 TUR/Termux 构建系统的 Rust toolchain 和目标架构构建，并关闭包内自更新。
 - 集中识别直接 Android shell 与 Termux：Android shell 保持 `/system/bin/sh`/toybox 一等基线，Termux 兼容模式动态使用 `$PREFIX/bin/sh`、XDG 与包管理提示；Agent、Command、运行摘要和 `/shell` 保持一致，安全分类、确认、root 与 PTY 边界不变。
@@ -154,6 +155,7 @@ Last Updated: 2026-08-31
 
 ## Verification Performed
 
+- TUI `!` 本地命令：`cargo fmt --all -- --check`、`cargo check`、前缀解析单元测试及未配置 Provider 的伪终端直跑回归通过；回归确认实时输出、退出状态、TUI 保活和审计事件。全量 `cargo test` 的其余测试通过，既有 `agent_reply_remains_in_live_tui_until_ctrl_q` 仍因启动动画 ANSI 差分文本匹配超时。
 - TUR 上游提交：PR #2776 仅包含提交 `addpkg(nl2sh): v1.0.1` 和 `tur/nl2sh/build.sh` 一个新增文件；GitHub 判定分支可合并。初始 `Packages-TUR` 与 `Package updates TUR` workflow 为 `action_required`，等待上游 maintainer 批准首次外部贡献运行。
 - v1.0.1 签名 APT 发布：补齐仓库签名 Secret 和 `github-pages` 的 `v*` tag deployment policy 后，release workflow 全部 job 通过，GPG 导入、仓库组装签名、Pages artifact 上传及部署成功。线上 `InRelease` 通过仓库公钥验签，指纹为 `5230 D3A7 CCBE ED46 16D3 9C51 FC6A D1BC 63F7 D4D8`；aarch64/arm Packages 中的 1.0.1 元数据和 SHA-256 与实际下载 `.deb` 一致。
 - TUR 1.0.1 四架构：上游 `scripts/lint-packages.sh tur/nl2sh/build.sh` 全部通过；`TERMUX_INSTALL_DEPS=true ./build-package.sh -a <arch> nl2sh` 对 `aarch64`、`arm`、`i686`、`x86_64` 均完成 release 编译、打包、ELF 清理与未定义符号检查。四个包均为 Android API 26、NDK r29 产物，架构分别核验为 ELF64 AArch64、ELF32 ARM EABI5、ELF32 i386 与 ELF64 x86-64。

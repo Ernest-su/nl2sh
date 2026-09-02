@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added Codex-style `!command` execution in the Agent TUI. Commands bypass the Provider but retain local security classification, confirmation, root, PTY, timeout, and terminal-restoration boundaries; bounded output and exit status remain visible without entering model context.
+
 ## [1.0.1] - 2026-08-31
 
 ### Added

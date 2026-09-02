@@ -28,6 +28,8 @@ Android Runtime
 
 用户输入先成为内部对话消息。Provider 把统一请求映射为 Chat Completions 或 Responses JSON；Tool Call 被转换回内部类型。Agent 只能把 shell tool 交给安全引擎，确认完成后才能调用执行器。stdout、stderr、退出码、超时和错误被编码为 Tool Result，下一轮模型只能依据这些真实结果回答。
 
+TUI 中以 `!` 开头的输入是显式本地命令：去掉前缀后不请求 Provider，而是直接进入同一 `Security → Confirmation → Execution` 边界，并在当前会话界面显示有界实时输出和退出状态。该输入与结果不加入模型上下文；修改、危险、Root 和用户编辑后的命令仍按完整规则重新分类及确认。交互式命令继续通过既有 PTY 挂起、恢复和清屏过滤路径执行。
+
 每个 Agent 任务开始时，统一 runtime 模块根据 `TERMUX_VERSION` 或标准 Termux `PREFIX` 区分直接 Android shell 与 Termux，并由执行器向 system prompt 附加一次低敏感摘要，仅包含环境类型、API level、ABI、shell、当前 UID 与 root/su 能力；探测失败时省略对应字段且不阻断任务。直接 Android shell 使用 `/system/bin/sh`/toybox 的一等保守基线；Termux 兼容模式使用 `$PREFIX/bin/sh`、XDG 路径和包管理基线，但不假定可选包已经安装。摘要只用于命令兼容性提示，不包含型号、序列号、Android ID、IP、账号或应用列表，也不参与安全分类、确认或提权决策。
 
 TUI 在命令运行期间展示有界实时输出，工具轮完成后移除对应临时行并以默认折叠项保存有界结果，F2 只改变显示展开状态。执行捕获、实时 UI、日志事件/文件和模型 Tool Result 分别应用配置上限；截断保留头尾并插入显式标记，模型不会把不完整结果误认为完整。最终回答提示要求按用户语言总结，多项结构化对比优先使用 Markdown 表格。

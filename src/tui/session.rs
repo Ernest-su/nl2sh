@@ -16,9 +16,9 @@ use crate::{
     llm::{ConversationItem, LlmClient, Role, TextDeltaSink},
     provider_account::{build_account_client, AccountBalance},
     provider_metadata::{build_metadata_client, ModelMetadata},
-    security::{RiskLevel, SecurityAssessment},
+    security::{assess, RiskLevel, SecurityAssessment},
     sessions::{SessionInfo, SessionStore},
-    shell::{OutputSink, ShellExecutor},
+    shell::{is_interactive, CommandExecutor, ExecutionResult, OutputSink, ShellExecutor},
 };
 use anyhow::{Context, Result};
 use async_trait::async_trait;
@@ -48,6 +48,17 @@ type BalanceFuture = Pin<Box<dyn Future<Output = Result<Vec<AccountBalance>>> + 
 type UpdateFuture =
     Pin<Box<dyn Future<Output = Result<Option<crate::update::UpdateRelease>>> + Send>>;
 type ModelListFuture = Pin<Box<dyn Future<Output = Result<Vec<ModelMetadata>>> + Send>>;
+
+enum ActiveOutcome {
+    Agent(AgentOutcome),
+    Direct(DirectCommandOutcome),
+}
+
+struct DirectCommandOutcome {
+    command: String,
+    assessment: SecurityAssessment,
+    result: ExecutionResult,
+}
 
 /// Reason a live Agent TUI session returned to its caller.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -177,7 +188,7 @@ async fn run_inner(
             .unwrap_or_else(|| std::path::Path::new("config.toml")),
     )?;
     let mut session_name = SessionStore::default_name();
-    let mut active: Option<Pin<Box<dyn Future<Output = Result<AgentOutcome>> + '_>>> = None;
+    let mut active: Option<Pin<Box<dyn Future<Output = Result<ActiveOutcome>> + '_>>> = None;
     let mut balance_active: Option<BalanceFuture> = None;
     let balance_supported = provider_configured && build_account_client(config).is_ok();
     let mut balance_manual = false;
@@ -418,7 +429,7 @@ async fn run_inner(
             active = None;
             confirmation = None;
             match result {
-                Ok(outcome) => {
+                Ok(ActiveOutcome::Agent(outcome)) => {
                     append_transcript(&history, &outcome, config.ascii_symbols, &log)?;
                     for _ in 0..outcome.history_turns_evicted.min(model_history.len()) {
                         model_history.remove(0);
@@ -481,6 +492,58 @@ async fn run_inner(
                             context
                         ),
                     };
+                }
+                Ok(ActiveOutcome::Direct(outcome)) => {
+                    finalize_live_output(&history)?;
+                    log.record("direct_command", &outcome.command)?;
+                    log.record(
+                        "direct_command_result",
+                        &format!(
+                            "risk={:?} root={} exit={:?} timed_out={} interrupted={}",
+                            outcome.assessment.risk_level,
+                            outcome.assessment.requires_root,
+                            outcome.result.exit_code,
+                            outcome.result.timed_out,
+                            outcome.result.interrupted
+                        ),
+                    )?;
+                    let prefix = if outcome.result.exit_code == Some(0)
+                        && !outcome.result.timed_out
+                        && !outcome.result.interrupted
+                    {
+                        if config.ascii_symbols {
+                            "[OK]"
+                        } else {
+                            "✅"
+                        }
+                    } else if config.ascii_symbols {
+                        "[ERROR]"
+                    } else {
+                        "❌"
+                    };
+                    history
+                        .lock()
+                        .map_err(|_| anyhow::anyhow!("TUI history lock is poisoned"))?
+                        .push(format!(
+                            "{prefix} exit={:?} risk={:?}{}{}",
+                            outcome.result.exit_code,
+                            outcome.assessment.risk_level,
+                            if outcome.result.timed_out {
+                                " timed_out=true"
+                            } else {
+                                ""
+                            },
+                            if outcome.result.interrupted {
+                                " interrupted=true"
+                            } else {
+                                ""
+                            }
+                        ));
+                    app.status = localized_status(
+                        config.ui_language,
+                        "本地命令执行完成",
+                        "local command completed",
+                    );
                 }
                 Err(error) => {
                     discard_llm_stream(&history)?;
@@ -1067,6 +1130,49 @@ async fn run_inner(
                         );
                         continue;
                     }
+                    if let Some(command) = direct_command(&input) {
+                        if command.is_empty() {
+                            history
+                                .lock()
+                                .map_err(|_| anyhow::anyhow!("TUI history lock is poisoned"))?
+                                .push(localized_status(
+                                    config.ui_language,
+                                    "⚠️ ! 后需要输入命令",
+                                    "[WARN] Enter a command after !",
+                                ));
+                            app.status = localized_status(
+                                config.ui_language,
+                                "本地命令为空",
+                                "empty local command",
+                            );
+                            continue;
+                        }
+                        push_history(
+                            &history,
+                            format!(
+                                "{} {command}",
+                                if config.ascii_symbols {
+                                    "[CMD]"
+                                } else {
+                                    "💻"
+                                }
+                            ),
+                            &log,
+                            "direct_command_requested",
+                        )?;
+                        app.status = localized_status(
+                            config.ui_language,
+                            "正在安全检查 / 执行本地命令",
+                            "checking / executing local command",
+                        );
+                        active = Some(Box::pin(run_direct_command_active(
+                            config,
+                            &executor,
+                            &confirmer,
+                            command.to_owned(),
+                        )));
+                        continue;
+                    }
                     if !input.trim().is_empty() {
                         if !provider_configured {
                             log.record("local_rejection", "provider is not configured")?;
@@ -1091,7 +1197,8 @@ async fn run_inner(
                             "正在请求模型 / 执行工具",
                             "requesting LLM / executing tools",
                         );
-                        active = Some(Box::pin(runner.run_with_history_streaming_owned(
+                        active = Some(Box::pin(run_agent_active(
+                            &runner,
                             agent_input,
                             model_history.clone(),
                             &stream_sink,
@@ -1139,6 +1246,72 @@ fn apply_windows_scroll_action(app: &mut App, action: Option<super::events::Wind
         Some(super::events::WindowsScrollAction::InputHistoryDown) => app.next_input(),
         None => {}
     }
+}
+
+fn direct_command(input: &str) -> Option<&str> {
+    input.trim_start().strip_prefix('!').map(str::trim_start)
+}
+
+async fn run_agent_active(
+    runner: &AgentRunner<'_>,
+    input: String,
+    history: Vec<Vec<ConversationItem>>,
+    stream_sink: &SessionTextSink,
+) -> Result<ActiveOutcome> {
+    runner
+        .run_with_history_streaming_owned(input, history, stream_sink)
+        .await
+        .map(ActiveOutcome::Agent)
+}
+
+async fn run_direct_command_active(
+    config: &Config,
+    executor: &dyn CommandExecutor,
+    confirmer: &dyn Confirmer,
+    command: String,
+) -> Result<ActiveOutcome> {
+    execute_direct_command(config, executor, confirmer, command)
+        .await
+        .map(ActiveOutcome::Direct)
+}
+
+async fn execute_direct_command(
+    config: &Config,
+    executor: &dyn CommandExecutor,
+    confirmer: &dyn Confirmer,
+    mut command: String,
+) -> Result<DirectCommandOutcome> {
+    let mut assessment = assess(&command, config);
+    let mut interactive_override = None;
+    while assessment.requires_confirmation {
+        match confirmer.confirm(&command, &assessment).await? {
+            ConfirmationDecision::Approve | ConfirmationDecision::ApproveForTask => break,
+            ConfirmationDecision::ApproveInteractive => {
+                interactive_override = Some(true);
+                break;
+            }
+            ConfirmationDecision::ApproveCaptured => {
+                interactive_override = Some(false);
+                break;
+            }
+            ConfirmationDecision::Reject => {
+                anyhow::bail!("local command was not executed: confirmation rejected")
+            }
+            ConfirmationDecision::Edit(edited) => {
+                command = edited;
+                assessment = assess(&command, config);
+            }
+        }
+    }
+    let interactive = interactive_override.unwrap_or_else(|| is_interactive(&command, false));
+    let result = executor
+        .execute(&command, assessment.requires_root, interactive)
+        .await?;
+    Ok(DirectCommandOutcome {
+        command,
+        assessment,
+        result,
+    })
 }
 
 fn usage_value(value: Option<u64>) -> String {
@@ -2828,6 +3001,14 @@ mod tests {
         assert_eq!(editor.config.endpoint, "https://custom.example/v1");
     }
     use crate::{config::Config, security::assess};
+
+    #[test]
+    fn bang_prefix_extracts_direct_commands() {
+        assert_eq!(direct_command("!pwd"), Some("pwd"));
+        assert_eq!(direct_command("  !  printf hi"), Some("printf hi"));
+        assert_eq!(direct_command("!"), Some(""));
+        assert_eq!(direct_command("show status"), None);
+    }
 
     fn request(command: &str) -> (ConfirmationUi, oneshot::Receiver<ConfirmationDecision>) {
         let (reply, response) = oneshot::channel();

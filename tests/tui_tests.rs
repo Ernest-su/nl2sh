@@ -159,6 +159,37 @@ async fn slash_shell_runs_commands_and_exit_restores_tui() -> anyhow::Result<()>
 }
 
 #[tokio::test]
+async fn bang_command_runs_without_a_configured_provider_and_stays_in_tui() -> anyhow::Result<()> {
+    let directory = tempdir()?;
+    let config = directory.path().join("missing.toml");
+    std::fs::write(&config, "enable_pty=false\n")?;
+    let mut process = spawn_tui(&config)?;
+
+    wait_for_text(&mut process.master, "Ctrl+Q", Duration::from_secs(3)).await?;
+    process.master.write_all(b"!printf 'bang-direct-ok\\n'\r")?;
+    wait_for_text(
+        &mut process.master,
+        "bang-direct-ok",
+        Duration::from_secs(3),
+    )
+    .await?;
+    sleep(Duration::from_millis(200)).await;
+
+    assert!(process.child.try_wait()?.is_none());
+    process.master.write_all(&[0x11])?;
+    assert!(timeout(Duration::from_secs(3), process.child.wait())
+        .await??
+        .success());
+    let log = std::fs::read_to_string(directory.path().join("nl2sh.log"))?;
+    assert!(log.contains("direct_command_requested"));
+    assert!(log.contains("direct_command_result"));
+    assert!(log.contains("exit=Some(0)"));
+    assert!(log.contains("bang-direct-ok"));
+    assert!(!log.contains("local_rejection"));
+    Ok(())
+}
+
+#[tokio::test]
 async fn setting_alias_can_create_partial_config_without_startup_wizard() -> anyhow::Result<()> {
     let directory = tempdir()?;
     let config = directory.path().join("model-only.toml");

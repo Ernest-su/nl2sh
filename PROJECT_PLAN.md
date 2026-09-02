@@ -197,3 +197,9 @@
 - [x] 在 AArch64 Termux 真机验证包升级与 TUI，在支持 32 位 ABI 的真机验证 ARMv7 ELF，并在 API 27 x86/i686、x86_64 模拟器验证官方 Termux、APT 安装、版本启动、TUI 退出和终端恢复。
 - [x] 向 TUR 上游提交 `tur/nl2sh` 配方 PR（#2776）。
 - [ ] 跟进 TUR maintainer 对首次外部贡献 Actions 的批准及后续 CI/Review。
+
+## Phase 25 TUI `!` 本地命令 — 完成
+
+- [x] 识别 TUI 中以 `!` 开头的输入并绕过 Provider，直接运行其后的命令。
+- [x] 复用安全分类、确认、Root、PTY、超时、取消和终端恢复边界，编辑后重新分类。
+- [x] 在当前 TUI 显示有界实时输出与退出状态，不把命令结果加入模型会话。
