@@ -2,6 +2,7 @@
   <img src="assets/logo.png" alt="nl2sh logo" width="220">
 </p>
 
+<h1 align="center">repo has moved to https://github.com/nl2sh/nl2sh</h1>
 <h1 align="center">nl2sh</h1>
 
 Natural Language to Shell 是以 Android 原生 `adb shell` 为一等运行环境、同时兼容 Termux 的类 Hermes AI Agent。直接 Android 部署以单个可执行文件交付，无需 Termux 或设备端运行时依赖；Termux 用户可选择包管理安装。丰富的 TUI 用于多轮对话、实时命令输出、安全确认、历史浏览和配置。它把自然语言交给 OpenAI 兼容模型，通过 Tool Calling 生成命令，在本地安全分类和确认之后执行，并把真实结果返回模型。
